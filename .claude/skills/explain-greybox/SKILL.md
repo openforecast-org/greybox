@@ -60,7 +60,7 @@ plain-language explanations grounded in what the code actually computes.
   MAPE — fractions here), **scaled** (MASE, RMSSE — vs naive, 1.0 = naive),
   **relative** (rMAE, rRMSE — vs a benchmark, <1 beats it). Pick scale-free
   measures to compare across series; never average MAPE across series with very
-  different levels. See [hm()](https://github.com/config-i1/greybox/wiki/measures)
+  different levels. See [hm()](https://github.com/openforecast-org/greybox/wiki/measures)
   half-moment measures for asymmetry/extremity of the error distribution.
 
 ### Selection: `stepwise()` and `CALM()`
@@ -78,13 +78,13 @@ plain-language explanations grounded in what the code actually computes.
   (`dnorm`/`dlnorm`/other) are the *regression* variants whose intervals/p-value
   come from a fitted model. Explain overlap = no significant difference, and read
   the `"mcb"` plot (intervals, highlighted best method) and `"lines"` plot
-  (groups). See [RMCB wiki](https://github.com/config-i1/greybox/wiki/RMCB).
+  (groups). See [RMCB wiki](https://github.com/openforecast-org/greybox/wiki/RMCB).
 
 ### `stick()` — Seasonality / Trend / Irregular decomposition
 - `strength` entries are **shares of total sum of squares** and **sum to 1**, so
   read them as proportions. A dominant `trend` means model the growth first; a
   large `irregular` share means the series is noisy / hard to predict. See
-  [EDA wiki](https://github.com/config-i1/greybox/wiki/EDA).
+  [EDA wiki](https://github.com/openforecast-org/greybox/wiki/EDA).
 
 ### Distributions and association
 - For `distribution=` choices, explain the shape/tail/support trade-off (e.g.

@@ -57,7 +57,7 @@ test:
     - "\"%R%\" -e \"library('greybox')\""   # [win]
 
 about:
-  home: https://github.com/config-i1/greybox
+  home: https://github.com/openforecast-org/greybox
   license: LGPL-2.1-only
   license_family: LGPL
   license_file:
@@ -67,7 +67,7 @@ about:
     Implements functions and instruments for regression model building and its
     application to forecasting. The main scope of the package is in variables
     selection and models specification for cases of time series data.
-  dev_url: https://github.com/config-i1/greybox
+  dev_url: https://github.com/openforecast-org/greybox
 
 extra:
   recipe-maintainers:

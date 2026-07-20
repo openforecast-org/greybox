@@ -12,7 +12,7 @@
       }
       else if(randomNumber==3){
         startUpMessage <- paste0(startUpMessage,"\nAny thought or suggestions about the package? ",
-                                 "Have you found a bug? File an issue on github: https://github.com/config-i1/greybox/issues");
+                                 "Have you found a bug? File an issue on github: https://github.com/openforecast-org/greybox/issues");
       }
       else if(randomNumber==4){
         startUpMessage <- paste0(startUpMessage,"\nDid you know that you can use your own loss function in alm()? ",

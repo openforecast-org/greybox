@@ -45,10 +45,10 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/config-i1/greybox"
-Repository = "https://github.com/config-i1/greybox"
-Documentation = "https://config-i1.github.io/greybox/"
-Issues = "https://github.com/config-i1/greybox/issues"
+Homepage = "https://github.com/openforecast-org/greybox"
+Repository = "https://github.com/openforecast-org/greybox"
+Documentation = "https://openforecast-org.github.io/greybox/"
+Issues = "https://github.com/openforecast-org/greybox/issues"
 
 [tool.setuptools.package-data]
 greybox = ["*.csv"]

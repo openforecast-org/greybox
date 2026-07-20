@@ -1090,7 +1090,7 @@ As mentioned earlier, depending on the distribution, we would have slight differ
 6. Inverse Gaussian distribution. The residuals are transformed according to the formula: $\log\left(\frac{(e_t-1)^2}{e_t}\right)$, which (similarly to Gamma distribution) is motivated by the assumption of $\mathrm{E}(e_t)=1$. $\hat{\sigma}_t$ is used in the density function.
 7. All the other distributions rely on logarithms of absolute residuals and use $\hat{\sigma}_t$. This does not necessarily have a good reason and is done for fail-safe purposes.
 
-Note that the scale model is a relatively new feature, so it might not produce perfect results. Let me know if you have ideas of how to improve it via [https://github.com/config-i1/greybox/issues](https://github.com/config-i1/greybox/issues).
+Note that the scale model is a relatively new feature, so it might not produce perfect results. Let me know if you have ideas of how to improve it via [https://github.com/openforecast-org/greybox/issues](https://github.com/openforecast-org/greybox/issues).
 
 
 # Using different loss functions {#losses}

@@ -15,7 +15,7 @@ Welcome to greybox's documentation!
    :maxdepth: 1
    :caption: Additional Information
 
-   GitHub Repository <https://github.com/config-i1/greybox>
+   GitHub Repository <https://github.com/openforecast-org/greybox>
    Python Package Index <https://pypi.org/project/greybox/>
 
 

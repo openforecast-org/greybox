@@ -132,7 +132,7 @@ greybox v2.0.0 (Release data: 2023-09-15)
 ==============
 
 Changes:
-* Starting from v2.0.0, the greybox package for R will be released under the LGPLv2.1 license. The source of the older version of the software under the GPL(>=2) is available here: https://github.com/config-i1/greybox/releases/tag/v1.0.9
+* Starting from v2.0.0, the greybox package for R will be released under the LGPLv2.1 license. The source of the older version of the software under the GPL(>=2) is available here: https://github.com/openforecast-org/greybox/releases/tag/v1.0.9
 
 
 greybox v1.0.9 (Release data: 2023-09-15)

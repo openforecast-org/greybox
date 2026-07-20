@@ -25,7 +25,7 @@ Install from Source
 
 To install the latest development version from GitHub::
 
-    git clone https://github.com/config-i1/greybox.git
+    git clone https://github.com/openforecast-org/greybox.git
     cd greybox/python
     pip install -e .
 

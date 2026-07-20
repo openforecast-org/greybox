@@ -37,7 +37,7 @@ test:
     - pip
 
 about:
-  home: https://github.com/config-i1/greybox
+  home: https://github.com/openforecast-org/greybox
   summary: Toolbox for model building and forecasting
   description: |
     Python port of the R greybox package. Provides likelihood-based regression
@@ -47,8 +47,8 @@ about:
   license: LGPL-2.1-only
   license_family: LGPL
   license_file: LICENSE
-  doc_url: https://config-i1.github.io/greybox/
-  dev_url: https://github.com/config-i1/greybox
+  doc_url: https://openforecast-org.github.io/greybox/
+  dev_url: https://github.com/openforecast-org/greybox
 
 extra:
   recipe-maintainers:

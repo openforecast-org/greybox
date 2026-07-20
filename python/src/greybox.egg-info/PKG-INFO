@@ -4,10 +4,10 @@ Version: 1.0.4
 Summary: Toolbox for model building and forecasting
 Author-email: Ivan Svetunkov <ivan@svetunkov.com>
 License: LGPL-2.1
-Project-URL: Homepage, https://github.com/config-i1/greybox
-Project-URL: Repository, https://github.com/config-i1/greybox
-Project-URL: Documentation, https://config-i1.github.io/greybox/
-Project-URL: Issues, https://github.com/config-i1/greybox/issues
+Project-URL: Homepage, https://github.com/openforecast-org/greybox
+Project-URL: Repository, https://github.com/openforecast-org/greybox
+Project-URL: Documentation, https://openforecast-org.github.io/greybox/
+Project-URL: Issues, https://github.com/openforecast-org/greybox/issues
 Classifier: Development Status :: 4 - Beta
 Classifier: Intended Audience :: Science/Research
 Classifier: License :: OSI Approved :: GNU Lesser General Public License v2 or later (LGPLv2+)
@@ -40,13 +40,13 @@ Dynamic: license-file
 
 [![PyPI version](https://img.shields.io/pypi/v/greybox.svg)](https://pypi.org/project/greybox/)
 [![PyPI - Downloads](https://img.shields.io/pypi/dm/greybox.svg)](https://pypi.org/project/greybox/)
-[![Python CI](https://github.com/config-i1/greybox/actions/workflows/python-test.yml/badge.svg)](https://github.com/config-i1/greybox/actions/workflows/python-test.yml)
+[![Python CI](https://github.com/openforecast-org/greybox/actions/workflows/python-test.yml/badge.svg)](https://github.com/openforecast-org/greybox/actions/workflows/python-test.yml)
 [![Python versions](https://img.shields.io/pypi/pyversions/greybox.svg)](https://pypi.org/project/greybox/)
 [![License: LGPL-2.1](https://img.shields.io/badge/License-LGPL--2.1-blue.svg)](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html)
 
 Python port of the [R greybox package](https://cran.r-project.org/package=greybox) — a toolbox for regression model building and forecasting.
 
-![hex-sticker of the greybox package for Python](https://github.com/config-i1/greybox/blob/master/python/img/greybox-python-web.png?raw=true)
+![hex-sticker of the greybox package for Python](https://github.com/openforecast-org/greybox/blob/master/python/img/greybox-python-web.png?raw=true)
 
 ## Installation
 
@@ -54,7 +54,7 @@ Python port of the [R greybox package](https://cran.r-project.org/package=greybo
 pip install greybox
 ```
 
-For more installation options, see the [Installation](https://github.com/config-i1/greybox/wiki/Installation) wiki page.
+For more installation options, see the [Installation](https://github.com/openforecast-org/greybox/wiki/Installation) wiki page.
 
 ## Quick Example
 
@@ -104,7 +104,7 @@ model.fit(X, y)
 
 ## Smoothers (`lowess`, `supsmu`)
 
-See the [Smoothers wiki page](https://github.com/config-i1/greybox/wiki/Smoothers) for the full reference.
+See the [Smoothers wiki page](https://github.com/openforecast-org/greybox/wiki/Smoothers) for the full reference.
 
 Non-parametric smoothers that reproduce R's `stats::lowess` and `stats::supsmu` to machine precision (native pybind11 implementations).
 
@@ -131,7 +131,7 @@ References:
 
 ## Automatic Identification of Demand (`aid`, `aid_cat`)
 
-See the [AID wiki page](https://github.com/config-i1/greybox/wiki/AID) for the full reference.
+See the [AID wiki page](https://github.com/openforecast-org/greybox/wiki/AID) for the full reference.
 
 Classifies a time series into one of six demand types and flags stockouts, new products, and obsolete products. Port of R's `greybox::aid()` / `aidCat()`.
 
@@ -177,22 +177,22 @@ support both `result.stockouts.start` (R-style attribute access) and
 
 ## Features
 
-- **[ALM (Augmented Linear Model)](https://github.com/config-i1/greybox/wiki/ALM)**: Likelihood-based regression with 26 distributions
+- **[ALM (Augmented Linear Model)](https://github.com/openforecast-org/greybox/wiki/ALM)**: Likelihood-based regression with 26 distributions
 - **Formula parser**: R-style formulas (`y ~ x1 + x2`, `log(y) ~ .`, `y ~ 0 + x1`) with support for backshift operator
-- **[stepwise()](https://github.com/config-i1/greybox/wiki/stepwise)**: IC-based variable selection with partial correlations
-- **[CALM()](https://github.com/config-i1/greybox/wiki/CALM)**: Combine ALM models based on IC weights
-- **[Forecast error measures](https://github.com/config-i1/greybox/wiki/measures)**: MAE, MSE, RMSE, MAPE, MASE, MPE, sMAPE, and more
-- **[Variable processing](https://github.com/config-i1/greybox/wiki/manipulations)**: `xreg_expander` (lags/leads), `xreg_multiplier` (interactions), `temporal_dummy`
-- **[Distributions](https://github.com/config-i1/greybox/wiki/distributions)**: 27 distribution families with density, CDF, quantile, and random generation
-- **[Association](https://github.com/config-i1/greybox/wiki/association)**: Partial correlations and measures of association
-- **[Diagnostics](https://github.com/config-i1/greybox/wiki/diagnostics)**: Model diagnostics and validation
-- **[Smoothers](https://github.com/config-i1/greybox/wiki/Smoothers)**: `lowess` and `supsmu` matching R's `stats::lowess` and `stats::supsmu` to machine precision
-- **[Demand identification](https://github.com/config-i1/greybox/wiki/AID)**: `aid()` and `aid_cat()` for automatic classification of demand series and stockout detection
+- **[stepwise()](https://github.com/openforecast-org/greybox/wiki/stepwise)**: IC-based variable selection with partial correlations
+- **[CALM()](https://github.com/openforecast-org/greybox/wiki/CALM)**: Combine ALM models based on IC weights
+- **[Forecast error measures](https://github.com/openforecast-org/greybox/wiki/measures)**: MAE, MSE, RMSE, MAPE, MASE, MPE, sMAPE, and more
+- **[Variable processing](https://github.com/openforecast-org/greybox/wiki/manipulations)**: `xreg_expander` (lags/leads), `xreg_multiplier` (interactions), `temporal_dummy`
+- **[Distributions](https://github.com/openforecast-org/greybox/wiki/distributions)**: 27 distribution families with density, CDF, quantile, and random generation
+- **[Association](https://github.com/openforecast-org/greybox/wiki/association)**: Partial correlations and measures of association
+- **[Diagnostics](https://github.com/openforecast-org/greybox/wiki/diagnostics)**: Model diagnostics and validation
+- **[Smoothers](https://github.com/openforecast-org/greybox/wiki/Smoothers)**: `lowess` and `supsmu` matching R's `stats::lowess` and `stats::supsmu` to machine precision
+- **[Demand identification](https://github.com/openforecast-org/greybox/wiki/AID)**: `aid()` and `aid_cat()` for automatic classification of demand series and stockout detection
 
 ## Links
 
-- [Wiki documentation](https://github.com/config-i1/greybox/wiki)
-- [GitHub repository](https://github.com/config-i1/greybox)
+- [Wiki documentation](https://github.com/openforecast-org/greybox/wiki)
+- [GitHub repository](https://github.com/openforecast-org/greybox)
 - [R package on CRAN](https://cran.r-project.org/package=greybox)
 
 ## License

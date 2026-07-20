@@ -7,8 +7,8 @@ Authors@R: c(person("Ivan", "Svetunkov", email = "ivan@svetunkov.com", role = c(
                   comment="Senior Lecturer at Centre for Marketing Analytics and Forecasting, Lancaster University, UK"),
              person("Yves R.", "Sagaert", role = c("ctb"),
                   comment="Visiting Research at Centre for Marketing Analytics and Forecasting, Lancaster University, UK"))
-URL: https://github.com/config-i1/greybox
-BugReports: https://github.com/config-i1/greybox/issues
+URL: https://github.com/openforecast-org/greybox
+BugReports: https://github.com/openforecast-org/greybox/issues
 Language: en-GB
 Description: Implements functions and instruments for regression model building and its
              application to forecasting. The main scope of the package is in variables selection

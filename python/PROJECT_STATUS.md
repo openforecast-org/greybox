@@ -332,7 +332,7 @@ measures = accuracy(actual, forecast)
 
 ## References
 
-- Original R package: https://github.com/config-i1/greybox
+- Original R package: https://github.com/openforecast-org/greybox
 - R greybox on CRAN: https://cran.r-project.org/web/packages/greybox/
 
 ---

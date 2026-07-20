@@ -4,7 +4,7 @@
 
 [![CRAN_Status_Badge](http://www.r-pkg.org/badges/version/greybox)](https://cran.r-project.org/package=greybox)
 [![Downloads](http://cranlogs.r-pkg.org/badges/greybox)](https://cran.r-project.org/package=greybox)
-[![R-CMD-check](https://github.com/config-i1/greybox/actions/workflows/test.yml/badge.svg)](https://github.com/config-i1/greybox/actions/workflows/test.yml)
+[![R-CMD-check](https://github.com/openforecast-org/greybox/actions/workflows/test.yml/badge.svg)](https://github.com/openforecast-org/greybox/actions/workflows/test.yml)
 [![License: LGPL-2.1](https://img.shields.io/badge/License-LGPL--2.1-blue.svg)](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html)
 
 [![Conda Version](https://img.shields.io/conda/vn/conda-forge/r-greybox)](https://anaconda.org/conda-forge/r-greybox)
@@ -14,17 +14,17 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/greybox.svg)](https://pypi.org/project/greybox/)
 [![PyPI - Downloads](https://img.shields.io/pypi/dm/greybox.svg)](https://pypi.org/project/greybox/)
-[![Python CI](https://github.com/config-i1/greybox/actions/workflows/python-test.yml/badge.svg)](https://github.com/config-i1/greybox/actions/workflows/python-test.yml)
+[![Python CI](https://github.com/openforecast-org/greybox/actions/workflows/python-test.yml/badge.svg)](https://github.com/openforecast-org/greybox/actions/workflows/python-test.yml)
 [![Python versions](https://img.shields.io/pypi/pyversions/greybox.svg)](https://pypi.org/project/greybox/)
 
 The package _greybox_ contains functions for model building, which is currently done via the model selection and combinations based on information criteria. The resulting model can then be used in analysis and forecasting.
 
-![hex-sticker of the greybox package for R](https://github.com/config-i1/greybox/blob/master/man/figures/greybox-web.png?raw=true) ![hex-sticker of the greybox package for Python](https://github.com/config-i1/greybox/blob/master/python/img/greybox-python-web.png?raw=true)
+![hex-sticker of the greybox package for R](https://github.com/openforecast-org/greybox/blob/master/man/figures/greybox-web.png?raw=true) ![hex-sticker of the greybox package for Python](https://github.com/openforecast-org/greybox/blob/master/python/img/greybox-python-web.png?raw=true)
 
 There are several groups of functions in the package.
 
 ## Installation
-[Installation](https://github.com/config-i1/greybox/wiki/Installation) wiki explains how the package can be installed in R/Python.
+[Installation](https://github.com/openforecast-org/greybox/wiki/Installation) wiki explains how the package can be installed in R/Python.
 
 ### R Package
 
@@ -40,12 +40,12 @@ if (!require("remotes")){install.packages("remotes")}
 
 and after that run:
 ```r
-remotes::install_github("config-i1/greybox")
+remotes::install_github("openforecast-org/greybox")
 ```
 
 ## Python Package
 
-A Python port of greybox is available in the [python](https://github.com/config-i1/greybox/tree/master/python) subdirectory. It provides a scikit-learn-style API with support for 26+ distributions and R-style formula syntax.
+A Python port of greybox is available in the [python](https://github.com/openforecast-org/greybox/tree/master/python) subdirectory. It provides a scikit-learn-style API with support for 26+ distributions and R-style formula syntax.
 
 ```bash
 pip install greybox
@@ -53,7 +53,7 @@ pip install greybox
 
 ## Supported functions
 
-See [wiki](https://github.com/config-i1/greybox/wiki) for full documentation, examples, and supported distributions.
+See [wiki](https://github.com/openforecast-org/greybox/wiki) for full documentation, examples, and supported distributions.
 
 ### Regression model functions
 1. alm - Augmented Linear (regression) Model that implements likelihood estimation of parameters for Normal, Laplace, Asymmetric Laplace, Logistic, Student's t, S, Generalised Normal, Folded Normal, Log Normal, Box-Cox Normal, Logit Normal, Inverse Gaussian, Gamma, Poisson, Negative Binomial, Cumulative Logistic and Cumulative Normal distributions. In a sense this is similar to `glm()` function, but with a different set of distributions and with a focus on forecasting.
