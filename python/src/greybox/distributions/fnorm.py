@@ -5,8 +5,7 @@ generation for the folded normal distribution.
 """
 
 import numpy as np
-from scipy import stats
-from scipy import optimize
+from scipy import optimize, stats
 
 
 def dfnorm(q, loc=0, scale=1, log=False):
@@ -106,7 +105,7 @@ def qfnorm(p, loc=0, scale=1):
             result[i] = np.inf
         else:
 
-            def objective(x):
+            def objective(x, pi=pi):
                 return pfnorm(x, loc, scale) - pi
 
             try:

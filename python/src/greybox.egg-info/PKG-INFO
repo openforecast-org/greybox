@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: greybox
-Version: 1.0.4
+Version: 1.0.6
 Summary: Toolbox for model building and forecasting
 Author-email: Ivan Svetunkov <ivan@svetunkov.com>
 License: LGPL-2.1
@@ -188,6 +188,7 @@ support both `result.stockouts.start` (R-style attribute access) and
 - **[Diagnostics](https://github.com/openforecast-org/greybox/wiki/diagnostics)**: Model diagnostics and validation
 - **[Smoothers](https://github.com/openforecast-org/greybox/wiki/Smoothers)**: `lowess` and `supsmu` matching R's `stats::lowess` and `stats::supsmu` to machine precision
 - **[Demand identification](https://github.com/openforecast-org/greybox/wiki/AID)**: `aid()` and `aid_cat()` for automatic classification of demand series and stockout detection
+- **[Method comparison (RMCB)](https://github.com/openforecast-org/greybox/wiki/RMCB)**: `rmcb()` for the Nemenyi/MCB test comparing forecasting methods, with `"mcb"` and `"lines"` plots
 
 ## Links
 

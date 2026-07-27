@@ -4,9 +4,10 @@ This module provides functions for calculating various measures of association
 including partial correlations, multiple correlations, and correlation analysis.
 """
 
+from typing import Literal
+
 import numpy as np
 from scipy import stats
-from typing import Literal
 
 
 def pcor(
@@ -54,7 +55,7 @@ def pcor(
             y = y.reshape(-1, 1)
         x = np.column_stack([x, y])
 
-    n_obs, n_vars = x.shape
+    n_vars = x.shape[1]
 
     if n_vars < 2:
         raise ValueError("Need at least 2 variables")
@@ -258,7 +259,7 @@ def determination(
                     vector_correlations_multiple[i] = min(max(r_squared, 0.0), 1.0)
                 except np.linalg.LinAlgError:
                     vector_correlations_multiple[i] = 1.0
-        except Exception:
+        except Exception:  # noqa: BLE001 - degenerate matrix falls back to 1.0
             vector_correlations_multiple[:] = 1.0
     else:
         for i in range(n_variables):
@@ -277,7 +278,7 @@ def determination(
                 vector_correlations_multiple[i] = determination_calculator(
                     y - y_pred, y
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 - lstsq failure retries via stepwise
                 try:
                     data_dict = {"y": y}
                     for j in range(X.shape[1]):
@@ -287,7 +288,7 @@ def determination(
                     vector_correlations_multiple[i] = determination_calculator(
                         y - y_pred, y
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001 - stepwise fallback also failed
                     vector_correlations_multiple[i] = np.nan
 
     return vector_correlations_multiple
@@ -337,7 +338,7 @@ def association(
             y = y.reshape(-1, 1)
         x = np.column_stack([x, y])
 
-    n_obs, n_vars = x.shape
+    n_vars = x.shape[1]
 
     if n_vars < 2:
         raise ValueError("Need at least 2 variables")

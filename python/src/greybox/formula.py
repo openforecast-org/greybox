@@ -80,7 +80,7 @@ def _parse_transformation(term, caller_globals=None):
         inner = term[2:-1]
         return ("I", inner, True)
 
-    for func_name in TRANSFORMATIONS.keys():
+    for func_name in TRANSFORMATIONS:
         pattern = f"{func_name}\\(([^)]+)\\)"
         match = re.match(pattern, term)
         if match:
@@ -159,7 +159,7 @@ def _apply_transformation(var_name, data_dict, n_obs, caller_globals=None):
 
         return _B_op(base_data, k)
 
-    transform, base_var, is_protected = _parse_transformation(var_name, caller_globals)
+    transform, base_var, _ = _parse_transformation(var_name, caller_globals)
 
     if transform == "I":
         inner_transform, inner_base, _ = _parse_transformation(base_var, caller_globals)
@@ -306,7 +306,7 @@ def formula(
         if lhs:
             _, response_var, _ = _parse_transformation(lhs, caller_globals)
         # Preserve data column order (matches R's left-to-right data frame order)
-        all_data_vars_ordered = [k for k in data_dict.keys() if k != response_var]
+        all_data_vars_ordered = [k for k in data_dict if k != response_var]
 
         # Protect B(...) from +/- tokenizer
         _dot_b_protected: dict = {}
@@ -442,15 +442,11 @@ def formula(
 
         # Use the full term as the variable name (preserves transformations)
         var_name = term.strip()
-        if var_name.startswith("-"):
-            var_name = var_name[1:]
+        var_name = var_name.removeprefix("-")
 
-        try:
-            col = _apply_transformation(term, data_dict, n_obs, caller_globals)
-            X_columns.append(col)
-            var_names.append(var_name)
-        except ValueError:
-            raise
+        col = _apply_transformation(term, data_dict, n_obs, caller_globals)
+        X_columns.append(col)
+        var_names.append(var_name)
 
     if not intercept_added:
         X_columns.insert(0, np.ones(n_obs))
@@ -533,22 +529,20 @@ def _parse_formula_terms(formula_str: str) -> list[str]:
                 terms.append("-" + next_token)
             i += 2
             continue
-        if token == "*":
-            if len(terms) > 0 and i + 1 < len(tokens):
-                prev_term = terms[-1]
-                next_token = tokens[i + 1].strip()
-                if next_token and next_token not in ("+", "-", "*", ":", ""):
-                    terms[-1] = prev_term + " * " + next_token
-                    i += 2
-                    continue
-        if token == ":":
-            if len(terms) > 0 and i + 1 < len(tokens):
-                prev_term = terms[-1]
-                next_token = tokens[i + 1].strip()
-                if next_token and next_token not in ("+", "-", "*", ":", ""):
-                    terms[-1] = prev_term + " : " + next_token
-                    i += 2
-                    continue
+        if token == "*" and len(terms) > 0 and i + 1 < len(tokens):
+            prev_term = terms[-1]
+            next_token = tokens[i + 1].strip()
+            if next_token and next_token not in ("+", "-", "*", ":", ""):
+                terms[-1] = prev_term + " * " + next_token
+                i += 2
+                continue
+        if token == ":" and len(terms) > 0 and i + 1 < len(tokens):
+            prev_term = terms[-1]
+            next_token = tokens[i + 1].strip()
+            if next_token and next_token not in ("+", "-", "*", ":", ""):
+                terms[-1] = prev_term + " : " + next_token
+                i += 2
+                continue
         if token:
             terms.append(token)
         i += 1

@@ -198,14 +198,14 @@ class AidResult:
     """
 
     __slots__ = (
-        "y",
+        "ic",
         "models",
         "name",
-        "type",
-        "stockouts",
         "new",
         "obsolete",
-        "ic",
+        "stockouts",
+        "type",
+        "y",
     )
 
     def __init__(
@@ -213,8 +213,8 @@ class AidResult:
         y: np.ndarray,
         models: dict,
         name: str,
-        type: "AidType | dict",
-        stockouts: "Stockouts | dict",
+        type: AidType | dict,
+        stockouts: Stockouts | dict,
         new: bool,
         obsolete: bool,
         ic: str = "AICc",
@@ -335,7 +335,7 @@ class AidCatResult:
         the input columns.
     """
 
-    __slots__ = ("categories", "types", "anomalies", "results")
+    __slots__ = ("anomalies", "categories", "results", "types")
 
     def __init__(
         self,
@@ -708,7 +708,7 @@ def aid(
     else:
         scaled = y_sub / y_max
         y_is_binary = bool(np.all((scaled == 0) | (scaled == 1)))
-    # noqa: F841 — kept for parity with R, even though unused below.
+
     y_is_low_volume = bool(np.all(np.isin(y_sub, [0, 1, 2])))  # noqa: F841
     zeroes_left = bool(np.any(y_sub == 0))
     data_is_integer = bool(np.all(y == np.trunc(y)))

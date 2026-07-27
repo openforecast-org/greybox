@@ -90,16 +90,16 @@ class RMCBResult:
     """
 
     __slots__ = (
-        "mean",
-        "interval",
-        "vlines",
-        "groups",
-        "methods",
-        "p_value",
-        "level",
-        "model",
-        "select",
         "distribution",
+        "groups",
+        "interval",
+        "level",
+        "mean",
+        "methods",
+        "model",
+        "p_value",
+        "select",
+        "vlines",
     )
 
     def __init__(

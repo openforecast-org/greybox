@@ -6,8 +6,8 @@ the loss function (likelihood, MSE, MAE, etc.).
 
 import numpy as np
 
-from .transforms import mean_fast
 from . import distributions as dist
+from .transforms import mean_fast
 
 
 def _compute_log_lik_array(
@@ -165,7 +165,7 @@ def _entropy_adjustment(
     float
         Entropy adjustment value.
     """
-    from scipy.special import gammaln, digamma, betaln
+    from scipy.special import betaln, digamma, gammaln
 
     mu_otU = mu[otU]
 
@@ -305,7 +305,7 @@ def cf(
     float
         Cost function value (negative log-likelihood or loss).
     """
-    from .fitters import fitter, extractor_fitted
+    from .fitters import extractor_fitted, fitter
 
     if otU is None:
         otU = np.ones(len(y), dtype=bool)

@@ -5,19 +5,18 @@ Users should first use the formula module to get X and y, then pass them
 to the fit() method.
 """
 
-from typing import Literal
-
 import time as time_module
+from typing import ClassVar, Literal
 
+import nlopt
 import numpy as np
 import pandas as pd
-import nlopt
 from scipy import stats
 from scipy.special import gamma as _sp_gamma
 
-from .fitters import scaler_internal, extractor_fitted, extractor_residuals
-from .cost_function import cf
 from . import distributions as dist
+from .cost_function import cf
+from .fitters import extractor_fitted, extractor_residuals, scaler_internal
 from .methods.summary import SummaryResult
 from .transforms import bc_transform_inv as _bc_transform_inv
 from .xreg import xreg_expander
@@ -84,7 +83,7 @@ class PredictionResult:
         Type of interval: "none", "confidence", or "prediction".
     """
 
-    __slots__ = ("mean", "lower", "upper", "level", "variances", "side", "interval")
+    __slots__ = ("interval", "level", "lower", "mean", "side", "upper", "variances")
 
     def __init__(
         self,
@@ -287,7 +286,7 @@ class ALM:
     >>> _ = model.fit(X, y)
     """
 
-    DISTRIBUTIONS = [
+    DISTRIBUTIONS: ClassVar[list[str]] = [
         "dnorm",
         "dlaplace",
         "ds",
@@ -316,7 +315,15 @@ class ALM:
         "pnorm",
     ]
 
-    LOSS_FUNCTIONS = ["likelihood", "MSE", "MAE", "HAM", "LASSO", "RIDGE", "ROLE"]
+    LOSS_FUNCTIONS: ClassVar[list[str]] = [
+        "likelihood",
+        "MSE",
+        "MAE",
+        "HAM",
+        "LASSO",
+        "RIDGE",
+        "ROLE",
+    ]
 
     def __init__(
         self,
@@ -395,11 +402,10 @@ class ALM:
         if not isinstance(self.orders, (tuple, list)) or len(self.orders) != 3:
             raise ValueError("orders must be a tuple of 3 integers (p, d, q)")
 
-        if isinstance(self.occurrence, ALM):
-            if self.occurrence.fitted_values_ is None:
-                raise ValueError(
-                    "Occurrence ALM must be fitted before being passed to ALM()"
-                )
+        if isinstance(self.occurrence, ALM) and self.occurrence.fitted_values_ is None:
+            raise ValueError(
+                "Occurrence ALM must be fitted before being passed to ALM()"
+            )
 
     def fit(self, X, y, formula=None, feature_names=None):
         """Fit the ALM model.
@@ -575,7 +581,7 @@ class ALM:
         def _ols_init(Xd, yr):
             try:
                 return np.linalg.lstsq(Xd, yr, rcond=None)[0]
-            except Exception:
+            except Exception:  # noqa: BLE001 - any OLS failure falls back to None
                 return None
 
         B_ols = None
@@ -598,7 +604,7 @@ class ALM:
                 try:
                     XtX_mu = X_init.T @ X_init * mu_insample
                     B_ols = np.linalg.solve(XtX_mu, X_init.T @ (y - mu_insample))
-                except Exception:
+                except Exception:  # noqa: BLE001 - fall back to log-link OLS
                     yr = np.log(np.maximum(y, 1e-10))
                     B_ols = _ols_init(X_init, yr)
         elif self.distribution in (
@@ -800,7 +806,7 @@ class ALM:
             self.n_iter_ = opt.get_numevals()
             self._result = opt.last_optimum_value()
             self.nlopt_result_ = opt.last_optimize_result()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - report any optimiser failure, keep init
             if self.verbose > 0:
                 print(f"Optimization failed: {e}")
             B_opt = B_init
@@ -865,17 +871,19 @@ class ALM:
             mu_computed = fitter_result["mu"]
         else:
             linear_pred = X @ B_for_mu
-            if self.distribution in (
-                "dinvgauss",
-                "dgamma",
-                "dexp",
-                "dpois",
-                "dnbinom",
-                "dbinom",
-                "dgeom",
+            if (
+                self.distribution
+                in (
+                    "dinvgauss",
+                    "dgamma",
+                    "dexp",
+                    "dpois",
+                    "dnbinom",
+                    "dbinom",
+                    "dgeom",
+                )
+                or self.distribution == "dbeta"
             ):
-                mu_computed = np.exp(linear_pred)
-            elif self.distribution == "dbeta":
                 mu_computed = np.exp(linear_pred)
             else:
                 mu_computed = linear_pred

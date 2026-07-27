@@ -1,7 +1,8 @@
 """Summary results for ALM model."""
 
-import numpy as np
 from dataclasses import dataclass
+
+import numpy as np
 
 DISTRIBUTION_NAMES = {
     "dnorm": "Normal",

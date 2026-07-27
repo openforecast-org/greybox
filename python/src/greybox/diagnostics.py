@@ -3,9 +3,10 @@
 This module provides functions for outlier detection and model diagnostics.
 """
 
+from typing import Literal
+
 import numpy as np
 from scipy import stats
-from typing import Literal
 
 
 class OutlierResult:

@@ -19,6 +19,7 @@ src/greybox/point_measures.py
 src/greybox/pointlik.py
 src/greybox/predict.py
 src/greybox/quantile_measures.py
+src/greybox/rmcb.py
 src/greybox/rolling.py
 src/greybox/selection.py
 src/greybox/smoothers.py
@@ -71,7 +72,9 @@ tests/test_measures.py
 tests/test_pointlik_compare.py
 tests/test_quality.py
 tests/test_r_python_compare.py
+tests/test_rmcb.py
 tests/test_rolling.py
 tests/test_selection.py
+tests/test_stick.py
 tests/test_transforms.py
 tests/test_xreg.py

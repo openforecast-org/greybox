@@ -5,9 +5,9 @@ variables for use in regression models.
 """
 
 import re
+from typing import Literal
 
 import numpy as np
-from typing import Literal
 
 
 def xreg_transformer(

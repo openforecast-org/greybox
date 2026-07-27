@@ -1,7 +1,8 @@
 """Built-in datasets for greybox."""
 
-import pandas as pd
 from pathlib import Path
+
+import pandas as pd
 
 
 def _get_data_path(filename: str) -> Path:

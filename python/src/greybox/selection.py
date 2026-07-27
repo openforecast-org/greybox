@@ -6,7 +6,7 @@ and forecasting accuracy measures.
 
 import itertools
 import time
-from typing import Any, Literal, Optional, TypedDict, Union
+from typing import Any, ClassVar, Literal, TypedDict
 
 import numpy as np
 from pandas import DataFrame
@@ -151,7 +151,7 @@ class CALMResult:
             setattr(self, key, val)
 
     # Map public dict keys to private attribute names
-    _PRIVATE_MAP = {
+    _PRIVATE_MAP: ClassVar[dict[str, str]] = {
         "vcov": "_vcov_matrix",
         "fitted": "_fitted",
         "residuals": "_residuals",
@@ -687,7 +687,7 @@ class CALMResult:
         )
 
 
-def _convert_to_dict(data: Union[dict, DataFrame]) -> dict:
+def _convert_to_dict(data: dict | DataFrame) -> dict:
     """Convert DataFrame to dict if needed."""
     if isinstance(data, DataFrame):
         return data.to_dict(orient="list")
@@ -695,9 +695,9 @@ def _convert_to_dict(data: Union[dict, DataFrame]) -> dict:
 
 
 def _prepare_data(
-    data: Union[dict, DataFrame],
-    formula_str: Optional[str] = None,
-    subset: Optional[Any] = None,
+    data: dict | DataFrame,
+    formula_str: str | None = None,
+    subset: Any | None = None,
 ) -> tuple[dict, str, np.ndarray]:
     """Prepare data for stepwise selection.
 
@@ -809,7 +809,7 @@ def _calculate_associations(
                 corr = 0.0
 
             associations[var] = abs(corr) if not np.isnan(corr) else 0.0
-        except Exception:
+        except Exception:  # noqa: BLE001 - unstable correlation falls back to 0.0
             associations[var] = 0.0
 
     return associations
@@ -882,12 +882,12 @@ def _calculate_ic(
 
 
 def stepwise(
-    data: Union[dict, DataFrame],
+    data: dict | DataFrame,
     ic: Literal["AICc", "AIC", "BIC", "BICc"] = "AICc",
     silent: bool = True,
-    df: Optional[int] = None,
-    formula: Optional[str] = None,
-    subset: Optional[Any] = None,
+    df: int | None = None,
+    formula: str | None = None,
+    subset: Any | None = None,
     method: Literal["pearson", "kendall", "spearman"] = "pearson",
     distribution: str = "dnorm",
     occurrence: Literal["none", "plogis", "pnorm"] = "none",
@@ -955,7 +955,7 @@ def stepwise(
 
     data_dict = {k: np.array(v) for k, v in data_dict.items()}
 
-    x_vars = [k for k in data_dict.keys() if k != response_name]
+    x_vars = [k for k in data_dict if k != response_name]
 
     if len(x_vars) == 0:
         raise ValueError("Need at least one predictor variable")
@@ -1046,7 +1046,7 @@ def stepwise(
             all_ics[new_element] = current_ic
             m += 1
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - stop stepwise if a candidate fails
             if not silent:
                 print(f"Error fitting model with {new_element}: {e}")
             best_ic_not_found = False
@@ -1235,7 +1235,7 @@ def _combine_fitted(
 
 
 def CALM(
-    data: Union[dict, DataFrame],
+    data: dict | DataFrame,
     ic: Literal["AICc", "AIC", "BIC", "BICc"] = "AICc",
     bruteforce: bool = False,
     silent: bool = True,
@@ -1302,7 +1302,7 @@ def CALM(
     data_dict = _convert_to_dict(data)
     data_dict = {k: np.array(v, dtype=float) for k, v in data_dict.items()}
 
-    y_var = list(data_dict.keys())[0]
+    y_var = next(iter(data_dict))
     x_vars = list(data_dict.keys())[1:]
 
     if len(x_vars) == 0:
@@ -1489,7 +1489,7 @@ def CALM(
             if has_other and model.other_ is not None:
                 other_parameters[i] = model.other_  # type: ignore[index]
 
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 - skip models that fail to fit
             continue
 
     if not silent:
@@ -1511,7 +1511,7 @@ def CALM(
 
     # Build design matrix with all variables
     formula_full = f"{y_var} ~ " + " + ".join(x_vars)
-    y_final, X_full = formula_func(formula_full, data_dict, as_dataframe=True)
+    _y_final, X_full = formula_func(formula_full, data_dict, as_dataframe=True)
     X_matrix = np.array(X_full)
 
     coefficient_names = ["(Intercept)"] + list(x_vars)
@@ -1531,9 +1531,7 @@ def CALM(
     scale = _combine_scale(distribution, y, mu, other_combined, alpha_val, n_params)
 
     # Fitted values (distribution-specific)
-    if distribution == "dchisq":
-        other_for_fitted = other_combined
-    elif distribution == "dbcnorm":
+    if distribution == "dchisq" or distribution == "dbcnorm":
         other_for_fitted = other_combined
     else:
         other_for_fitted = 0.0

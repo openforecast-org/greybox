@@ -89,9 +89,3 @@ def rlaplace(n, loc=0, scale=1):
         Random values.
     """
     return stats.laplace.rvs(loc=loc, scale=scale, size=n)
-
-
-dalaplace = dlaplace
-palaplace = plaplace
-qlaplace = qlaplace
-rlaplace = rlaplace

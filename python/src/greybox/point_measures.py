@@ -47,8 +47,9 @@ References
   and estimation. Journal of the American Statistical Association, 102(477), 359-378.
 """
 
-import numpy as np
 from typing import Any, Literal
+
+import numpy as np
 
 from .hm import asymmetry
 
@@ -1010,7 +1011,7 @@ def measures(
     }
 
     if digits is not None:
-        for key in error_measures:
-            error_measures[key] = round(error_measures[key], digits)
+        for key, value in error_measures.items():
+            error_measures[key] = round(value, digits)
 
     return error_measures

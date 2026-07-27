@@ -7,8 +7,8 @@ and point-wise cumulative likelihood values.
 import numpy as np
 from scipy import stats
 
-from .alm import ALM
 from . import distributions as dist
+from .alm import ALM
 
 
 def point_lik_cumulative(model: ALM) -> np.ndarray:
@@ -31,7 +31,7 @@ def point_lik_cumulative(model: ALM) -> np.ndarray:
         CDF values evaluated at the model's actuals.
     """
     if not isinstance(model, ALM):
-        raise ValueError("model must be a fitted ALM")
+        raise TypeError("model must be a fitted ALM")
     distribution = model.distribution
     y = np.asarray(model.actuals, dtype=float)
     mu = np.asarray(model.fitted, dtype=float)
@@ -87,7 +87,7 @@ def point_lik(
     array([ 1.0297,  1.2967, -0.394 ,  0.7882,  1.2839])
     """
     if not isinstance(model, ALM):
-        raise ValueError("object must be a fitted ALM model")
+        raise TypeError("object must be a fitted ALM model")
 
     distribution = model.distribution
     y = model.actuals

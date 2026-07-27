@@ -14,7 +14,7 @@ For example, ``from greybox import association`` returns the function
 :func:`greybox.association.association`, not the submodule.
 """
 
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 
 try:
     __version__ = version("greybox")
@@ -30,87 +30,87 @@ from . import quantile_measures as quantile_measures
 from . import rolling as rolling
 from . import smoothers as smoothers
 
-# Re-export every distribution function (dnorm, pnorm, qnorm, rnorm, ds, dt,
-# dgeom, dpois, ...) at the top level so users can do ``from greybox import
-# dnorm`` directly.
-from .distributions import *  # noqa: F401,F403
-from .distributions import __all__ as _distribution_names
+# Automatic Identification of Demand
+from .aid import AidCatResult, AidResult, AidType, Stockouts, aid, aid_cat
 
 # Core fitting and prediction
 from .alm import ALM, PredictionResult
 
+# Association / correlation
+from .association import association, determination, mcor, pcor
+
+# Datasets
+from .data import mtcars
+
+# Diagnostics
+from .diagnostics import OutlierResult, outlier_dummy
+
+# Re-export every distribution function (dnorm, pnorm, qnorm, rnorm, ds, dt,
+# dgeom, dpois, ...) at the top level so users can do ``from greybox import
+# dnorm`` directly.
+from .distributions import *
+from .distributions import __all__ as _distribution_names
+
 # Formula interface
-from .formula import formula, expand_formula
+from .formula import expand_formula, formula
+
+# Half-moment measures
+from .hm import asymmetry, cextremity, extremity, ham, hm, mre
+
+# Point accuracy measures
+from .point_measures import (
+    gmrae,
+    mae,
+    mape,
+    mase,
+    me,
+    measures,
+    mpe,
+    mse,
+    rame,
+    rmae,
+    rmse,
+    rmsse,
+    rrmse,
+    same,
+    sce,
+    smse,
+    spis,
+)
+
+# Point likelihoods
+from .pointlik import point_lik, point_lik_cumulative
+
+# Quantile / interval scoring measures
+from .quantile_measures import mis, pinball, rmis, smis
+
+# Regression for Multiple Comparison with the Best
+from .rmcb import RMCBResult, rmcb
+
+# Rolling-origin cross-validation
+from .rolling import RollingOriginResult, rolling_origin
 
 # Model selection
-from .selection import stepwise, CALM, CALMResult
+from .selection import CALM, CALMResult, stepwise
+
+# Smoothers
+from .smoothers import lowess, supsmu
+
+# Seasonality, Trend, and Irregular Contribution Kit
+from .stick import StickResult, stick
+
+# Transforms
+from .transforms import bc_transform, bc_transform_inv, mean_fast
 
 # Variable processing
 from .xreg import (
     B,
     multipliers,
+    temporal_dummy,
     xreg_expander,
     xreg_multiplier,
     xreg_transformer,
-    temporal_dummy,
 )
-
-# Transforms
-from .transforms import bc_transform, bc_transform_inv, mean_fast
-
-# Rolling-origin cross-validation
-from .rolling import rolling_origin, RollingOriginResult
-
-# Datasets
-from .data import mtcars
-
-# Point likelihoods
-from .pointlik import point_lik, point_lik_cumulative
-
-# Automatic Identification of Demand
-from .aid import aid, aid_cat, AidResult, AidCatResult, AidType, Stockouts
-
-# Smoothers
-from .smoothers import lowess, supsmu
-
-# Association / correlation
-from .association import pcor, mcor, association, determination
-
-# Half-moment measures
-from .hm import hm, ham, asymmetry, extremity, cextremity, mre
-
-# Point accuracy measures
-from .point_measures import (
-    measures,
-    me,
-    mae,
-    mse,
-    rmse,
-    mpe,
-    mape,
-    mase,
-    rmsse,
-    same,
-    rmae,
-    rrmse,
-    rame,
-    smse,
-    spis,
-    sce,
-    gmrae,
-)
-
-# Quantile / interval scoring measures
-from .quantile_measures import pinball, mis, smis, rmis
-
-# Diagnostics
-from .diagnostics import outlier_dummy, OutlierResult
-
-# Seasonality, Trend, and Irregular Contribution Kit
-from .stick import stick, StickResult
-
-# Regression for Multiple Comparison with the Best
-from .rmcb import rmcb, RMCBResult
 
 __all__ = [
     "__version__",

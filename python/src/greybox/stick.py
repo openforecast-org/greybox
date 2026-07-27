@@ -40,7 +40,7 @@ class StickResult:
         Squares and sum up to one.
     """
 
-    __slots__ = ("y", "lags", "anova", "strength")
+    __slots__ = ("anova", "lags", "strength", "y")
 
     def __init__(
         self,

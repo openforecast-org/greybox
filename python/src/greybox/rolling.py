@@ -6,8 +6,10 @@ for time series models.
 
 import inspect
 import warnings
+from collections.abc import Callable
+from typing import Any
+
 import numpy as np
-from typing import Any, Callable, Optional
 
 
 class RollingOriginResult:
@@ -80,7 +82,7 @@ def _parse_call_result(result: Any, h_actual: int) -> dict:
     def _to_arr(v):
         return np.asarray(v, dtype=float)
 
-    if isinstance(result, np.ndarray) or isinstance(result, list):
+    if isinstance(result, (np.ndarray, list)):
         return {"mean": _to_arr(result)}
 
     if isinstance(result, tuple):
@@ -211,7 +213,9 @@ def rolling_origin(
             raise ValueError("Both model_fn and predict_fn must be provided together.")
         _mfn = model_fn
         _pfn = predict_fn
-        call = lambda data, h: _pfn(_mfn(data), h)  # noqa: E731
+
+        def call(data, h):
+            return _pfn(_mfn(data), h)
 
     if call is None:
         raise ValueError(
@@ -243,7 +247,7 @@ def rolling_origin(
     # Allocate output matrices (h, origins), NaN-filled
     holdout_mat = np.full((h, origins), np.nan)
     # Forecast matrices allocated after first call to know fields
-    fields_data: Optional[dict] = None
+    fields_data: dict | None = None
 
     n_done = 0
     for i in range(origins):
@@ -284,7 +288,7 @@ def rolling_origin(
 
         try:
             raw = call(train_data, h_actual, **extra_kwargs)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any model failure ends the loop
             if not silent:
                 print(f"Origin {i + 1}/{origins} failed: {e}")
             break

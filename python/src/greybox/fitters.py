@@ -7,9 +7,9 @@ fitterRecursive, and the cost function (cf).
 
 import numpy as np
 
-from .transforms import bc_transform, bc_transform_inv, mean_fast
-from .cost_function import cf  # noqa: F401 - re-exported for backwards compatibility
 from . import distributions as dist
+from .cost_function import cf  # noqa: F401 - re-exported for backwards compatibility
+from .transforms import bc_transform, bc_transform_inv, mean_fast
 
 
 def _plogis_log_residual(y: np.ndarray, mu: np.ndarray) -> np.ndarray:
@@ -144,10 +144,10 @@ def scaler_internal(
             mean_fast((np.log(y_otU / (1 - y_otU)) - mu_otU) ** 2, df, trim, side)
         )
 
-    elif distribution in ("dfnorm", "drectnorm", "dt", "dchisq"):
-        return np.abs(other) if other is not None else 1.0
-
-    elif distribution == "dnbinom":
+    elif (
+        distribution in ("dfnorm", "drectnorm", "dt", "dchisq")
+        or distribution == "dnbinom"
+    ):
         return np.abs(other) if other is not None else 1.0
 
     elif distribution == "dbinom":
@@ -373,32 +373,14 @@ def fitter(
         else:
             other = other if other is not None else 0.5
 
-    elif distribution == "dnbinom":
-        if not a_parameter_provided:
-            other = B[0]
-            B = B[1:]
-
-    elif distribution == "dchisq":
-        if not a_parameter_provided:
-            other = B[0]
-            B = B[1:]
-
-    elif distribution in ("dfnorm", "drectnorm"):
-        if not a_parameter_provided:
-            other = B[0]
-            B = B[1:]
-
-    elif distribution in ("dgnorm", "dlgnorm"):
-        if not a_parameter_provided:
-            other = B[0]
-            B = B[1:]
-
-    elif distribution == "dbcnorm":
-        if not a_parameter_provided:
-            other = B[0]
-            B = B[1:]
-
-    elif distribution == "dt":
+    elif (
+        distribution == "dnbinom"
+        or distribution == "dchisq"
+        or distribution in ("dfnorm", "drectnorm")
+        or distribution in ("dgnorm", "dlgnorm")
+        or distribution == "dbcnorm"
+        or distribution == "dt"
+    ):
         if not a_parameter_provided:
             other = B[0]
             B = B[1:]

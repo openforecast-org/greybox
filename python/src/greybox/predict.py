@@ -208,13 +208,8 @@ def predict(
         level_low = np.clip(level_low, 0, 1)
         level_up = np.clip(level_up, 0, 1)
 
-        if model.distribution == "dnorm":
-            if result.lower is not None:
-                result.lower = stats.norm.ppf(
-                    level_low, loc=result.mean, scale=model.scale
-                )
-                result.upper = stats.norm.ppf(
-                    level_up, loc=result.mean, scale=model.scale
-                )
+        if model.distribution == "dnorm" and result.lower is not None:
+            result.lower = stats.norm.ppf(level_low, loc=result.mean, scale=model.scale)
+            result.upper = stats.norm.ppf(level_up, loc=result.mean, scale=model.scale)
 
     return result
