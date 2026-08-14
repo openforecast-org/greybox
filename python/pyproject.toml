@@ -12,6 +12,9 @@ license = {text = "LGPL-2.1"}
 authors = [
     {name = "Ivan Svetunkov", email = "ivan@svetunkov.com"},
 ]
+maintainers = [
+    {name = "Ivan Svetunkov", email = "ivan@svetunkov.com"},
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
@@ -53,6 +56,7 @@ Repository    = "https://github.com/openforecast-org/greybox"
 Issues        = "https://github.com/openforecast-org/greybox/issues"
 Changelog     = "https://github.com/openforecast-org/greybox/releases"
 "R package"   = "https://cran.r-project.org/package=greybox"
+ORCID         = "https://orcid.org/0000-0001-7826-0281"
 
 [tool.setuptools.package-data]
 greybox = ["*.csv"]

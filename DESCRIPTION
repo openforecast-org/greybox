@@ -4,10 +4,11 @@ Title: Toolbox for Model Building and Forecasting
 Version: 2.0.9
 Date: 2026-06-29
 Authors@R: c(person("Ivan", "Svetunkov", email = "ivan@svetunkov.com", role = c("aut", "cre"),
-                  comment="Senior Lecturer at Centre for Marketing Analytics and Forecasting, Lancaster University, UK"),
+                  comment = c("Director of the OpenForecast consultancy company, UK",
+                              ORCID = "0000-0001-7826-0281")),
              person("Yves R.", "Sagaert", role = c("ctb"),
                   comment="Visiting Research at Centre for Marketing Analytics and Forecasting, Lancaster University, UK"))
-URL: https://github.com/openforecast-org/greybox
+URL: https://openforecast.org/packages/
 BugReports: https://github.com/openforecast-org/greybox/issues
 Language: en-GB
 Description: Implements functions and instruments for regression model building and its
