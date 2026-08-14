@@ -47,10 +47,12 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/openforecast-org/greybox"
-Repository = "https://github.com/openforecast-org/greybox"
+Homepage      = "https://openforecast.org/"
 Documentation = "https://openforecast-org.github.io/greybox/"
-Issues = "https://github.com/openforecast-org/greybox/issues"
+Repository    = "https://github.com/openforecast-org/greybox"
+Issues        = "https://github.com/openforecast-org/greybox/issues"
+Changelog     = "https://github.com/openforecast-org/greybox/releases"
+"R package"   = "https://cran.r-project.org/package=greybox"
 
 [tool.setuptools.package-data]
 greybox = ["*.csv"]
