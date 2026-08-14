@@ -113,3 +113,7 @@ See [wiki](https://github.com/openforecast-org/greybox/wiki) for full documentat
 
 ### Experimental functions:
 1. lmDynamic - linear regression with time varying parameters based on pAIC.
+
+## About
+
+`greybox` is developed and maintained by OpenForecast, a demand forecasting and inventory management consultancy. The package implements the methods we use in our [consulting](https://openforecast.org/consulting/) and teach in our [training courses](https://openforecast.org/training/).

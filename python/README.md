@@ -161,3 +161,7 @@ support both `result.stockouts.start` (R-style attribute access) and
 ## License
 
 [LGPL-2.1](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html)
+
+## About
+
+`greybox` is developed and maintained by OpenForecast, a demand forecasting and inventory management consultancy. The package implements the methods we use in our [consulting](https://openforecast.org/consulting/) and teach in our [training courses](https://openforecast.org/training/).
