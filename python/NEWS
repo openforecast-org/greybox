@@ -5,6 +5,41 @@ Python port of the R `greybox` package. The port tracks the R package,
 the most recent release of which is greybox v2.0.9 (Release date: 2026-02-24).
 
 
+greybox for Python v1.0.8 (2026-08-25)
+==============
+
+Changes:
+* `dgamma()` now computes the log-density the way R's `stats::dgamma` does,
+  through Loader's saddle-point form, in a new native extension
+  (`greybox._native_dgamma`). The previous implementation deferred to
+  `scipy.stats.gamma.logpdf`, which evaluates
+  `(a-1)*log(x) - x/s - lgamma(a) - a*log(s)` directly. Those terms very nearly
+  cancel once the shape grows, and the result loses accuracy accordingly:
+  against R the relative error was 8.4e-14 at a shape of 143 and 1.1e-11 at
+  10000, where the saddle-point form stays at about 2e-15 throughout. Small
+  shapes were never affected and are unchanged.
+
+  The difference is small but not harmless. It was found in `smooth`, where an
+  ADAM fit on M3 series N0737 stopped just short of the boundary `beta = 0`
+  that R reached, because the 1e-13 discrepancy was enough to flip a
+  Nelder-Mead simplex comparison; the log-likelihood came out 0.024 worse.
+  That fit now matches R exactly.
+
+  The extension is also faster than the SciPy path, by about 20x on the short
+  arrays a forecasting cost function evaluates -- 2.7us against 51.7us for 36
+  observations -- because it avoids SciPy's per-call overhead. On a whole ADAM
+  fit that is a 20% saving. NumPy overtakes it above roughly 5000 observations
+  with a fixed shape, which no competition series approaches. `shape` and
+  `scale` may now both vary per observation, which `smooth`'s scale model
+  requires.
+
+  R's conventions at the boundaries are reproduced: `+Inf` at `q = 0` for
+  `shape < 1`, `-log(scale)` at `shape == 1`, `-Inf` above; `-Inf` outside the
+  support and for non-finite `q`; `NaN` for an invalid parameter. If the
+  extension is unavailable the SciPy path is still used, so a source checkout
+  without a compiler keeps working.
+
+
 greybox for Python v1.0.7 (2026-08-25)
 ==============
 

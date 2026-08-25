@@ -25,6 +25,12 @@ ext_modules = [
         include_dirs=_EXTERN_INCLUDE_DIRS,
         cxx_std=17,
     ),
+    Pybind11Extension(
+        "greybox._native_dgamma",
+        sources=["src/greybox/_native/dgamma.cpp"],
+        include_dirs=_EXTERN_INCLUDE_DIRS,
+        cxx_std=17,
+    ),
 ]
 
 setup(ext_modules=ext_modules, cmdclass={"build_ext": build_ext})

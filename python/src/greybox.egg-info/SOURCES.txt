@@ -31,6 +31,7 @@ src/greybox.egg-info/SOURCES.txt
 src/greybox.egg-info/dependency_links.txt
 src/greybox.egg-info/requires.txt
 src/greybox.egg-info/top_level.txt
+src/greybox/_native/dgamma.cpp
 src/greybox/_native/lowess.cpp
 src/greybox/_native/supsmu.cpp
 src/greybox/distributions/__init__.py

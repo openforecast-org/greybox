@@ -406,3 +406,88 @@ class TestHelperFunctions:
         p = np.array([0.5])
         result = qnorm(p, loc=0.0, scale=1.0)
         np.testing.assert_array_almost_equal(result, np.array([0.0]))
+
+
+class TestDgammaAccuracy:
+    """`dgamma` uses Loader's saddle-point form, as R's stats::dgamma does.
+
+    The direct expression `(a-1)*log(x) - x/s - lgamma(a) - a*log(s)` cancels
+    once the shape grows: at a shape of 143 it loses about 1.4e-13, and at
+    10000 about 1e-11. That is enough to move an optimiser off a boundary,
+    which is how it was found -- an ADAM fit stopped short of beta = 0 where R
+    reached it.
+    """
+
+    # Reference values from R 4.6.1: dgamma(q, shape=, scale=, log=TRUE)
+    Q = np.array([0.5, 1.0, 2.5, 10.0])
+
+    def test_matches_r_at_moderate_shape(self):
+        from greybox import dgamma
+
+        expected = np.array(
+            [-1.8374107301096074, -1.4775968828829953,
+             -1.5613061510088402, -5.1750117898889494]
+        )
+        got = dgamma(self.Q, shape=2.0, scale=1.5, log=True)
+        np.testing.assert_allclose(got, expected, rtol=1e-13)
+
+    def test_beats_the_direct_expression_at_large_shape(self):
+        """Where it matters: a large shape is where the naive form loses bits."""
+        from scipy import stats
+
+        from greybox import dgamma
+
+        shape, scale = 10000.0, 0.001
+        q = np.array([9.0, 9.5, 10.0, 10.5, 11.0])
+        # R 4.6.1: dgamma(q, shape=10000, scale=0.001, log=TRUE)
+        expected = np.array(
+            [-52.116157836149142, -11.498012354661739, 1.3836382264560427,
+             -10.763510243393359, -45.60987391009968]
+        )
+        saddle = dgamma(q, shape=shape, scale=scale, log=True)
+        direct = stats.gamma.logpdf(q, a=shape, scale=scale)
+        # The saddle-point form tracks R to a few ulps; the direct expression
+        # is orders of magnitude further away at this shape.
+        err_saddle = np.max(np.abs((saddle - expected) / expected))
+        err_direct = np.max(np.abs((direct - expected) / expected))
+        assert err_saddle < 1e-13
+        assert err_direct > 10 * err_saddle
+
+    def test_shape_and_scale_may_vary_per_observation(self):
+        """The scale model in `smooth` passes a shape that changes each period."""
+        from greybox import dgamma
+
+        q = np.array([1.0, 2.0, 3.0])
+        shape = np.array([1.5, 2.0, 2.5])
+        scale = np.array([1.0, 1.5, 2.0])
+        got = dgamma(q, shape=shape, scale=scale, log=True)
+        one_by_one = [
+            float(dgamma(q[i], shape=shape[i], scale=scale[i], log=True))
+            for i in range(3)
+        ]
+        np.testing.assert_allclose(got, one_by_one, rtol=0, atol=0)
+
+    def test_log_and_density_agree(self):
+        from greybox import dgamma
+
+        q = np.array([0.5, 1.0, 4.0])
+        np.testing.assert_allclose(
+            dgamma(q, shape=2.0, scale=1.5),
+            np.exp(dgamma(q, shape=2.0, scale=1.5, log=True)),
+            rtol=1e-14,
+        )
+
+    def test_boundary_values_match_r(self):
+        """R's conventions at 0, at negative q, and for non-finite input."""
+        from greybox import dgamma
+
+        # q = 0: +Inf for shape < 1, -log(scale) at shape == 1, -Inf above
+        assert dgamma(0.0, shape=0.5, scale=2.0, log=True) == np.inf
+        assert dgamma(0.0, shape=1.0, scale=2.0, log=True) == -np.log(2.0)
+        assert dgamma(0.0, shape=2.0, scale=2.0, log=True) == -np.inf
+        # outside the support, and non-finite
+        assert dgamma(-1.0, shape=2.0, scale=1.0, log=True) == -np.inf
+        assert dgamma(np.inf, shape=2.0, scale=1.0, log=True) == -np.inf
+        assert np.isnan(dgamma(np.nan, shape=2.0, scale=1.0, log=True))
+        # an invalid parameter is NaN, not an exception
+        assert np.isnan(dgamma(1.0, shape=2.0, scale=-1.0, log=True))
