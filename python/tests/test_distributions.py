@@ -493,77 +493,109 @@ class TestDgammaAccuracy:
         assert np.isnan(dgamma(1.0, shape=2.0, scale=-1.0, log=True))
 
 
+def _assert_within_ulps(actual, desired, max_ulps=1):
+    """Compare against R allowing a bounded number of representable steps.
+
+    `exp` and `log` are not bit-reproducible: NumPy dispatches to different
+    SIMD kernels by version and CPU, so a density that routes through them can
+    land one ULP either side of R's value on a different machine. Anything
+    larger than that is a real defect -- the grouping bugs these tests were
+    written for cost tens to hundreds of ULPs -- while the one defect that is
+    exactly one ULP, the wrong `log(sqrt(2*pi))` constant, is pinned directly
+    by `test_constants_are_rs_literals` instead.
+    """
+    a = np.asarray(actual, dtype=float).ravel()
+    d = np.asarray(desired, dtype=float).ravel()
+    assert a.shape == d.shape
+
+    finite = np.isfinite(a) & np.isfinite(d)
+    np.testing.assert_array_equal(a[~finite], d[~finite])
+
+    gap = np.abs(a[finite] - d[finite])
+    unit = np.spacing(np.minimum(np.abs(a[finite]), np.abs(d[finite])))
+    unit = np.where(unit > 0, unit, np.spacing(0.0))
+    ulps = gap / unit
+    worst = float(ulps.max()) if ulps.size else 0.0
+    assert worst <= max_ulps, f"{worst:.1f} ULPs from R (limit {max_ulps})"
+
+
 class TestNormalRParity:
     """`dnorm`/`dlnorm` follow R's nmath term for term, not SciPy's grouping.
 
     SciPy computes its `log(sqrt(2*pi))` constant at import time and lands 1
-    ULP below the correctly-rounded value R hard-codes, and `lognorm` routes
-    `meanlog` through `exp()` and back. Neither matters on its own, but summed
-    over a series they move a log-likelihood in the last digits -- which is how
-    this surfaced, as an ADAM fit disagreeing with R in the 13th digit.
+    ULP below the correctly-rounded value R hard-codes, groups R's large-`|z|`
+    branch differently, and parameterises `lognorm` by `exp(meanlog)` so the
+    location makes a round trip through `exp()`. Neither matters on its own,
+    but summed over a series they move a log-likelihood in the last digits --
+    which is how this surfaced, as an ADAM fit disagreeing with R in the 13th
+    digit.
 
     All references are from R 4.6.1, printed at %.17g.
     """
+
+    def test_constants_are_rs_literals(self):
+        """The one defect that is exactly one ULP, pinned where it lives.
+
+        A ULP tolerance on the densities cannot see this, so assert the
+        constants themselves -- which is exact arithmetic and so portable.
+        """
+        from scipy.stats import _continuous_distns as scipy_norm
+
+        from greybox.distributions.helper import LN_SQRT_2PI, ONE_OVER_SQRT_2PI
+
+        assert LN_SQRT_2PI == 0.918938533204672741780329736406
+        assert ONE_OVER_SQRT_2PI == 0.398942280401432677939946059934
+
+        # Guard against a well-meaning "simplification" back to SciPy's value.
+        assert LN_SQRT_2PI != scipy_norm._norm_pdf_logC
+        assert LN_SQRT_2PI == np.nextafter(scipy_norm._norm_pdf_logC, np.inf)
 
     def test_dnorm_log_matches_r(self):
         from greybox import dnorm
 
         q = np.array([-3.0, -1.0, 0.0, 0.5, 2.0])
         expected = np.array(
-            [
-                -3.4495667842668429,
-                -1.7886671302876045,
-                -1.4772484451664971,
-                -1.4512968880730717,
-                -1.8924733586613067,
-            ]
+            [-3.4495667842668429, -1.7886671302876045, -1.4772484451664971,
+             -1.4512968880730717, -1.8924733586613067]
         )
-        got = dnorm(q, loc=0.4, scale=1.7, log=True)
-        np.testing.assert_array_equal(got, expected)
+        _assert_within_ulps(dnorm(q, loc=0.4, scale=1.7, log=True), expected)
 
     def test_dnorm_density_matches_r(self):
         from greybox import dnorm
 
         q = np.array([-3.0, -1.0, 0.0, 0.5, 2.0])
         expected = np.array(
-            [
-                0.031759392066581217,
-                0.16718285419212844,
-                0.22826490848509695,
-                0.234266273863697,
-                0.15069861577989621,
-            ]
+            [0.031759392066581217, 0.16718285419212844, 0.22826490848509695,
+             0.234266273863697, 0.15069861577989621]
         )
-        np.testing.assert_array_equal(dnorm(q, loc=0.4, scale=1.7), expected)
+        _assert_within_ulps(dnorm(q, loc=0.4, scale=1.7), expected)
 
     def test_dnorm_density_uses_rs_split_in_the_tail(self):
         """Past |z| = 5 R splits z so that z1*z1 is exact, and regroups the
-        division by sigma. Both are needed to land on R's bits."""
+        division by sigma. Getting either wrong costs far more than a ULP: the
+        split exists because z*z loses about two digits out here."""
         from greybox import dnorm
 
         q = np.array([6.0, 12.0, 20.0, 37.0, 38.5])
         expected = np.array(
-            [
-                6.0758828498232861e-09,
-                2.1463837356630605e-32,
-                5.5209483621597635e-88,
-                2.1200065515246056e-298,
-                5.434722104253712e-323,
-            ]
+            [6.0758828498232861e-09, 2.1463837356630605e-32,
+             5.5209483621597635e-88, 2.1200065515246056e-298,
+             5.434722104253712e-323]
         )
-        np.testing.assert_array_equal(dnorm(q, loc=0.0, scale=1.0), expected)
+        _assert_within_ulps(dnorm(q, loc=0.0, scale=1.0), expected)
 
     def test_dnorm_density_across_the_branch_boundary(self):
         from greybox import dnorm
 
         q = np.array([4.999, 5.0, 5.001])
         expected = np.array(
-            [1.4941709802283082e-06, 1.4867195147342977e-06, 1.4793037305678625e-06]
+            [1.4941709802283082e-06, 1.4867195147342977e-06,
+             1.4793037305678625e-06]
         )
-        np.testing.assert_array_equal(dnorm(q, loc=0.0, scale=1.0), expected)
+        _assert_within_ulps(dnorm(q, loc=0.0, scale=1.0), expected)
 
     def test_dnorm_degenerate_scale(self):
-        """R treats sigma == 0 as a point mass and sigma < 0 as an error."""
+        """No transcendental involved, so these are exact everywhere."""
         from greybox import dnorm
 
         assert dnorm(0.0, 0.0, 0.0, log=True) == np.inf
@@ -578,23 +610,29 @@ class TestNormalRParity:
 
         q = np.array([0.25, 1.0, 3.0, 10.0])
         expected_log = np.array(
-            [
-                -0.95041934582064536,
-                -1.1880656455541829,
-                -2.3242948342724565,
-                -4.5320788696191849,
-            ]
+            [-0.95041934582064536, -1.1880656455541829,
+             -2.3242948342724565, -4.5320788696191849]
         )
         expected_lin = np.array(
-            [
-                0.38657887922227269,
-                0.30481030534500203,
-                0.097852421902366177,
-                0.010758287732064791,
-            ]
+            [0.38657887922227269, 0.30481030534500203,
+             0.097852421902366177, 0.010758287732064791]
         )
-        np.testing.assert_array_equal(dlnorm(q, 0.5, 1.2, log=True), expected_log)
-        np.testing.assert_array_equal(dlnorm(q, 0.5, 1.2), expected_lin)
+        _assert_within_ulps(dlnorm(q, 0.5, 1.2, log=True), expected_log)
+        _assert_within_ulps(dlnorm(q, 0.5, 1.2), expected_lin)
+
+    def test_dlnorm_survives_a_meanlog_that_overflows_exp(self):
+        """R works from log(q); SciPy's lognorm wants exp(meanlog) as its
+        scale, which is +Inf here and takes the density with it. A structural
+        check, so it holds on any platform."""
+        from scipy import stats
+
+        from greybox import dlnorm
+
+        with np.errstate(over="ignore"):
+            scipy_route = float(stats.lognorm.logpdf(1e300, s=1.0, scale=np.exp(800.0)))
+        assert scipy_route == -np.inf
+
+        _assert_within_ulps(dlnorm(1e300, 800.0, 1.0, log=True), -6656.687119388368)
 
     def test_dlnorm_does_not_split_the_exponent(self):
         """Unlike dnorm, R's dlnorm has no large-|z| branch."""
@@ -602,7 +640,7 @@ class TestNormalRParity:
 
         q = np.array([1e-6, 1e6])
         expected = np.array([1.305609693717162e-160, 1.305609693717162e-172])
-        np.testing.assert_array_equal(dlnorm(q, 0.0, 0.5), expected)
+        _assert_within_ulps(dlnorm(q, 0.0, 0.5), expected)
 
     def test_dlnorm_non_positive_support(self):
         from greybox import dlnorm
@@ -612,6 +650,7 @@ class TestNormalRParity:
         assert dlnorm(0.0, 0.0, 1.0, log=True) == -np.inf
 
     def test_broadcasting_and_scalar_returns(self):
+        """Comparing the implementation against itself, so exact."""
         from greybox import dlnorm, dnorm
 
         q = np.array([0.5, 1.0])
@@ -635,6 +674,14 @@ class TestLowessRParity:
     recomputes the weights from the residuals, so by the third pass it has
     grown to tens of ULPs. It reached `smooth` through `msdecompose`, whose
     initial level and trend seed every ADAM fit.
+
+    These assert exact equality, where the normal-density tests above allow a
+    ULP: lowess uses only +, -, *, / and sqrt, all of which IEEE-754 requires
+    to be correctly rounded, so there is no `exp`/`log` kernel to vary by
+    platform. On these short vectors the bug is only 1-5 ULPs -- it reaches 21
+    on a 48-point series -- so a tolerance would not catch it. If this ever
+    fails on one platform of the wheel matrix and not others, the suspect is
+    FMA contraction in the weighted sums, not the algorithm.
 
     References are from R 4.6.1, printed at %.17g.
     """
