@@ -29,10 +29,11 @@ on:
         required: true
         type: string
 
-# Opt every JavaScript action (including those bundled inside
-# cibuildwheel, e.g. actions/setup-python) into the Node.js 24 runtime.
-# GitHub deprecated Node.js 20 on 2026-06-02 and removes it on
-# 2026-09-16; this env var is the documented opt-in for the transition.
+# Opt every JavaScript action into the Node.js 24 runtime. GitHub
+# deprecated Node.js 20 on 2026-06-02 and removes it on 2026-09-16; this
+# env var is the documented opt-in for the transition. Every action pinned
+# below now targets Node 24 on its own, so this is belt and braces -- it
+# still covers anything an action pulls in transitively.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -100,7 +101,7 @@ jobs:
       # Cache cibuildwheel's per-OS interpreter / pip download cache.
       # Scoped per (OS × Python build tag) so entries don't shadow.
       - name: Cache cibuildwheel
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/cibuildwheel
@@ -115,8 +116,16 @@ jobs:
       # cibuildwheel v3.1+ is required for Python 3.14 (cp314) support;
       # v2.21 only knows up to cp313 and emits
       # "No build identifiers selected" for cp314-* targets.
+      #
+      # Pinned at v4.x because v3.1's bundled action still used
+      # actions/setup-python@v5, which targets the deprecated Node.js 20
+      # runtime; v4.2.0 pins setup-python@v7. Note v4.0.0 made delvewheel
+      # the default Windows repair command: it bundles any DLLs an
+      # extension links against. These modules link only the MSVC runtime,
+      # so there should be nothing to bundle -- if a Windows wheel ever
+      # grows unexpected DLLs, set the repair command to "" to opt out.
       - name: Build & test wheels
-        uses: pypa/cibuildwheel@v3.1
+        uses: pypa/cibuildwheel@v4.2.0
         with:
           package-dir: python
           output-dir: wheelhouse
