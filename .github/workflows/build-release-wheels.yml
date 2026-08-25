@@ -49,12 +49,12 @@ jobs:
       matrix:
         python-version: ['3.11', '3.12', '3.13', '3.14']
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
@@ -94,14 +94,14 @@ jobs:
           - { os: windows-latest, cibw-build: 'cp314-win_amd64',  tag: 'cp314-win' }
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
       # Cache cibuildwheel's per-OS interpreter / pip download cache.
       # Scoped per (OS × Python build tag) so entries don't shadow.
       - name: Cache cibuildwheel
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/cibuildwheel
@@ -133,7 +133,7 @@ jobs:
           CIBW_BUILD: ${{ matrix.cibw-build }}
 
       - name: Upload wheels as artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           # Use the artifact-safe ``tag`` matrix field (no ``*`` glob).
           name: wheels-${{ matrix.tag }}
@@ -146,12 +146,12 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           fetch-depth: 0
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
           cache: 'pip'
@@ -163,7 +163,7 @@ jobs:
         run: python -m build --sdist python
 
       - name: Upload sdist artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: sdist
           path: ./python/dist/*.tar.gz
@@ -178,14 +178,14 @@ jobs:
       contents: write   # creating / updating the draft release
     steps:
       - name: Download all wheel artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
           pattern: 'wheels-*'
 
       - name: Download sdist artifact
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           name: sdist
           path: dist
@@ -194,7 +194,7 @@ jobs:
         run: ls -R dist/
 
       - name: Create or update draft release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           # draft: true means no git tag is created yet — GitHub creates
           # it at target_commitish when you click "Publish release".
