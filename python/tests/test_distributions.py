@@ -623,3 +623,88 @@ class TestNormalRParity:
         np.testing.assert_array_equal(vec, one_by_one)
         assert np.ndim(dnorm(0.0, 0.0, 1.0, log=True)) == 0
         assert np.ndim(dlnorm(1.0, 0.0, 1.0, log=True)) == 0
+
+
+class TestLowessRParity:
+    """`lowess` reproduces R's `stats::lowess` bit for bit.
+
+    R writes the weighted spread as `c += w[j]*fsquare(x[j]-a)`, i.e.
+    `w * (d*d)`. Grouping it as `(w*d)*d` instead -- which is what the
+    obvious transcription gives -- rounds differently. On the first pass that
+    is a single ULP on a handful of points, but each robustness iteration
+    recomputes the weights from the residuals, so by the third pass it has
+    grown to tens of ULPs. It reached `smooth` through `msdecompose`, whose
+    initial level and trend seed every ADAM fit.
+
+    References are from R 4.6.1, printed at %.17g.
+    """
+
+    Y = np.array([5.1, 4.8, 6.2, 7.9, 7.1, 8.8, 10.2, 9.6,
+                  11.4, 12.9, 12.1, 14.0, 15.5, 14.8, 16.9, 18.2])
+
+    def _x(self):
+        return np.arange(1.0, len(self.Y) + 1.0)
+
+    def _delta(self):
+        x = self._x()
+        return 0.01 * (x.max() - x.min())
+
+    def test_no_robustness_iterations(self):
+        from greybox import lowess
+
+        expected = np.array(
+            [4.6715846859949828, 5.4766143531910245, 6.278192991455807,
+             7.0785680313896782, 7.896077046191186, 8.7372497920341914,
+             9.5847045956795291, 10.413092474799761, 11.27456246249208,
+             12.147983145150626, 13.012681177911269, 13.911005042037619,
+             14.871039162529485, 15.844363967124965, 16.818381444194451,
+             17.801322159803576]
+        )
+        got = lowess(self._x(), self.Y, f=2/3, iter=0, delta=self._delta())["y"]
+        np.testing.assert_array_equal(np.asarray(got), expected)
+
+    def test_default_three_iterations(self):
+        from greybox import lowess
+
+        expected = np.array(
+            [4.6736695720586283, 5.4787720012611922, 6.2810512300883161,
+             7.0823228757198766, 7.9002527146868431, 8.7441363954588969,
+             9.5942741821776458, 10.42702057289198, 11.290899664578474,
+             12.166894360977235, 13.036632830275117, 13.940673027826001,
+             14.903211047241335, 15.877531413209672, 16.85284976726447,
+             17.836426270928342]
+        )
+        got = lowess(self._x(), self.Y, f=2/3, iter=3, delta=self._delta())["y"]
+        np.testing.assert_array_equal(np.asarray(got), expected)
+
+    def test_narrow_span(self):
+        from greybox import lowess
+
+        expected = np.array(
+            [4.7149069883293819, 5.4459005914617764, 6.283216773102807,
+             7.1720583949760561, 7.8279406037621406, 8.7165361945696205,
+             9.6245320867987676, 10.301809787621997, 11.316739293994434,
+             12.236605419802359, 12.893682742910295, 13.889333119839559,
+             14.868530157563477, 15.627248681780996, 16.805347858648197,
+             18.124370015834334]
+        )
+        got = lowess(self._x(), self.Y, f=1/3, iter=3, delta=self._delta())["y"]
+        np.testing.assert_array_equal(np.asarray(got), expected)
+
+    def test_outlier_exercises_the_robustness_weights(self):
+        """An outlier drives rw towards zero, which is where the grouping of
+        the weighted spread matters most."""
+        from greybox import lowess
+
+        y = self.Y.copy()
+        y[7] = 40.0
+        expected = np.array(
+            [4.6314979540192045, 5.4595173828137336, 6.2905313311696069,
+             7.1292107670736655, 7.9987799363845831, 8.9034231880395414,
+             9.7795461258959868, 10.609614376301353, 11.479182767447702,
+             12.338730291926391, 13.143947808875069, 13.982013806048878,
+             14.929947528711777, 15.894570954810234, 16.86257337469636,
+             17.839954009219824]
+        )
+        got = lowess(self._x(), y, f=2/3, iter=3, delta=self._delta())["y"]
+        np.testing.assert_array_equal(np.asarray(got), expected)

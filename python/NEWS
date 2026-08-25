@@ -55,6 +55,29 @@ Changes:
   R across 576 checked cases, degenerate arguments included: a zero `sigma` is a
   point mass, a negative one is `NaN`, and `dlnorm` is zero on `q <= 0`.
 
+* `lowess()` now reproduces R's `stats::lowess` bit for bit. R computes the
+  weighted spread of the x values as `c += w[j]*fsquare(x[j]-a)`, that is
+  `w * (d*d)`; the C++ here grouped it as `(w*d)*d`, and IEEE multiplication is
+  not associative. On the first pass that is one ULP on a handful of points,
+  but every robustness iteration recomputes the weights from the residuals, so
+  the error compounds -- on a 48-point series the third pass was out by 21 ULPs
+  on 42 of the 48 fitted values.
+
+  `lowess` is `msdecompose`'s own default smoother, and `msdecompose` supplies
+  `smooth`'s ADAM initial level and trend, so those ULPs become a different
+  starting seed. ADAM itself resolves `smoother="default"` to `"ma"` or
+  `"global"` and so does not reach this path unless `smoother="lowess"` is
+  asked for explicitly; callers of `msdecompose()` directly always do.
+
+  Checked against R over 900 (series, span) combinations drawn from the M1, M3
+  and Tourism competition data: all 900 now agree exactly, where before none of
+  the multi-iteration ones did.
+
+  The committed `_native_lowess` binaries for CPython 3.12 and 3.14 are rebuilt.
+  **The CPython 3.13 binary in `src/greybox/` is still the old one** -- no 3.13
+  interpreter was available to rebuild it -- so it must be rebuilt before
+  release or 3.13 users keep the old arithmetic.
+
 
 greybox for Python v1.0.7 (2026-08-25)
 ==============

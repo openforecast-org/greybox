@@ -38,7 +38,6 @@ void lowest(const std::vector<double>& x_sorted,
     double h1 = 0.001 * h;
 
     double a = 0.0;
-    std::size_t nrt = nright;
     std::fill(w.begin(), w.end(), 0.0);
 
     std::size_t j = nleft;
@@ -55,12 +54,17 @@ void lowest(const std::vector<double>& x_sorted,
             }
             w[j] *= rw_iter[j];
             a += w[j];
-            nrt = j;
         } else if (x_sorted[j] > xs) {
             break;
         }
         j++;
     }
+
+    // R's "rightmost pt (may be greater than nright because of ties)": the
+    // index the scan stopped at, not the last one that earned a weight. The
+    // extra entries carry w == 0, so they contribute nothing, but tracking the
+    // last accepted index instead would drop trailing ties.
+    std::size_t nrt = j - 1;
 
     if (a <= 0.0) {
         ys_out = 0.0;
@@ -81,7 +85,10 @@ void lowest(const std::vector<double>& x_sorted,
         double c = 0.0;
         for (std::size_t k = nleft; k <= nrt; ++k) {
             double diff = x_sorted[k] - a;
-            c += w[k] * diff * diff;
+            // R writes this as w[j]*fsquare(x[j]-a), i.e. w * (d*d).  Grouping
+            // it as (w*d)*d instead rounds differently, and the robustness
+            // iterations amplify that single ULP into tens of them.
+            c += w[k] * (diff * diff);
         }
         if (std::sqrt(c) > 0.001 * x_range) {
             b /= c;
