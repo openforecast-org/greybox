@@ -5,7 +5,7 @@ Python port of the R `greybox` package. The port tracks the R package,
 the most recent release of which is greybox v2.0.9 (Release date: 2026-02-24).
 
 
-greybox for Python v1.0.8 (2026-08-25)
+greybox for Python v1.0.7 (2026-08-25)
 ==============
 
 Changes:
@@ -77,10 +77,6 @@ Changes:
   **The CPython 3.13 binary in `src/greybox/` is still the old one** -- no 3.13
   interpreter was available to rebuild it -- so it must be rebuilt before
   release or 3.13 users keep the old arithmetic.
-
-
-greybox for Python v1.0.7 (2026-08-25)
-==============
 
 Bugfixes:
 * The Inverse Gaussian functions did not implement the parameterisation they
