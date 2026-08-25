@@ -39,6 +39,22 @@ Changes:
   extension is unavailable the SciPy path is still used, so a source checkout
   without a compiler keeps working.
 
+* `dnorm()` and `dlnorm()` now evaluate the density the way R's nmath does,
+  instead of deferring to `scipy.stats`. Three things differed. SciPy computes
+  its `log(sqrt(2*pi))` constant at import as `log(sqrt(2*pi))`, which lands one
+  ULP below the correctly-rounded value R hard-codes; R regroups the division by
+  `sigma` in its large-`|z|` branch and splits `z = z1 + z2` with `|z2| <= 2^-16`
+  so that `z1*z1` is exact; and `scipy.stats.lognorm` takes `exp(meanlog)` as its
+  scale, so `dlnorm` routed the location through `exp()` and back rather than
+  working from `log(q)` as R does.
+
+  Each difference is a handful of ULPs on its own, but they accumulate over a
+  summed log-likelihood. In `smooth` this showed up as an ADAM fit on M3 series
+  M230 whose log-likelihood differed from R's in the 13th digit, with 48 of its
+  309 per-observation terms one ULP out. Both functions are now bit-identical to
+  R across 576 checked cases, degenerate arguments included: a zero `sigma` is a
+  point mass, a negative one is `NaN`, and `dlnorm` is zero on `q <= 0`.
+
 
 greybox for Python v1.0.7 (2026-08-25)
 ==============

@@ -7,6 +7,8 @@ Note: Random generation is not implemented as per requirements.
 import numpy as np
 from scipy import stats
 
+from .helper import LN_SQRT_2PI, ONE_OVER_SQRT_2PI
+
 
 def dlnorm(q, loc=0, scale=1, log=False):
     """Log-Normal distribution density.
@@ -30,9 +32,22 @@ def dlnorm(q, loc=0, scale=1, log=False):
     array
         Density values.
     """
-    if log:
-        return stats.lognorm.logpdf(q, s=scale, scale=np.exp(loc))
-    return stats.lognorm.pdf(q, s=scale, scale=np.exp(loc))
+    q, loc, scale = np.broadcast_arrays(
+        *(np.asarray(v, dtype=np.float64) for v in (q, loc, scale))
+    )
+
+    # R works from log(q) directly rather than routing meanlog through exp()
+    # and back, takes a single log of the product q*sdlog, and -- unlike
+    # dnorm -- never splits the exponent.
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        z = (np.log(q) - loc) / scale
+        if log:
+            out = -(LN_SQRT_2PI + 0.5 * z * z + np.log(q * scale))
+        else:
+            out = ONE_OVER_SQRT_2PI * np.exp(-0.5 * z * z) / (q * scale)
+        out = np.where(q <= 0, -np.inf if log else 0.0, out)
+
+    return out if out.ndim else out[()]
 
 
 def plnorm(q, loc=0, scale=1):

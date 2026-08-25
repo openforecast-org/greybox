@@ -1,6 +1,18 @@
 """Helper distribution functions."""
 
+import numpy as np
 from scipy import stats
+
+# R's nmath spells these as correctly-rounded literals. SciPy instead computes
+# log(sqrt(2*pi)) at import time, landing 1 ULP low, which is enough to shift a
+# summed log-likelihood in the last few digits away from R's.
+LN_SQRT_2PI = 0.918938533204672741780329736406
+ONE_OVER_SQRT_2PI = 0.398942280401432677939946059934
+
+# Beyond this |z| the density underflows to zero anyway:
+# sqrt(-2*ln2*(DBL_MIN_EXP + 1 - DBL_MANT_DIG)).  R/nmath/dnorm.c, following
+# Welinder's PR#15620.
+_Z_UNDERFLOW = 38.56804181549334
 
 
 def dnorm(q, loc=0.0, scale=1.0, log=False):
@@ -25,9 +37,46 @@ def dnorm(q, loc=0.0, scale=1.0, log=False):
     array
         Density values.
     """
-    if log:
-        return stats.norm.logpdf(q, loc=loc, scale=scale)
-    return stats.norm.pdf(q, loc=loc, scale=scale)
+    q, loc, scale = np.broadcast_arrays(
+        *(np.asarray(v, dtype=np.float64) for v in (q, loc, scale))
+    )
+
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        z = np.abs((q - loc) / scale)
+
+        if log:
+            out = -(LN_SQRT_2PI + 0.5 * z * z + np.log(scale))
+        else:
+            out = np.where(scale < 0, np.nan, _dnorm_density(z, scale))
+
+        # A zero scale is a point mass at loc, infinite on either measure.
+        # Everywhere else z already carries the degenerate inputs through to
+        # the right answer.
+        out = np.where(
+            scale == 0,
+            np.where(q == loc, np.inf, -np.inf if log else 0.0),
+            out,
+        )
+
+    return out if out.ndim else out[()]
+
+
+def _dnorm_density(z, scale):
+    """Normal density from |z|, reproducing R's two branches term for term.
+
+    Below |z| = 5 R divides the whole product by sigma; above it R divides the
+    constant by sigma first and splits z = z1 + z2 with |z2| <= 2^-16 so that
+    z1*z1 is exact. The two groupings round differently, so both are kept.
+    """
+    simple = ONE_OVER_SQRT_2PI * np.exp(-0.5 * z * z) / scale
+
+    z1 = np.ldexp(np.round(np.ldexp(z, 16)), -16)
+    z2 = z - z1
+    split = (ONE_OVER_SQRT_2PI / scale) * (
+        np.exp(-0.5 * z1 * z1) * np.exp((-0.5 * z2 - z1) * z2)
+    )
+
+    return np.where(z < 5.0, simple, np.where(z > _Z_UNDERFLOW, 0.0, split))
 
 
 def plogis(y, loc=0.0, scale=1.0, log=False, lower_tail=True):

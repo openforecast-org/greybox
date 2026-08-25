@@ -491,3 +491,135 @@ class TestDgammaAccuracy:
         assert np.isnan(dgamma(np.nan, shape=2.0, scale=1.0, log=True))
         # an invalid parameter is NaN, not an exception
         assert np.isnan(dgamma(1.0, shape=2.0, scale=-1.0, log=True))
+
+
+class TestNormalRParity:
+    """`dnorm`/`dlnorm` follow R's nmath term for term, not SciPy's grouping.
+
+    SciPy computes its `log(sqrt(2*pi))` constant at import time and lands 1
+    ULP below the correctly-rounded value R hard-codes, and `lognorm` routes
+    `meanlog` through `exp()` and back. Neither matters on its own, but summed
+    over a series they move a log-likelihood in the last digits -- which is how
+    this surfaced, as an ADAM fit disagreeing with R in the 13th digit.
+
+    All references are from R 4.6.1, printed at %.17g.
+    """
+
+    def test_dnorm_log_matches_r(self):
+        from greybox import dnorm
+
+        q = np.array([-3.0, -1.0, 0.0, 0.5, 2.0])
+        expected = np.array(
+            [
+                -3.4495667842668429,
+                -1.7886671302876045,
+                -1.4772484451664971,
+                -1.4512968880730717,
+                -1.8924733586613067,
+            ]
+        )
+        got = dnorm(q, loc=0.4, scale=1.7, log=True)
+        np.testing.assert_array_equal(got, expected)
+
+    def test_dnorm_density_matches_r(self):
+        from greybox import dnorm
+
+        q = np.array([-3.0, -1.0, 0.0, 0.5, 2.0])
+        expected = np.array(
+            [
+                0.031759392066581217,
+                0.16718285419212844,
+                0.22826490848509695,
+                0.234266273863697,
+                0.15069861577989621,
+            ]
+        )
+        np.testing.assert_array_equal(dnorm(q, loc=0.4, scale=1.7), expected)
+
+    def test_dnorm_density_uses_rs_split_in_the_tail(self):
+        """Past |z| = 5 R splits z so that z1*z1 is exact, and regroups the
+        division by sigma. Both are needed to land on R's bits."""
+        from greybox import dnorm
+
+        q = np.array([6.0, 12.0, 20.0, 37.0, 38.5])
+        expected = np.array(
+            [
+                6.0758828498232861e-09,
+                2.1463837356630605e-32,
+                5.5209483621597635e-88,
+                2.1200065515246056e-298,
+                5.434722104253712e-323,
+            ]
+        )
+        np.testing.assert_array_equal(dnorm(q, loc=0.0, scale=1.0), expected)
+
+    def test_dnorm_density_across_the_branch_boundary(self):
+        from greybox import dnorm
+
+        q = np.array([4.999, 5.0, 5.001])
+        expected = np.array(
+            [1.4941709802283082e-06, 1.4867195147342977e-06, 1.4793037305678625e-06]
+        )
+        np.testing.assert_array_equal(dnorm(q, loc=0.0, scale=1.0), expected)
+
+    def test_dnorm_degenerate_scale(self):
+        """R treats sigma == 0 as a point mass and sigma < 0 as an error."""
+        from greybox import dnorm
+
+        assert dnorm(0.0, 0.0, 0.0, log=True) == np.inf
+        assert dnorm(1.0, 0.0, 0.0, log=True) == -np.inf
+        assert dnorm(1.0, 0.0, 0.0) == 0.0
+        assert np.isnan(dnorm(1.0, 0.0, -1.0))
+        assert np.isnan(dnorm(1.0, 0.0, -1.0, log=True))
+        assert dnorm(1.0, 0.0, np.inf) == 0.0
+
+    def test_dlnorm_matches_r(self):
+        from greybox import dlnorm
+
+        q = np.array([0.25, 1.0, 3.0, 10.0])
+        expected_log = np.array(
+            [
+                -0.95041934582064536,
+                -1.1880656455541829,
+                -2.3242948342724565,
+                -4.5320788696191849,
+            ]
+        )
+        expected_lin = np.array(
+            [
+                0.38657887922227269,
+                0.30481030534500203,
+                0.097852421902366177,
+                0.010758287732064791,
+            ]
+        )
+        np.testing.assert_array_equal(dlnorm(q, 0.5, 1.2, log=True), expected_log)
+        np.testing.assert_array_equal(dlnorm(q, 0.5, 1.2), expected_lin)
+
+    def test_dlnorm_does_not_split_the_exponent(self):
+        """Unlike dnorm, R's dlnorm has no large-|z| branch."""
+        from greybox import dlnorm
+
+        q = np.array([1e-6, 1e6])
+        expected = np.array([1.305609693717162e-160, 1.305609693717162e-172])
+        np.testing.assert_array_equal(dlnorm(q, 0.0, 0.5), expected)
+
+    def test_dlnorm_non_positive_support(self):
+        from greybox import dlnorm
+
+        assert dlnorm(0.0, 0.0, 1.0) == 0.0
+        assert dlnorm(-1.0, 0.0, 1.0) == 0.0
+        assert dlnorm(0.0, 0.0, 1.0, log=True) == -np.inf
+
+    def test_broadcasting_and_scalar_returns(self):
+        from greybox import dlnorm, dnorm
+
+        q = np.array([0.5, 1.0])
+        vec = dnorm(q, loc=np.array([0.0, 1.0]), scale=np.array([1.0, 2.0]), log=True)
+        one_by_one = [
+            float(dnorm(0.5, 0.0, 1.0, log=True)),
+            float(dnorm(1.0, 1.0, 2.0, log=True)),
+        ]
+        np.testing.assert_array_equal(vec, one_by_one)
+        assert np.ndim(dnorm(0.0, 0.0, 1.0, log=True)) == 0
+        assert np.ndim(dlnorm(1.0, 0.0, 1.0, log=True)) == 0
