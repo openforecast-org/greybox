@@ -73,11 +73,6 @@ Changes:
   and Tourism competition data: all 900 now agree exactly, where before none of
   the multi-iteration ones did.
 
-  The committed `_native_lowess` binaries for CPython 3.12 and 3.14 are rebuilt.
-  **The CPython 3.13 binary in `src/greybox/` is still the old one** -- no 3.13
-  interpreter was available to rebuild it -- so it must be rebuilt before
-  release or 3.13 users keep the old arithmetic.
-
 Bugfixes:
 * The Inverse Gaussian functions did not implement the parameterisation they
   document. `dinvgauss`, `pinvgauss`, `qinvgauss` and `rinvgauss` describe

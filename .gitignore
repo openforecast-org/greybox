@@ -36,3 +36,12 @@ __pycache__/
 .venv/
 dist/
 python/dist/
+python/build/
+
+# Compiled extensions. CI builds these for every wheel, and `pip install -e .`
+# builds them for a local checkout, so a committed copy is never read -- it only
+# shadows the fresh build for whichever ABI happens to match.
+*.so
+*.pyd
+*.dylib
+*.o
