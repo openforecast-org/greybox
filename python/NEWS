@@ -5,6 +5,26 @@ Python port of the R `greybox` package. The port tracks the R package,
 the most recent release of which is greybox v2.0.9 (Release date: 2026-02-24).
 
 
+greybox for Python v1.0.7 (2026-08-25)
+==============
+
+Bugfixes:
+* The Inverse Gaussian functions did not implement the parameterisation they
+  document. `dinvgauss`, `pinvgauss`, `qinvgauss` and `rinvgauss` describe
+  `loc` as the mean and `scale` as the dispersion -- matching R's
+  `statmod::dinvgauss(mean=, dispersion=)` -- but passed `loc` straight through
+  as SciPy's *shape* and `scale` as SciPy's *scale*, which is a different
+  distribution. SciPy's standard form is `IG(mean=mu, lambda=1)` and a `scale`
+  of `s` gives `IG(mean=s*mu, lambda=s)`, so with `lambda = 1/dispersion` the
+  mapping is `mu = mean*dispersion` and SciPy's `scale = 1/dispersion`. Against
+  `statmod` at `mean=1, dispersion=0.6` the density was out by up to 1.49 and
+  the quantiles by 0.83; both now agree to 4e-15.
+* The R-comparison tests for those four functions only ever exercised
+  `loc=1, scale=1`, the one point at which several wrong parameterisations
+  coincide with the right one, so they could not detect this. They now run at
+  `loc=1.4, scale=0.6`.
+
+
 greybox for Python v1.0.4 (2026-06-22)
 ==============
 

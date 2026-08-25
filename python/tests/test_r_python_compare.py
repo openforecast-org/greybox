@@ -1104,58 +1104,56 @@ class TestChisqFuncvsR:
 class TestInvGaussFuncvsR:
     """Compare Inverse Gaussian distribution between R and Python.
 
-    Uses R's statmod::dinvgauss for comparison. The parameterization mapping:
-    Python: dinvgauss(q, mu, scale) uses scipy invgauss(loc=mu, scale=scale)
-    where mean = mu * scale, shape = scale / mu^2.
-    R statmod: dinvgauss(q, mean, dispersion) where dispersion = 1/lambda.
-    Mapping: mean = mu * scale, dispersion = mu (since lambda = scale/mu^2,
-    dispersion = mu^2/scale, but actually dispersion = mean/lambda = mu*scale / (scale/mu^2)... ).
-    We test with loc=1, scale=1 where the mapping is straightforward.
+    Python's ``loc``/``scale`` are the mean and the dispersion, exactly as in
+    R's ``statmod::dinvgauss(mean=, dispersion=)``, so the two are compared at
+    the same arguments with no mapping in between.
+
+    Tested away from ``loc=1, scale=1``: at that point several wrong
+    parameterisations coincide with the right one, so it cannot tell them
+    apart.
     """
 
     def test_dinvgauss(self):
         """Test density function."""
         q = np.array([0.5, 1.0, 1.5, 2.0, 3.0])
-        mu, scale = 1.0, 1.0
+        mu, scale = 1.4, 0.6
 
         py_result = dinvgauss(q, loc=mu, scale=scale)
         ro.r["library"]("statmod")
-        r_result = call_r_func("dinvgauss", q, mean=mu * scale, dispersion=mu**3)
+        r_result = call_r_func("dinvgauss", q, mean=mu, dispersion=scale)
 
         assert_allclose(py_result, r_result, rtol=1e-10)
 
     def test_dinvgauss_log(self):
         """Test density function with log=True."""
         q = np.array([0.5, 1.0, 1.5, 2.0, 3.0])
-        mu, scale = 1.0, 1.0
+        mu, scale = 1.4, 0.6
 
         py_result = dinvgauss(q, loc=mu, scale=scale, log=True)
         ro.r["library"]("statmod")
-        r_result = np.log(
-            call_r_func("dinvgauss", q, mean=mu * scale, dispersion=mu**3)
-        )
+        r_result = np.log(call_r_func("dinvgauss", q, mean=mu, dispersion=scale))
 
         assert_allclose(py_result, r_result, rtol=1e-10)
 
     def test_pinvgauss(self):
         """Test CDF function."""
         q = np.array([0.5, 1.0, 1.5, 2.0, 3.0])
-        mu, scale = 1.0, 1.0
+        mu, scale = 1.4, 0.6
 
         py_result = pinvgauss(q, loc=mu, scale=scale)
         ro.r["library"]("statmod")
-        r_result = call_r_func("pinvgauss", q, mean=mu * scale, dispersion=mu**3)
+        r_result = call_r_func("pinvgauss", q, mean=mu, dispersion=scale)
 
         assert_allclose(py_result, r_result, rtol=1e-10)
 
     def test_qinvgauss(self):
         """Test quantile function."""
         p = np.array([0.1, 0.25, 0.5, 0.75, 0.9])
-        mu, scale = 1.0, 1.0
+        mu, scale = 1.4, 0.6
 
         py_result = qinvgauss(p, loc=mu, scale=scale)
         ro.r["library"]("statmod")
-        r_result = call_r_func("qinvgauss", p, mean=mu * scale, dispersion=mu**3)
+        r_result = call_r_func("qinvgauss", p, mean=mu, dispersion=scale)
 
         assert_allclose(py_result, r_result, rtol=1e-10)
 

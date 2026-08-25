@@ -2,9 +2,23 @@
 
 Density, cumulative distribution, quantile functions and random number
 generation for the Inverse Gaussian distribution.
+
+Parameterised by ``loc`` (the mean) and ``scale`` (the dispersion), matching
+R's ``statmod::dinvgauss(mean=, dispersion=)``, which is what ADAM's
+``dinvgauss`` error distribution is written against.
+
+SciPy parameterises the same distribution differently: its standard form is
+``IG(mean=mu, lambda=1)``, and a ``scale`` of ``s`` gives ``IG(mean=s*mu,
+lambda=s)``. With ``lambda = 1 / dispersion`` that makes the mapping
+``mu = mean * dispersion`` and SciPy's ``scale = 1 / dispersion``.
 """
 
 from scipy import stats
+
+
+def _scipy_args(loc, scale):
+    """Map ``(mean, dispersion)`` onto SciPy's ``(mu, scale)``."""
+    return {"mu": loc * scale, "scale": 1.0 / scale}
 
 
 def dinvgauss(q, loc=1, scale=1, log=False):
@@ -15,9 +29,9 @@ def dinvgauss(q, loc=1, scale=1, log=False):
     q : array_like
         Quantiles (must be positive).
     loc : float
-        Mean parameter.
+        Mean of the distribution.
     scale : float
-        Scale parameter.
+        Dispersion (the reciprocal of the shape ``lambda``).
     log : bool
         If True, return log-density.
 
@@ -27,8 +41,8 @@ def dinvgauss(q, loc=1, scale=1, log=False):
         Density values.
     """
     if log:
-        return stats.invgauss.logpdf(q, mu=loc, scale=scale)
-    return stats.invgauss.pdf(q, mu=loc, scale=scale)
+        return stats.invgauss.logpdf(q, **_scipy_args(loc, scale))
+    return stats.invgauss.pdf(q, **_scipy_args(loc, scale))
 
 
 def pinvgauss(q, loc=1, scale=1):
@@ -39,16 +53,16 @@ def pinvgauss(q, loc=1, scale=1):
     q : array_like
         Quantiles.
     loc : float
-        Mean parameter.
+        Mean of the distribution.
     scale : float
-        Scale parameter.
+        Dispersion (the reciprocal of the shape ``lambda``).
 
     Returns
     -------
     array
         CDF values.
     """
-    return stats.invgauss.cdf(q, mu=loc, scale=scale)
+    return stats.invgauss.cdf(q, **_scipy_args(loc, scale))
 
 
 def qinvgauss(p, loc=1, scale=1):
@@ -59,16 +73,16 @@ def qinvgauss(p, loc=1, scale=1):
     p : array_like
         Probabilities.
     loc : float
-        Mean parameter.
+        Mean of the distribution.
     scale : float
-        Scale parameter.
+        Dispersion (the reciprocal of the shape ``lambda``).
 
     Returns
     -------
     array
         Quantile values.
     """
-    return stats.invgauss.ppf(p, mu=loc, scale=scale)
+    return stats.invgauss.ppf(p, **_scipy_args(loc, scale))
 
 
 def rinvgauss(n, loc=1, scale=1):
@@ -79,13 +93,13 @@ def rinvgauss(n, loc=1, scale=1):
     n : int
         Number of observations.
     loc : float
-        Mean parameter.
+        Mean of the distribution.
     scale : float
-        Scale parameter.
+        Dispersion (the reciprocal of the shape ``lambda``).
 
     Returns
     -------
     array
         Random values.
     """
-    return stats.invgauss.rvs(mu=loc, scale=scale, size=n)
+    return stats.invgauss.rvs(size=n, **_scipy_args(loc, scale))
