@@ -679,9 +679,14 @@ class TestLowessRParity:
     ULP: lowess uses only +, -, *, / and sqrt, all of which IEEE-754 requires
     to be correctly rounded, so there is no `exp`/`log` kernel to vary by
     platform. On these short vectors the bug is only 1-5 ULPs -- it reaches 21
-    on a 48-point series -- so a tolerance would not catch it. If this ever
-    fails on one platform of the wheel matrix and not others, the suspect is
-    FMA contraction in the weighted sums, not the algorithm.
+    on a 48-point series -- so a tolerance would not catch it.
+
+    Exact equality holds only because the extensions are built with
+    `-ffp-contract=off` (see `setup.py`). Let the compiler fuse the multiply
+    and the add in `c += w[k] * (diff * diff)` and these four cases fail on any
+    target that has an FMA instruction -- which is every arm64 chip, and is why
+    they once failed on macOS alone. A failure here on one platform of the
+    matrix and not others means that flag stopped reaching the compiler.
 
     References are from R 4.6.1, printed at %.17g.
     """

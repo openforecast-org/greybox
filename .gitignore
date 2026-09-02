@@ -45,3 +45,7 @@ python/build/
 *.pyd
 *.dylib
 *.o
+
+# Claude Code: keep local settings out, but track shared skills
+.claude/*
+!.claude/skills/

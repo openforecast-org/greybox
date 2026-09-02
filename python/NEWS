@@ -5,6 +5,25 @@ Python port of the R `greybox` package. The port tracks the R package,
 the most recent release of which is greybox v2.0.9 (Release date: 2026-02-24).
 
 
+greybox for Python v1.0.8 (unreleased)
+==============
+
+Bugfixes:
+* The native extensions are compiled with floating-point contraction disabled
+  (`-ffp-contract=off` on GCC/Clang, `/fp:precise` on MSVC). They exist to
+  reproduce R bit for bit, and a fused multiply-add rounds once where the
+  source asks for twice: `lowess.cpp` accumulates `c += w[k] * (diff * diff)`,
+  which Clang -- whose default is `-ffp-contract=on` -- may contract into a
+  single `fma(w, d*d, c)` wherever the instruction exists. Every arm64 chip has
+  it and the baseline x86-64 ISA does not, so the macOS test job failed the four
+  `TestLowessRParity` cases while Linux and Windows passed. The error compounds
+  across the robustness iterations, each of which recomputes the weights from
+  the previous pass's residuals: reproduced on Linux by forcing the same
+  contraction (`-mfma -ffp-contract=fast`), 2 of 16 points differ at `iter=0`
+  and 12 of 16 at the default `iter=3`, up to 2.8e-14 absolute. Adding
+  `-ffp-contract=off` to that same build makes all four pass again.
+
+
 greybox for Python v1.0.7 (2026-08-25)
 ==============
 
