@@ -8,6 +8,15 @@ the most recent release of which is greybox v2.0.9 (Release date: 2026-02-24).
 greybox for Python v1.0.8 (unreleased)
 ==============
 
+Changes:
+* `ALM` now stores sigma^2 (the variance) as the `scale` of dnorm and
+  dlnorm (for the latter, the variance of log(y)), following the ADAM
+  monograph (Tables 11.1-11.2 and Chapter 17), the smooth package and the R
+  greybox v2.0.9. The same applies to the `scale` of `CALM()` and
+  `stepwise()`. All the other distributions keep their scale. The estimates,
+  log-likelihood, ICs, `sigma`, the prediction and confidence intervals,
+  `point_lik()` and `outlier_dummy()` are unchanged numerically.
+
 Bugfixes:
 * The native extensions are compiled with floating-point contraction disabled
   (`-ffp-contract=off` on GCC/Clang, `/fp:precise` on MSVC). They exist to

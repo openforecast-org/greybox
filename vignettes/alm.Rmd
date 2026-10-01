@@ -122,7 +122,7 @@ The variance $\sigma^2$ is estimated in `alm()` based on likelihood:
 \begin{equation} \label{eq:sigmaNormal}
     \hat{\sigma}^2 = \frac{1}{T} \sum_{t=1}^T \left(y_t - \mu_t \right)^2 ,
 \end{equation}
-where $T$ is the sample size. Its square root (standard deviation) is used in the calculations of `dnorm()` function, and the value is then return via `scale` variable. This value does not have bias correction. However the `sigma()` method applied to the resulting model, returns the bias corrected version of standard deviation. And `vcov()`, `confint()`, `summary()` and `predict()` rely on the value extracted by `sigma()`.
+where $T$ is the sample size. This variance is returned via the `scale` variable (following the convention of the [ADAM monograph](https://openforecast.org/adam/)), while its square root (standard deviation) is used in the calculations of `dnorm()` function. This value does not have bias correction. However the `sigma()` method applied to the resulting model, returns the bias corrected version of standard deviation. And `vcov()`, `confint()`, `summary()` and `predict()` rely on the value extracted by `sigma()`.
 
 $\mu_t$ is returned as is in `mu` variable, and the fitted values are set equivalent to `mu`.
 

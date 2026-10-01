@@ -391,7 +391,7 @@ stepwise <- function(data, ic=c("AICc","AIC","BIC","BICc"), silent=TRUE, df=NULL
         bestModel$call <- quote(alm(formula=bestFormula, data=data, distribution="dnorm"));
         bestModel$call$formula <- bestFormula;
         bestModel$subset <- rep(TRUE, obsInsample);
-        bestModel$scale <- sqrt(sum(bestModel$residuals^2) / obsInsample);
+        bestModel$scale <- sum(bestModel$residuals^2) / obsInsample;
         bestModel$loss <- loss;
         class(bestModel) <- c("alm","greybox");
     }

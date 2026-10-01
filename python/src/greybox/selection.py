@@ -1117,9 +1117,11 @@ def _combine_scale(
 
     if distribution in ("dnorm", "dfnorm"):
         if df > 0:
-            return float(np.sqrt(np.sum((y - mu) ** 2) / df))
+            variance = float(np.sum((y - mu) ** 2) / df)
         else:
-            return float(np.sqrt(np.mean((y - mu) ** 2)))
+            variance = float(np.mean((y - mu) ** 2))
+        # The scale of dnorm is the variance, as in the ADAM monograph
+        return variance if distribution == "dnorm" else float(np.sqrt(variance))
     elif distribution == "dlaplace":
         return float(np.mean(np.abs(y - mu)))
     elif distribution == "ds":
@@ -1146,7 +1148,7 @@ def _combine_scale(
     elif distribution == "dalaplace":
         return float(np.mean((y - mu) * (alpha - (y <= mu) * 1.0)))
     elif distribution == "dlnorm":
-        return float(np.sqrt(np.mean((np.log(y) - mu) ** 2)))
+        return float(np.mean((np.log(y) - mu) ** 2))
     elif distribution == "dllaplace":
         return float(np.mean(np.abs(np.log(y) - mu)))
     elif distribution == "dls":

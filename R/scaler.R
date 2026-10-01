@@ -251,9 +251,10 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
 
     fitterScale <- function(B, distribution){
         scale <- exp(matrixXregScale %*% B);
+        # The scale of dnorm and dlnorm is the variance, as in the ADAM monograph
         scale[] <- switch(distribution,
                           "dnorm"=,
-                          "dlnorm"=,
+                          "dlnorm"=scale,
                           "dbcnorm"=,
                           "dlogitnorm"=,
                           "dfnorm"=,
@@ -278,7 +279,7 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
     CFScale <- function(B){
         scale <- fitterScale(B, distribution);
         CFValue <- -sum(switch(distribution,
-                               "dnorm" = dnorm(y[otU], mean=mu[otU], sd=scale, log=TRUE),
+                               "dnorm" = dnorm(y[otU], mean=mu[otU], sd=sqrt(scale), log=TRUE),
                                "dlaplace" = dlaplace(y[otU], mu=mu[otU], scale=scale, log=TRUE),
                                "ds" = ds(y[otU], mu=mu[otU], scale=scale, log=TRUE),
                                "dgnorm" = dgnorm(y[otU], mu=mu[otU], scale=scale,
@@ -287,7 +288,7 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
                                "dt" = dt(y[otU]-mu[otU], df=scale, log=TRUE),
                                "dalaplace" = dalaplace(y[otU], mu=mu[otU], scale=scale,
                                                        alpha=other, log=TRUE),
-                               "dlnorm" = dlnorm(y[otU], meanlog=mu[otU], sdlog=scale, log=TRUE),
+                               "dlnorm" = dlnorm(y[otU], meanlog=mu[otU], sdlog=sqrt(scale), log=TRUE),
                                "dllaplace" = dlaplace(log(y[otU]), mu=mu[otU],
                                                       scale=scale, log=TRUE)-log(y[otU]),
                                "dls" = ds(log(y[otU]), mu=mu[otU], scale=scale, log=TRUE)-log(y[otU]),
@@ -315,10 +316,10 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
         if(occurrenceModel){
             CFValue[] <- CFValue + sum(switch(distribution,
                                               "dnorm" =,
+                                              "dlnorm" = obsZero*(log(sqrt(2*pi)*sqrt(scale[!otU]))+0.5),
                                               "dfnorm" =,
                                               "dbcnorm" =,
-                                              "dlogitnorm" =,
-                                              "dlnorm" = obsZero*(log(sqrt(2*pi)*scale[!otU])+0.5),
+                                              "dlogitnorm" = obsZero*(log(sqrt(2*pi)*scale[!otU])+0.5),
                                               "dgnorm" =,
                                               "dlgnorm" =obsZero*(1/other-
                                                                       log(other /
@@ -412,7 +413,7 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
     # Extract the actual values from the model
     errors <- switch(distribution,
                      "dnorm"=,
-                     "dlnorm"=,
+                     "dlnorm"=residuals[subset]^2,
                      "dbcnorm"=,
                      "dlogitnorm"=,
                      "dfnorm"=,
@@ -451,7 +452,12 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
         matrixXregScale <- cbind(errors,matrixXregScale);
     }
     colnames(matrixXregScale)[1] <- "residuals";
-    errors[] <- residuals[subset] / scale;
+    if(any(distribution==c("dnorm","dlnorm"))){
+        errors[] <- residuals[subset] / sqrt(scale);
+    }
+    else{
+        errors[] <- residuals[subset] / scale;
+    }
 
     # If formula does not have response variable, update it.
     # This is mainly needed for the proper plots and outputs

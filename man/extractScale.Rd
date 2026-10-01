@@ -42,6 +42,10 @@ In case of a simpler model, the functions will return the scalar using
 \code{sigma()} method. If the scale model was estimated, \code{extractScale()} and
 \code{extractSigma()} will return the conditional scale and the conditional
 standard error of the residuals respectively.
+
+The scale follows the ADAM monograph: it is the variance \eqn{\sigma^2} for the
+Normal and Log-Normal distributions (\code{dnorm} and \code{dlnorm}), so that
+\code{extractSigma()} returns its square root in these cases.
 }
 \examples{
 # Generate the data

@@ -2,7 +2,7 @@ Package: greybox
 Type: Package
 Title: Toolbox for Model Building and Forecasting
 Version: 2.0.9
-Date: 2026-06-29
+Date: 2026-10-01
 Authors@R: c(person("Ivan", "Svetunkov", email = "ivan@svetunkov.com", role = c("aut", "cre"),
                   comment = c("Director of the OpenForecast consultancy company, UK",
                               ORCID = "0000-0001-7826-0281")),

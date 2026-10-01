@@ -42,6 +42,21 @@ def _plogis_log_residual(y: np.ndarray, mu: np.ndarray) -> np.ndarray:
     return result
 
 
+VARIANCE_SCALE_DISTRIBUTIONS = ("dnorm", "dlnorm")
+
+
+def scale_sd(distribution: str, scale):
+    """Return the scale in the form that the densities of the model take.
+
+    The stored scale of ``dnorm`` and ``dlnorm`` is the variance sigma^2
+    (ADAM monograph, Tables 11.1-11.2), so its square root is returned for
+    them. The scale of every other distribution is returned as is.
+    """
+    if distribution in VARIANCE_SCALE_DISTRIBUTIONS and scale is not None:
+        return np.sqrt(scale)
+    return scale
+
+
 def scaler_internal(
     B: np.ndarray,
     distribution: str,

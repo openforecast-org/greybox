@@ -171,7 +171,9 @@
 #' \item fitted - fitted values,
 #' \item residuals - residuals of the model,
 #' \item mu - the estimated location parameter of the distribution,
-#' \item scale - the estimated scale parameter of the distribution. If a formula was provided for
+#' \item scale - the estimated scale parameter of the distribution. This is the variance
+#' \eqn{\sigma^2} for \code{dnorm} and \code{dlnorm} (for the latter, the variance of the
+#' logarithms), following the ADAM monograph. If a formula was provided for
 #' scale, then an object of class "scale" will be returned.
 #' \item distribution - distribution used in the estimation,
 #' \item logLik - log-likelihood of the model. Only returned, when \code{loss="likelihood"} or
@@ -2289,6 +2291,10 @@ alm <- function(formula, data, subset, na.action,
         }
         nParam <- nParam + nparam(scale);
         logLik <- logLik(scale);
+    }
+    # The scale of Normal and Log-Normal is the variance, as in the ADAM monograph
+    else if(any(distribution==c("dnorm","dlnorm"))){
+        scale <- scale^2;
     }
 
     finalModel <- structure(list(coefficients=parameters, FI=FI, fitted=yFitted, residuals=as.vector(errors),

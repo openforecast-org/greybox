@@ -9,6 +9,7 @@ from scipy import stats
 
 from . import distributions as dist
 from .alm import ALM
+from .fitters import scale_sd
 
 
 def point_lik_cumulative(model: ALM) -> np.ndarray:
@@ -93,7 +94,7 @@ def point_lik(
     y = model.actuals
     fitted = model.fitted
     mu = fitted
-    scale = model.scale
+    scale = scale_sd(distribution, model.scale)
 
     if distribution == "dnorm":
         if log:

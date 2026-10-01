@@ -518,7 +518,7 @@ class TestALMMtcars:
         R results:
         - Intercept: 37.29
         - wt: -5.34
-        - scale: 2.95
+        - scale: 8.70 (sigma^2)
         - log-likelihood: -80.01
         """
         data = mtcars_data
@@ -536,7 +536,7 @@ class TestALMMtcars:
             model.coef[0], -5.34, rtol=1e-1, err_msg="wt coefficient doesn't match R"
         )
         np.testing.assert_allclose(
-            model.scale, 2.95, rtol=2e-1, err_msg="Scale doesn't match R"
+            model.scale, 8.70, rtol=2e-1, err_msg="Scale doesn't match R"
         )
         np.testing.assert_allclose(
             model.log_lik, -80.01, rtol=1e-1, err_msg="Log-likelihood doesn't match R"
@@ -550,7 +550,7 @@ class TestALMMtcars:
         - Intercept: 37.23
         - wt: -3.88
         - hp: -0.032
-        - scale: 2.47
+        - scale: 6.10 (sigma^2)
         - log-likelihood: -74.33
         """
         data = mtcars_data
@@ -571,7 +571,7 @@ class TestALMMtcars:
             model.coef[1], -0.032, rtol=2e-1, err_msg="hp coefficient doesn't match R"
         )
         np.testing.assert_allclose(
-            model.scale, 2.47, rtol=2e-1, err_msg="Scale doesn't match R"
+            model.scale, 6.10, rtol=2e-1, err_msg="Scale doesn't match R"
         )
 
     def test_alm_mtcars_dlaplace(self, mtcars_data):
@@ -609,7 +609,7 @@ class TestALMMtcars:
         R results:
         - Intercept: 37.29
         - wt: -5.34
-        - scale: 2.95
+        - scale: 8.70 (sigma^2)
         """
         data = mtcars_data
         y, X = formula("mpg ~ wt", data)
@@ -1472,7 +1472,7 @@ class TestALMOrders:
         - Intercept: 41.17
         - wt: -5.82
         - mpgLag1: -0.118
-        - scale: 2.90
+        - scale: 8.42 (sigma^2)
         - log-likelihood: -79.49
         """
         data = mtcars_data
@@ -1494,7 +1494,7 @@ class TestALMOrders:
             model.coef[1], -0.118, rtol=1e-1, err_msg="mpgLag1 coefficient doesn't match R"
         )
         np.testing.assert_allclose(
-            model.scale, 2.90, rtol=5e-2, err_msg="Scale doesn't match R"
+            model.scale, 8.42, rtol=5e-2, err_msg="Scale doesn't match R"
         )
         np.testing.assert_allclose(
             model.log_lik, -79.49, rtol=5e-2, err_msg="Log-likelihood doesn't match R"
@@ -1508,7 +1508,7 @@ class TestALMOrders:
         - wt: -5.78
         - mpgLag1: -0.023
         - mpgLag2: -0.181
-        - scale: 2.75
+        - scale: 7.59 (sigma^2)
         - log-likelihood: -77.83
         """
         data = mtcars_data
@@ -1533,7 +1533,7 @@ class TestALMOrders:
             model.coef[2], -0.181, rtol=1e-1, err_msg="mpgLag2 coefficient doesn't match R"
         )
         np.testing.assert_allclose(
-            model.scale, 2.75, rtol=5e-2, err_msg="Scale doesn't match R"
+            model.scale, 7.59, rtol=5e-2, err_msg="Scale doesn't match R"
         )
         np.testing.assert_allclose(
             model.log_lik, -77.83, rtol=5e-2, err_msg="Log-likelihood doesn't match R"

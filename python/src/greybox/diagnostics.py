@@ -8,6 +8,8 @@ from typing import Literal
 import numpy as np
 from scipy import stats
 
+from .fitters import scale_sd
+
 
 class OutlierResult:
     """Result of outlier detection.
@@ -95,7 +97,7 @@ def outlier_dummy(
     nobs = len(residuals)
     distribution = model.distribution
 
-    scale = model.scale
+    scale = scale_sd(distribution, model.scale)
     df_residual = model.df_residual_
 
     if type == "rstandard":

@@ -662,7 +662,7 @@ lmDynamic <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, s
     );
 
     scale <- switch(distribution,
-                    "dnorm" =,
+                    "dnorm" = mean((y-mu)^2),
                     "dfnorm" = sqrt(mean((y-mu)^2)),
                     "dbcnorm" = sqrt(mean((bcTransform(y,other)-mu)^2)),
                     "dlogitnorm" = sqrt(mean((log(y/(1-y))-mu)^2)),
@@ -672,7 +672,7 @@ lmDynamic <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, s
                     "dlogis" = sqrt(mean((y-mu)^2) * 3 / pi^2),
                     "dt" = max(2,2/(1-(mean((y-mu)^2))^{-1})),
                     "dalaplace" = mean((y-mu) * (alpha - (y<=mu)*1)),
-                    "dlnorm" = sqrt(mean((log(y)-mu)^2)),
+                    "dlnorm" = mean((log(y)-mu)^2),
                     "dllaplace" = mean(abs(log(y)-mu)),
                     "dls" = mean(sqrt(abs(log(y)-mu))) / 2,
                     "dlgnorm" = (otherParameters*mean(abs(log(y)-mu)^otherParameters))^{1/otherParameters},

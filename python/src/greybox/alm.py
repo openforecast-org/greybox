@@ -16,7 +16,13 @@ from scipy.special import gamma as _sp_gamma
 
 from . import distributions as dist
 from .cost_function import cf
-from .fitters import extractor_fitted, extractor_residuals, scaler_internal
+from .fitters import (
+    VARIANCE_SCALE_DISTRIBUTIONS,
+    extractor_fitted,
+    extractor_residuals,
+    scale_sd,
+    scaler_internal,
+)
 from .methods.summary import SummaryResult
 from .transforms import bc_transform_inv as _bc_transform_inv
 from .xreg import xreg_expander
@@ -244,7 +250,8 @@ class ALM:
     intercept_ : float
         Estimated intercept.
     scale_ : float
-        Estimated scale parameter.
+        Estimated scale parameter. This is the variance sigma^2 for dnorm and
+        dlnorm (of log(y) for the latter), following the ADAM monograph.
     other_ : dict
         Other estimated parameters (alpha, shape, etc.).
     fitted_values_ : ndarray of shape (n_samples,)
@@ -905,7 +912,6 @@ class ALM:
             obs_nonzero,
         )
         fitter_return["scale"] = scale
-        self._scale = scale
         self.other_ = other_val
 
         # Store ARI polynomial and ARIMA descriptor
@@ -1023,6 +1029,9 @@ class ALM:
             otU_full,
             obs_nonzero,
         )
+        # The scale of dnorm and dlnorm is the variance, as in the ADAM monograph
+        if self.distribution in VARIANCE_SCALE_DISTRIBUTIONS:
+            scale = scale**2
         self._scale = scale
 
         XtX = X.T @ X
@@ -1772,7 +1781,12 @@ class ALM:
             )
             if self.distribution == "dnorm":
                 log_lik = np.sum(
-                    dist.dnorm(y_otU, mean=mu_otU, sd=self.scale, log=True)
+                    dist.dnorm(
+                        y_otU,
+                        mean=mu_otU,
+                        sd=scale_sd(self.distribution, self.scale),
+                        log=True,
+                    )
                 )
             return log_lik
         elif metric == "MSE":
@@ -1964,7 +1978,7 @@ class ALM:
 
     @property
     def scale(self) -> float | None:
-        """Scale parameter."""
+        """Scale parameter: sigma^2 for dnorm and dlnorm, as in ADAM."""
         return self._scale
 
     @property

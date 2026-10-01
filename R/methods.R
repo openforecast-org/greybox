@@ -683,6 +683,10 @@ sigma.varest <- function(object, ...){
 #' \code{extractSigma()} will return the conditional scale and the conditional
 #' standard error of the residuals respectively.
 #'
+#' The scale follows the ADAM monograph: it is the variance \eqn{\sigma^2} for the
+#' Normal and Log-Normal distributions (\code{dnorm} and \code{dlnorm}), so that
+#' \code{extractSigma()} returns its square root in these cases.
+#'
 #' @param object The model estimated using lm / alm / etc.
 #' @param ... Other parameters (currently nothing).
 #'
@@ -755,7 +759,7 @@ extractSigma.greybox <- function(object, ...){
     if(is.scale(object$scale)){
         return(switch(object$distribution,
                       "dnorm"=,
-                      "dlnorm"=,
+                      "dlnorm"=sqrt(extractScale(object)),
                       "dlogitnorm"=,
                       "dbcnorm"=,
                       "dfnorm"=,
@@ -2755,7 +2759,10 @@ rstandard.greybox <- function(model, ...){
     # If it is scale model, there's no need to divide by scale anymore
     if(!is.scale(model)){
         # The proper residuals with leverage are currently done only for normal-based distributions
-        if(any(model$distribution==c("dt","dnorm","dlnorm","dbcnorm","dlogitnorm"))){
+        if(any(model$distribution==c("dnorm","dlnorm"))){
+            errors[] <- errors / (sqrt(extractScale(model))*sqrt(1-hatvalues(model)));
+        }
+        else if(any(model$distribution==c("dt","dbcnorm","dlogitnorm"))){
             errors[] <- errors / (extractScale(model)*sqrt(1-hatvalues(model)));
         }
         else if(any(model$distribution==c("ds","dls"))){
@@ -3455,7 +3462,7 @@ predict.alm <- function(object, newdata=NULL, interval=c("none", "confidence", "
                 sdlog <- sqrt(greyboxForecast$variances);
             }
             else{
-                sdlog <- sqrt(greyboxForecast$variances - sigma(object)^2 + extractScale(object)^2);
+                sdlog <- sqrt(greyboxForecast$variances - sigma(object)^2 + extractScale(object));
             }
             greyboxForecast$scale <- sdlog;
         }
@@ -3905,7 +3912,7 @@ predict.greybox <- function(object, newdata=NULL, interval=c("none", "confidence
                     # Get variance from the scale
                     sigmaValues[] <- switch(object$distribution,
                                             "dnorm"=,
-                                            "dlnorm"=,
+                                            "dlnorm"=sigmaValues,
                                             "dbcnorm"=,
                                             "dlogitnorm"=,
                                             "dfnorm"=,
@@ -4203,7 +4210,7 @@ predict.scale <- function(object, newdata=NULL, interval=c("none", "confidence",
     scalePredicted$mean[] <- exp(scalePredicted$mean);
     scalePredicted$mean[] <- switch(object$distribution,
                                     "dnorm"=,
-                                    "dlnorm"=,
+                                    "dlnorm"=scalePredicted$mean,
                                     "dbcnorm"=,
                                     "dlogitnorm"=,
                                     "dfnorm"=,

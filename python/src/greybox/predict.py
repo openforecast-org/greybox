@@ -8,6 +8,7 @@ import numpy as np
 from scipy import stats
 
 from .alm import PredictionResult
+from .fitters import scale_sd
 
 
 def predict_basic(model, X, interval="none", level=0.95, side="both"):
@@ -75,7 +76,8 @@ def predict_basic(model, X, interval="none", level=0.95, side="both"):
     upper = None
 
     if interval != "none":
-        variances = np.abs(np.diag(X @ X.T)) * (model.scale**2)
+        scale = scale_sd(model.distribution, model.scale)
+        variances = np.abs(np.diag(X @ X.T)) * (scale**2)
 
         if interval == "confidence":
             se = np.sqrt(variances)
@@ -89,7 +91,7 @@ def predict_basic(model, X, interval="none", level=0.95, side="both"):
                 upper[:, i] = upper_i
 
         elif interval == "prediction":
-            sigma_sq = model.scale**2
+            sigma_sq = scale**2
             total_var = variances + sigma_sq
             se = np.sqrt(total_var)
             for i in range(n_levels):
@@ -209,7 +211,8 @@ def predict(
         level_up = np.clip(level_up, 0, 1)
 
         if model.distribution == "dnorm" and result.lower is not None:
-            result.lower = stats.norm.ppf(level_low, loc=result.mean, scale=model.scale)
-            result.upper = stats.norm.ppf(level_up, loc=result.mean, scale=model.scale)
+            sd = scale_sd(model.distribution, model.scale)
+            result.lower = stats.norm.ppf(level_low, loc=result.mean, scale=sd)
+            result.upper = stats.norm.ppf(level_up, loc=result.mean, scale=sd)
 
     return result

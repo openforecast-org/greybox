@@ -63,6 +63,10 @@ pointLik.alm <- function(object, log=TRUE, ...){
         mu <- object$mu;
     }
     scale <- extractScale(object);
+    # The scale of dnorm and dlnorm is the variance, while the densities need the standard deviation
+    if(any(distribution==c("dnorm","dlnorm"))){
+        scale <- sqrt(scale);
+    }
 
     likValues <- vector("numeric",nobs(object));
     likValues[otU] <- switch(distribution,
