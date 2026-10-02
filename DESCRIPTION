@@ -49,4 +49,4 @@ Enhances:
 VignetteBuilder: knitr
 Encoding: UTF-8
 Roxygen: list(old_usage = TRUE)
-Config/roxygen2/version: 8.0.0
+Config/roxygen2/version: 8.1.0

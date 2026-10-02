@@ -247,139 +247,153 @@ export(xregExpander)
 export(xregMultiplier)
 export(xregTransformer)
 export(xtable)
-importFrom(generics,accuracy)
-importFrom(generics,forecast)
-importFrom(grDevices,colorRampPalette)
-importFrom(grDevices,dev.interactive)
-importFrom(grDevices,devAskNewPage)
-importFrom(grDevices,grey)
-importFrom(grDevices,palette)
-importFrom(grDevices,rgb)
-importFrom(graphics,abline)
-importFrom(graphics,axis)
-importFrom(graphics,barplot)
-importFrom(graphics,box)
-importFrom(graphics,boxplot)
-importFrom(graphics,hist)
-importFrom(graphics,layout)
-importFrom(graphics,legend)
-importFrom(graphics,lines)
-importFrom(graphics,mtext)
-importFrom(graphics,par)
-importFrom(graphics,plot)
-importFrom(graphics,points)
-importFrom(graphics,polygon)
-importFrom(graphics,rect)
-importFrom(graphics,text)
-importFrom(graphics,title)
+importFrom(generics,
+  accuracy,
+  forecast
+)
+importFrom(grDevices,
+  colorRampPalette,
+  dev.interactive,
+  devAskNewPage,
+  grey,
+  palette,
+  rgb
+)
+importFrom(graphics,
+  abline,
+  axis,
+  barplot,
+  box,
+  boxplot,
+  hist,
+  layout,
+  legend,
+  lines,
+  mtext,
+  par,
+  plot,
+  points,
+  polygon,
+  rect,
+  text,
+  title
+)
 importFrom(methods,setMethod)
 importFrom(nloptr,nloptr)
 importFrom(pracma,hessian)
-importFrom(statmod,dinvgauss)
-importFrom(statmod,qinvgauss)
-importFrom(stats,.lm.fit)
-importFrom(stats,AIC)
-importFrom(stats,BIC)
-importFrom(stats,acf)
-importFrom(stats,aov)
-importFrom(stats,approx)
-importFrom(stats,arima)
-importFrom(stats,as.formula)
-importFrom(stats,chisq.test)
-importFrom(stats,coef)
-importFrom(stats,confint)
-importFrom(stats,cooks.distance)
-importFrom(stats,cor)
-importFrom(stats,cor.test)
-importFrom(stats,cov)
-importFrom(stats,dbeta)
-importFrom(stats,dbinom)
-importFrom(stats,dchisq)
-importFrom(stats,deltat)
-importFrom(stats,dexp)
-importFrom(stats,dgamma)
-importFrom(stats,dgeom)
-importFrom(stats,dlnorm)
-importFrom(stats,dlogis)
-importFrom(stats,dnbinom)
-importFrom(stats,dnorm)
-importFrom(stats,dpois)
-importFrom(stats,dt)
-importFrom(stats,end)
-importFrom(stats,fitted)
-importFrom(stats,formula)
-importFrom(stats,frequency)
-importFrom(stats,friedman.test)
-importFrom(stats,hat)
-importFrom(stats,hatvalues)
-importFrom(stats,is.ts)
-importFrom(stats,lm)
-importFrom(stats,logLik)
-importFrom(stats,lowess)
-importFrom(stats,model.frame)
-importFrom(stats,model.matrix)
-importFrom(stats,na.omit)
-importFrom(stats,na.pass)
-importFrom(stats,nobs)
-importFrom(stats,optim)
-importFrom(stats,optimize)
-importFrom(stats,pacf)
-importFrom(stats,pbinom)
-importFrom(stats,pchisq)
-importFrom(stats,pf)
-importFrom(stats,pgamma)
-importFrom(stats,pgeom)
-importFrom(stats,plnorm)
-importFrom(stats,plogis)
-importFrom(stats,pnbinom)
-importFrom(stats,pnorm)
-importFrom(stats,ppoints)
-importFrom(stats,ppois)
-importFrom(stats,predict)
-importFrom(stats,punif)
-importFrom(stats,qbeta)
-importFrom(stats,qbinom)
-importFrom(stats,qchisq)
-importFrom(stats,qexp)
-importFrom(stats,qf)
-importFrom(stats,qgamma)
-importFrom(stats,qgeom)
-importFrom(stats,qlnorm)
-importFrom(stats,qlogis)
-importFrom(stats,qnbinom)
-importFrom(stats,qnorm)
-importFrom(stats,qpois)
-importFrom(stats,qqline)
-importFrom(stats,qqnorm)
-importFrom(stats,qqplot)
-importFrom(stats,qt)
-importFrom(stats,qtukey)
-importFrom(stats,quantile)
-importFrom(stats,qunif)
-importFrom(stats,rbinom)
-importFrom(stats,residuals)
-importFrom(stats,rlnorm)
-importFrom(stats,rnorm)
-importFrom(stats,rstandard)
-importFrom(stats,rstudent)
-importFrom(stats,runif)
-importFrom(stats,sd)
-importFrom(stats,setNames)
-importFrom(stats,sigma)
-importFrom(stats,start)
-importFrom(stats,summary.lm)
-importFrom(stats,supsmu)
-importFrom(stats,terms)
-importFrom(stats,time)
-importFrom(stats,ts)
-importFrom(stats,update.formula)
-importFrom(stats,var)
-importFrom(stats,vcov)
-importFrom(texreg,createTexreg)
-importFrom(texreg,extract)
-importFrom(utils,head)
-importFrom(utils,packageVersion)
-importFrom(utils,tail)
+importFrom(statmod,
+  dinvgauss,
+  qinvgauss
+)
+importFrom(stats,
+  .lm.fit,
+  AIC,
+  BIC,
+  acf,
+  aov,
+  approx,
+  arima,
+  as.formula,
+  chisq.test,
+  coef,
+  confint,
+  cooks.distance,
+  cor,
+  cor.test,
+  cov,
+  dbeta,
+  dbinom,
+  dchisq,
+  deltat,
+  dexp,
+  dgamma,
+  dgeom,
+  dlnorm,
+  dlogis,
+  dnbinom,
+  dnorm,
+  dpois,
+  dt,
+  end,
+  fitted,
+  formula,
+  frequency,
+  friedman.test,
+  hat,
+  hatvalues,
+  is.ts,
+  lm,
+  logLik,
+  lowess,
+  model.frame,
+  model.matrix,
+  na.omit,
+  na.pass,
+  nobs,
+  optim,
+  optimize,
+  pacf,
+  pbinom,
+  pchisq,
+  pf,
+  pgamma,
+  pgeom,
+  plnorm,
+  plogis,
+  pnbinom,
+  pnorm,
+  ppoints,
+  ppois,
+  predict,
+  punif,
+  qbeta,
+  qbinom,
+  qchisq,
+  qexp,
+  qf,
+  qgamma,
+  qgeom,
+  qlnorm,
+  qlogis,
+  qnbinom,
+  qnorm,
+  qpois,
+  qqline,
+  qqnorm,
+  qqplot,
+  qt,
+  qtukey,
+  quantile,
+  qunif,
+  rbinom,
+  residuals,
+  rlnorm,
+  rnorm,
+  rstandard,
+  rstudent,
+  runif,
+  sd,
+  setNames,
+  sigma,
+  start,
+  summary.lm,
+  supsmu,
+  terms,
+  time,
+  ts,
+  update.formula,
+  var,
+  vcov
+)
+importFrom(texreg,
+  createTexreg,
+  extract
+)
+importFrom(utils,
+  head,
+  packageVersion,
+  tail
+)
 importFrom(xtable,xtable)
 importFrom(zoo,zoo)
 useDynLib(greybox)
