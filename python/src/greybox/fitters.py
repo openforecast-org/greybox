@@ -351,6 +351,8 @@ def fitter(
     loss: str = "likelihood",
     lambda_val: float = 0.0,
     a_parameter_provided: bool = False,
+    otU=None,
+    trim: float = 0.0,
 ) -> dict:
     """Basic fitter for non-dynamic models.
 
@@ -382,6 +384,11 @@ def fitter(
         LASSO/Ridge parameter.
     a_parameter_provided : bool, default=False
         Whether additional parameter was provided.
+    otU : np.ndarray, optional
+        The non-zero observations of an occurrence model, on which the scale is
+        estimated. All the observations when ``None``.
+    trim : float, default=0.0
+        The trimming of ROLE, also applied to the scale.
 
     Returns
     -------
@@ -463,10 +470,12 @@ def fitter(
     else:
         mu = matrix_xreg @ B
 
-    otU = np.ones(len(y), dtype=bool)
+    # The scale is estimated on the non-zeroes of an occurrence model, as in R
+    if otU is None:
+        otU = np.ones(len(y), dtype=bool)
     df = np.sum(otU)
 
-    scale = scaler_internal(B, distribution, y, matrix_xreg, mu, other, otU, df)
+    scale = scaler_internal(B, distribution, y, matrix_xreg, mu, other, otU, df, trim)
 
     return {
         "mu": mu,

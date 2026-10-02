@@ -667,55 +667,13 @@ alm <- function(formula, data, subset, na.action,
     }
 
     CFLogLikEntropy <- function(distribution, fitterReturn, obsZero){
-        return(switch(distribution,
-                      "dnorm" =,
-                      "dfnorm" =,
-                      "dbcnorm" =,
-                      "dlogitnorm" = obsZero*(log(sqrt(2*pi)*fitterReturn$scale)+0.5),
-                      "dlnorm" = obsZero*(log(sqrt(2*pi)*fitterReturn$scale)+0.5) + sum(fitterReturn$mu[!otU]),
-                      "dgnorm" =,
-                      "dlgnorm" =obsZero*(1/fitterReturn$other-
-                                              log(fitterReturn$other /
-                                                      (2*fitterReturn$scale*gamma(1/fitterReturn$other)))),
-                      "dinvgauss" = 0.5*(obsZero*(log(pi/2)+1+suppressWarnings(log(fitterReturn$scale)))-
-                                             sum(log(fitterReturn$mu[!otU]))),
-                      # "dinvgauss" = obsZero*(0.5*(log(pi/2)+1+suppressWarnings(log(fitterReturn$scale)))),
-                      # "dgamma" = obsZero*(1/fitterReturn$scale + log(fitterReturn$scale) +
-                      #                     log(gamma(1/fitterReturn$scale)) +
-                      #                     (1-1/fitterReturn$scale)*digamma(1/fitterReturn$scale)),
-                      "dgamma" = sum(log(1/fitterReturn$scale * gamma(fitterReturn$scale* fitterReturn$mu)) +
-                                         (1 - fitterReturn$scale* fitterReturn$mu) *
-                                         digamma(fitterReturn$scale* fitterReturn$mu) +
-                                         fitterReturn$scale* fitterReturn$mu),
-                      # 1-ln(lambda), where lambda=1
-                      "dexp" = obsZero,
-                      # Entropy of Geometric distribution needs to be added here
-                      # "dgeom" =,
-                      "dlaplace" =,
-                      "dllaplace" =,
-                      "ds" =,
-                      "dls" = obsZero*(2 + 2*log(2*fitterReturn$scale)),
-                      "dalaplace" = obsZero*(1 + log(2*fitterReturn$scale)),
-                      "dlogis" = obsZero*2,
-                      "dt" = obsZero*((fitterReturn$scale+1)/2 *
-                                          (digamma((fitterReturn$scale+1)/2)-digamma(fitterReturn$scale/2)) +
-                                          log(sqrt(fitterReturn$scale) * beta(fitterReturn$scale/2,0.5))),
-                      "dchisq" = obsZero*(log(2)*gamma(fitterReturn$scale/2)-
-                                              (1-fitterReturn$scale/2)*digamma(fitterReturn$scale/2)+
-                                              fitterReturn$scale/2),
-                      "dbeta" = sum(log(beta(fitterReturn$mu[otU],fitterReturn$scale[otU]))-
-                                        (fitterReturn$mu[otU]-1)*
-                                        (digamma(fitterReturn$mu[otU])-
-                                             digamma(fitterReturn$mu[otU]+fitterReturn$scale[otU]))-
-                                        (fitterReturn$scale[otU]-1)*
-                                        (digamma(fitterReturn$scale[otU])-
-                                             digamma(fitterReturn$mu[otU]+fitterReturn$scale[otU]))),
-                      # This is a normal approximation of the real entropy
-                      # "dpois" = sum(0.5*log(2*pi*fitterReturn$scale)+0.5),
-                      # "dnbinom" = obsZero*(log(sqrt(2*pi)*fitterReturn$scale)+0.5),
-                      # "dbinom" = sum(0.5*log(2*pi*size*fitterReturn$mu[!otU]*(1-fitterReturn$mu[!otU]))+0.5),
-                      0
-        ))
+        # The scale is a vector for dbeta
+        scaleZero <- fitterReturn$scale;
+        if(length(scaleZero)>1){
+            scaleZero <- scaleZero[!otU];
+        }
+        other <- switch(distribution, "dbinom"=size, fitterReturn$other);
+        return(sum(entropyZero(distribution, scaleZero, fitterReturn$mu[!otU], other)));
     }
 
     CF <- function(B, distribution, loss, y, matrixXreg, recursiveModel, denominator){
@@ -1427,17 +1385,18 @@ alm <- function(formula, data, subset, na.action,
         if(ariModel){
             # In case of plogis and pnorm, the AR elements need to be generated from a model, i.e. oes from smooth.
             if(any(distribution==c("plogis","pnorm"))){
+                # The fitted probabilities, then their log-odds
                 if(!requireNamespace("smooth", quietly = TRUE)){
                     yNew <- abs(fitted(arima(y, order=c(0,1,1))));
-                    yNew[is.na(yNew)] <- min(yNew);
-                    yNew[yNew==0] <- 1E-10;
-                    yNew[] <- log(yNew / (1-yNew));
-                    yNew[is.infinite(yNew) & yNew>0] <- max(yNew[is.finite(yNew)]);
-                    yNew[is.infinite(yNew) & yNew<0] <- min(yNew[is.finite(yNew)]);
                 }
                 else{
-                    yNew <- smooth::oes(y, occurrence="direct", model="MNN", h=1)$fittedModel
+                    yNew <- as.vector(fitted(smooth::oes(y, occurrence="direct", model="MNN", h=1)));
                 }
+                yNew[is.na(yNew)] <- min(yNew, na.rm=TRUE);
+                yNew[yNew==0] <- 1E-10;
+                yNew[] <- log(yNew / (1-yNew));
+                yNew[is.infinite(yNew) & yNew>0] <- max(yNew[is.finite(yNew)]);
+                yNew[is.infinite(yNew) & yNew<0] <- min(yNew[is.finite(yNew)]);
                 ariElements <- xregExpander(yNew, lags=-c(1:ariOrder), gaps="auto")[,-1,drop=FALSE];
                 ariZeroes <- matrix(TRUE,nrow=obsInsample,ncol=ariOrder);
                 for(i in 1:ariOrder){
@@ -2109,7 +2068,8 @@ alm <- function(formula, data, subset, na.action,
     }
 
     ### Fitted values in the scale of the original variable
-    yFitted[] <- extractorFitted(distribution, mu, scale);
+    # The fitted scale, also when a scale model was provided in place of the scale
+    yFitted[] <- extractorFitted(distribution, mu, fitterReturn$scale);
 
     ### Error term in the transformed scale
     errors[] <- extractorResiduals(distribution, mu, yFitted);
@@ -2285,13 +2245,14 @@ alm <- function(formula, data, subset, na.action,
         if(!scaleProvided){
             scale <- do.call("scaler",list(scaleFormula, mf$data, mf$subset, mf$na.action,
                                            distribution, mu, y, errors,
-                                           NULL, occurrence, ellipsis));
+                                           NULL, occurrence, ellipsis, recursive=recursiveModel));
             scale$call$data <- dataSubstitute;
             # Update the formula, which is needed for the proper plots and outputs
             scale$formula <- update.formula(scaleFormula,paste0(responseName,"~."));
         }
         nParam <- nParam + nparam(scale);
-        logLik <- logLik(scale);
+        # The scale model's likelihood is that of the non-zeroes: add the occurrence part
+        logLik <- as.numeric(logLik(scale)) + ifelseFast(occurrenceModel, occurrence$logLik, 0);
     }
     # The scale of the Normal-based distributions is the variance, as in the ADAM monograph
     else if(any(distribution==scaleNormalBased)){

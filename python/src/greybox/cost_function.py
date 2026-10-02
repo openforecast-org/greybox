@@ -132,96 +132,98 @@ def _compute_log_lik_array(
         return np.zeros_like(y_otU, dtype=float)
 
 
-def _entropy_adjustment(
-    distribution: str,
-    scale: float,
-    other_val: float,
-    mu: np.ndarray,
-    otU: np.ndarray,
-    obs_zero: int,
-) -> float:
-    """Calculate differential entropy for occurrence model.
+def entropy_zero(distribution: str, scale, mu, other=None) -> np.ndarray:
+    """Differential entropy of each zero of an occurrence model (R: ``entropyZero``).
 
-    Returns the entropy adjustment term for distributions when
-    recursive_model=True and occurrence_model=True.
-
-    Parameters
-    ----------
-    distribution : str
-        Distribution name.
-    scale : float
-        Scale parameter.
-    other_val : float
-        Other distribution parameter (shape, alpha, etc.).
-    mu : np.ndarray
-        Location parameter values.
-    otU : np.ndarray
-        Boolean mask for non-zero observations.
-    obs_zero : int
-        Number of zero observations.
-
-    Returns
-    -------
-    float
-        Entropy adjustment value.
+    Minus the expected log-density at the location ``mu``, with the scale in the
+    form that the density takes (the standard deviation for the Normal-based
+    distributions). The log-domain distributions add the Jacobian
+    ``E[log(y)] = mu``. Where there is no closed form, it is the entropy of a
+    Normal distribution with the same variance.
     """
     from scipy.special import betaln, digamma, gammaln
 
-    mu_otU = mu[otU]
-
-    if distribution in ("dnorm", "dfnorm", "dbcnorm", "dlogitnorm"):
-        return obs_zero * (np.log(np.sqrt(2 * np.pi) * scale) + 0.5)
+    mu = np.asarray(mu, dtype=float)
+    log_sqrt_2pi = 0.5 * np.log(2 * np.pi)
+    if distribution in ("dnorm", "dfnorm", "drectnorm", "dbcnorm", "dlogitnorm"):
+        # Normal approximation for the folded, rectified, Box-Cox and logit Normal
+        entropy = log_sqrt_2pi + np.log(scale) + 0.5
     elif distribution == "dlnorm":
-        return obs_zero * (np.log(np.sqrt(2 * np.pi) * scale) + 0.5) + np.sum(mu[~otU])
+        entropy = log_sqrt_2pi + np.log(scale) + 0.5 + mu
     elif distribution in ("dgnorm", "dlgnorm"):
-        return obs_zero * (
-            1 / other_val - np.log(other_val / (2 * scale * gammaln(1 / other_val)))
-        )
-    elif distribution == "dinvgauss":
-        return 0.5 * (
-            obs_zero * (np.log(np.pi / 2) + 1 + np.log(scale))
-            - np.sum(np.log(mu[~otU]))
-        )
-    elif distribution == "dgamma":
-        return np.sum(
-            gammaln(1 / scale)
-            + (scale * mu_otU)
-            + (1 - scale * mu_otU) * digamma(scale * mu_otU)
-            + scale * mu_otU
+        entropy = 1 / other - np.log(other / (2 * scale)) + gammaln(1 / other)
+        if distribution == "dlgnorm":
+            entropy = entropy + mu
+    elif distribution in ("dlaplace", "dllaplace"):
+        entropy = 1 + np.log(2 * scale)
+        if distribution == "dllaplace":
+            entropy = entropy + mu
+    elif distribution == "dalaplace":
+        entropy = 1 + np.log(scale / (other * (1 - other)))
+    elif distribution in ("ds", "dls"):
+        entropy = 2 + 2 * np.log(2 * scale)
+        if distribution == "dls":
+            entropy = entropy + mu
+    elif distribution == "dlogis":
+        entropy = 2 + np.log(scale)
+    elif distribution == "dt":
+        entropy = (
+            (scale + 1) / 2 * (digamma((scale + 1) / 2) - digamma(scale / 2))
+            + np.log(np.sqrt(scale))
+            + betaln(scale / 2, 0.5)
         )
     elif distribution == "dexp":
-        return obs_zero
-    elif distribution == "dls":
-        return obs_zero * (2 + 2 * np.log(2 * scale))
-    elif distribution == "dalaplace":
-        return obs_zero * (1 + np.log(2 * scale))
-    elif distribution == "dlogis":
-        return obs_zero * 2
-    elif distribution == "dt":
-        return obs_zero * (
-            (scale + 1) / 2 * (digamma((scale + 1) / 2) - digamma(scale / 2))
-            + np.log(np.sqrt(scale) * np.exp(betaln(scale / 2, 0.5)))
+        entropy = 1 + np.log(mu)
+    elif distribution == "dgamma":
+        entropy = (
+            1 / scale
+            + np.log(scale * mu)
+            + gammaln(1 / scale)
+            + (1 - 1 / scale) * digamma(1 / scale)
         )
+    elif distribution == "dinvgauss":
+        # Normal approximation with the variance mu^2 * scale
+        entropy = np.log(np.sqrt(2 * np.pi * scale) * mu) + 0.5
     elif distribution == "dchisq":
-        return obs_zero * (
-            np.log(2) * gammaln(scale / 2)
-            - (1 - scale / 2) * digamma(scale / 2)
-            + scale / 2
+        # The central chi-squared with df=scale, without the non-centrality
+        entropy = (
+            scale / 2
+            + np.log(2)
+            + gammaln(scale / 2)
+            + (1 - scale / 2) * digamma(scale / 2)
         )
     elif distribution == "dbeta":
-        return (
-            np.sum(
-                np.log(scale)
-                + gammaln(mu_otU)
-                + gammaln(scale)
-                - gammaln(mu_otU + scale)
-            )
-            - (mu_otU - 1) * digamma(mu_otU)
-            - (scale - 1) * digamma(mu_otU + scale)
-            + (mu_otU + scale - 2) * digamma(mu_otU + scale)
+        entropy = (
+            betaln(mu, scale)
+            - (mu - 1) * digamma(mu)
+            - (scale - 1) * digamma(scale)
+            + (mu + scale - 2) * digamma(mu + scale)
         )
+    # Normal approximations for the counts
+    elif distribution == "dpois":
+        entropy = 0.5 * np.log(2 * np.pi * mu) + 0.5
+    elif distribution == "dnbinom":
+        entropy = 0.5 * np.log(2 * np.pi * (mu + mu**2 / other)) + 0.5
+    elif distribution == "dgeom":
+        entropy = 0.5 * np.log(2 * np.pi * mu * (1 + mu)) + 0.5
+    elif distribution == "dbinom":
+        entropy = 0.5 * np.log(2 * np.pi * other * mu / (1 + mu) ** 2) + 0.5
     else:
-        return 0.0
+        entropy = 0.0
+    # One value per zero, also where the entropy does not depend on mu
+    return np.broadcast_to(np.asarray(entropy, dtype=float), mu.shape).copy()
+
+
+def _entropy_adjustment(
+    distribution: str,
+    scale,
+    other_val,
+    mu: np.ndarray,
+    otU: np.ndarray,
+) -> float:
+    """The differential entropy of the zeros (recursive occurrence models)."""
+    scale_zero = scale[~otU] if np.ndim(scale) > 0 and np.size(scale) > 1 else scale
+    return float(np.sum(entropy_zero(distribution, scale_zero, mu[~otU], other_val)))
 
 
 def cf(
@@ -327,6 +329,8 @@ def cf(
         i_order=i_order,
         loss=loss,
         lambda_val=lambda_val,
+        otU=otU,
+        trim=trim,
     )
 
     mu = fitter_return["mu"]
@@ -356,13 +360,17 @@ def cf(
             cf_value = -np.sum(log_lik_array)
         else:
             cf_value = (
-                -mean_fast(-log_lik_array, obs_insample, trim=trim, side="both")
-                * obs_insample
+                # R: -meanFast(pointLiks, trim=trim) * obsInsample, trimming the lowest
+                -mean_fast(log_lik_array, trim=trim) * obs_insample
             )
 
         if recursive_model and occurrence_model:
             cf_value += _entropy_adjustment(
-                distribution, scale, other_val, mu, otU, obs_zero
+                distribution,
+                scale,
+                size if distribution == "dbinom" else other_val,
+                mu,
+                otU,
             )
 
     else:

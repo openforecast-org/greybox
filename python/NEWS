@@ -48,6 +48,31 @@ Bugfixes:
   contraction (`-mfma -ffp-contract=fast`), 2 of 16 points differ at `iter=0`
   and 12 of 16 at the default `iter=3`, up to 2.8e-14 absolute. Adding
   `-ffp-contract=off` to that same build makes all four pass again.
+* `ALM` with an occurrence model estimated the scale over all observations,
+  zeroes included, which pushed `dlnorm`, `dgamma` and `dinvgauss` to the
+  penalty and gave the others a scale that differed from R's. It now uses the
+  non-zero observations only, and the log-likelihoods match R's `alm()`.
+* `loss="ROLE"` diverged (coefficients of order 1e11): the trimmed mean entered
+  the loss with the wrong sign and trimmed the wrong side, and the trim was 0
+  where R's default is 0.05. It now matches R.
+* `point_lik()` ignored the occurrence model: it now evaluates the densities on
+  the non-zero observations and adds the point likelihoods of the occurrence
+  model, so that their sum equals the log-likelihood, as in R.
+* The occurrence models with ARIMA terms add the differential entropy of the
+  zeroes through a single helper shared by the loss and `point_lik()`, with the
+  formulae corrected and aligned with R's (see the R greybox v2.0.9 NEWS).
+* `sigma` divided by n - k with k ignoring the estimated extra parameters (the
+  shape of dgnorm, the lambda of dbcnorm, ...), giving standard errors smaller
+  than R's. It now uses `nparam` as R's `sigma.alm()`, and the trimmed mean for
+  ROLE and the scale for plogis/pnorm.
+* `ALM(distribution="dbinom")` failed without `size`. As R's `alm()`, the size
+  is now the number of distinct values less one, it is stored as the scale and
+  the initial values come from the supsmu-smoothed series. `aid()` and
+  `aid_cat()` now pick the same models as R.
+* `predict()` of `dalaplace` failed with prediction intervals, and of
+  `dbcnorm` when `lambda_bc` was estimated rather than provided.
+* `predict_basic()` only handled the Normal regression and failed with ARIMA
+  terms and the count distributions: it is now `ALM.predict()`.
 
 
 greybox for Python v1.0.7 (2026-08-25)

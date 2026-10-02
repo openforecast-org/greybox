@@ -92,7 +92,12 @@ def qalaplace(p, loc=0, scale=1, alpha=0.5):
     array
         Quantile values.
     """
-    p = np.asarray(p)
+    # Vectorised over p, loc and scale, as R's qalaplace
+    p, loc, scale = np.broadcast_arrays(
+        np.asarray(p, dtype=float),
+        np.asarray(loc, dtype=float),
+        np.asarray(scale, dtype=float),
+    )
     result = np.empty_like(p, dtype=float)
 
     mask_0 = p == 0
@@ -105,9 +110,9 @@ def qalaplace(p, loc=0, scale=1, alpha=0.5):
     if np.any(mask_mid):
         p_mid = p[mask_mid]
         indicator = (p_mid <= alpha).astype(float)
-        result[mask_mid] = loc + scale / (indicator - alpha) * np.log(
-            (1 - indicator - p_mid) / (1 - indicator - alpha)
-        )
+        result[mask_mid] = loc[mask_mid] + scale[mask_mid] / (
+            indicator - alpha
+        ) * np.log((1 - indicator - p_mid) / (1 - indicator - alpha))
 
     return result
 

@@ -67,6 +67,11 @@ pointLik.alm <- function(object, log=TRUE, ...){
     if(any(distribution==scaleNormalBased)){
         scale <- sqrt(scale);
     }
+    # A scale model gives a scale per observation: the densities take those of the non-zeroes
+    scaleAll <- scale;
+    if(length(scale)>1){
+        scale <- scale[otU];
+    }
 
     likValues <- vector("numeric",nobs(object));
     likValues[otU] <- switch(distribution,
@@ -91,7 +96,7 @@ pointLik.alm <- function(object, log=TRUE, ...){
                              "dgeom" = dgeom(y, prob=1/(mu+1), log=log),
                              "dpois" = dpois(y, lambda=mu, log=log),
                              "dnbinom" = dnbinom(y, mu=mu, size=object$other$size, log=log),
-                             "dbinom" = dbinom(y-occurrenceModel*1, prob=mu, size=object$other$size, log=log),
+                             "dbinom" = dbinom(y-occurrenceModel*1, prob=1/(mu+1), size=object$other$size, log=log),
                              "dchisq" = dchisq(y, df=object$other$nu, ncp=mu, log=log),
                              "dbeta" = dbeta(y, shape1=mu, shape2=scale, log=log),
                              "plogis" = c(plogis(mu[ot], location=0, scale=1, log.p=TRUE),
@@ -108,43 +113,18 @@ pointLik.alm <- function(object, log=TRUE, ...){
     if(occurrenceModel){
         # Add differential entropy. This should only be done for the recursive model
         if(recursiveModel){
-            likValues[!otU] <- -switch(distribution,
-                                       "dnorm" =,
-                                       "dfnorm" =,
-                                       "dbcnorm" =,
-                                       "dlogitnorm" =,
-                                       "dlnorm" = log(sqrt(2*pi)*scale)+0.5,
-                                       "dexp" = 1,
-                                       "dgnorm" =,
-                                       "dlgnorm" = 1/object$other$shape -
-                                           log(object$other$shape / (2*scale*gamma(1/object$other$shape))),
-                                       "dinvgauss" = 0.5*(log(pi/2)+1+log(scale)),
-                                       "dgamma" = 1/scale + log(scale) + log(gamma(1/scale)) + (1-1/scale)*digamma(1/scale),
-                                       "dlaplace" =,
-                                       "dllaplace" =,
-                                       "dalaplace" = (1 + log(2*scale)),
-                                       "dlogis" = 2,
-                                       "dt" = ((scale+1)/2 *
-                                                   (digamma((scale+1)/2)-digamma(scale/2)) +
-                                                   log(sqrt(scale) * beta(scale/2,0.5))),
-                                       "ds" = ,
-                                       "dls" = (2 + 2*log(2*scale)),
-                                       "dchisq" = (log(2)*gamma(scale/2)-
-                                                       (1-scale/2)*digamma(scale/2)+
-                                                       scale/2),
-                                       "dbeta" = log(beta(mu,scale))-
-                                           (mu-1)*
-                                           (digamma(mu)-
-                                                digamma(mu+scale))-
-                                           (scale-1)*
-                                           (digamma(scale)-
-                                                digamma(mu+scale)),
-                                       # This is a normal approximation of the real entropy
-                                       "dpois" = 0.5*log(2*pi*scale)+0.5,
-                                       "dnbinom" = log(sqrt(2*pi)*scale)+0.5,
-                                       "dbinom" = 0.5*log(2*pi*object$other$size*object$mu[!otU]*(1-object$mu[!otU]))+0.5,
-                                       0
-            );
+            other <- switch(distribution,
+                            "dgnorm"=,
+                            "dlgnorm"=object$other$shape,
+                            "dalaplace"=object$other$alpha,
+                            "dnbinom"=,
+                            "dbinom"=object$other$size,
+                            NULL);
+            scaleZero <- scaleAll;
+            if(length(scaleZero)>1){
+                scaleZero <- scaleZero[!otU];
+            }
+            likValues[!otU] <- -entropyZero(distribution, scaleZero, object$mu[!otU], other);
         }
 
         likValues <- likValues + pointLik(object$occurrence);
@@ -245,4 +225,47 @@ pBICc.default <- function(object, ...){
     obs <- nobs(object);
     k <- nparam(object);
     return((k * log(obs) * obs) / (obs - k - 1)  - 2 * obs * pointLik(object));
+}
+
+
+# The differential entropy of each zero of an occurrence model with a recursive location:
+# minus the expected log-density at the location mu, with the scale in the form that the
+# density takes (the standard deviation for the Normal-based distributions). The log-domain
+# distributions add the Jacobian, E[log(y)] = mu. Where there is no closed form, it is the
+# entropy of a Normal distribution with the same variance (marked "Normal approximation").
+#' @keywords internal
+entropyZero <- function(distribution, scale, mu, other){
+    entropy <- switch(distribution,
+                  # Normal approximation for the folded, rectified, Box-Cox and logit Normal
+                  "dnorm"=,
+                  "dfnorm"=,
+                  "drectnorm"=,
+                  "dbcnorm"=,
+                  "dlogitnorm"=log(sqrt(2*pi)*scale)+0.5,
+                  "dlnorm"=log(sqrt(2*pi)*scale)+0.5+mu,
+                  "dgnorm"=1/other-log(other/(2*scale*gamma(1/other))),
+                  "dlgnorm"=1/other-log(other/(2*scale*gamma(1/other)))+mu,
+                  "dlaplace"=1+log(2*scale),
+                  "dllaplace"=1+log(2*scale)+mu,
+                  "dalaplace"=1+log(scale/(other*(1-other))),
+                  "ds"=2+2*log(2*scale),
+                  "dls"=2+2*log(2*scale)+mu,
+                  "dlogis"=2+log(scale),
+                  "dt"=(scale+1)/2*(digamma((scale+1)/2)-digamma(scale/2))+log(sqrt(scale)*beta(scale/2,0.5)),
+                  "dexp"=1+log(mu),
+                  "dgamma"=1/scale+log(scale*mu)+lgamma(1/scale)+(1-1/scale)*digamma(1/scale),
+                  # Normal approximation with the variance mu^2*scale
+                  "dinvgauss"=log(sqrt(2*pi*scale)*mu)+0.5,
+                  # The central chi-squared with df=scale, without the non-centrality
+                  "dchisq"=scale/2+log(2*gamma(scale/2))+(1-scale/2)*digamma(scale/2),
+                  "dbeta"=lbeta(mu,scale)-(mu-1)*digamma(mu)-(scale-1)*digamma(scale)+
+                      (mu+scale-2)*digamma(mu+scale),
+                  # Normal approximations for the counts
+                  "dpois"=0.5*log(2*pi*mu)+0.5,
+                  "dnbinom"=0.5*log(2*pi*(mu+mu^2/other))+0.5,
+                  "dgeom"=0.5*log(2*pi*mu*(1+mu))+0.5,
+                  "dbinom"=0.5*log(2*pi*other*mu/(1+mu)^2)+0.5,
+                  0);
+    # One value per zero, also where the entropy does not depend on mu
+    return(rep_len(entropy, length(mu)));
 }

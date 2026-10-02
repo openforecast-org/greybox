@@ -1680,3 +1680,56 @@ def test_point_lik_sums_to_loglik(distribution):
     model = ALM(distribution=distribution, **_POINT_LIK_KWARGS.get(distribution, {}))
     model.fit(X, _POINT_LIK_DATA[distribution])
     assert np.sum(point_lik(model)) == pytest.approx(model.loglik, rel=1e-8)
+
+
+_Y_OCC = (_RNG.random(150) < 0.6) * np.exp(_Z)
+
+
+@pytest.mark.parametrize("distribution", ["dnorm", "dlnorm", "dgamma", "dlaplace", "dinvgauss"])
+def test_occurrence_likelihood_matches_point_lik(distribution):
+    """With an occurrence model the scale is estimated on the non-zeroes, as in R."""
+    X = np.column_stack([np.ones(150), _X1])
+    occurrence = ALM(distribution="plogis").fit(X, (_Y_OCC != 0).astype(float))
+    model = ALM(distribution=distribution, occurrence=occurrence).fit(X, _Y_OCC)
+    assert np.isfinite(model.loglik)
+    assert np.sum(point_lik(model)) == pytest.approx(model.loglik, rel=1e-8)
+
+
+def test_role_estimates_like_the_likelihood():
+    """ROLE maximises the trimmed likelihood (trim=0.05 by default, as in R)."""
+    X = np.column_stack([np.ones(150), _X1])
+    role = ALM(distribution="dnorm", loss="ROLE").fit(X, _Z)
+    lik = ALM(distribution="dnorm").fit(X, _Z)
+    assert np.isfinite(role.loglik)
+    assert np.allclose(np.r_[role.intercept_, role.coef], np.r_[lik.intercept_, lik.coef], atol=0.2)
+
+
+def test_sigma_uses_nparam():
+    """sigma() divides by n - nparam, counting the estimated extra parameters."""
+    X = np.column_stack([np.ones(150), _X1])
+    model = ALM(distribution="dgnorm").fit(X, _Z)
+    residuals = np.asarray(model.residuals_, dtype=float)
+    expected = np.sqrt(np.sum(residuals**2) / (len(residuals) - model.nparam))
+    assert model.sigma == pytest.approx(expected)
+
+
+def test_dbinom_size_is_the_number_of_values_less_one():
+    """As R's alm(), the size of dbinom is the number of distinct values less one."""
+    X = np.ones((150, 1))
+    model = ALM(distribution="dbinom").fit(X, _COUNTS)
+    assert model.size_ == len(np.unique(_COUNTS)) - 1
+    assert model.scale == model.size_
+
+
+def test_qalaplace_vectorised_over_location():
+    from greybox.distributions import qalaplace
+
+    q = qalaplace(0.9, loc=np.array([0.0, 1.0, 2.0]), scale=1.0, alpha=0.3)
+    assert np.allclose(np.diff(q), 1.0)
+
+
+def test_dbcnorm_predicts_with_the_estimated_lambda():
+    X = np.column_stack([np.ones(150), _X1])
+    model = ALM(distribution="dbcnorm").fit(X, np.exp(_Z))
+    prediction = model.predict(X[:3], interval="prediction")
+    assert np.all(np.isfinite(np.asarray(prediction.upper)))

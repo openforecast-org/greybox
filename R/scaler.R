@@ -94,7 +94,8 @@ sm.alm <- function(object, formula=NULL, data=NULL,
     }
     return(do.call("scaler",list(formula, data, object$call$subset, object$call$na.action,
                                  distribution, object$mu, actuals(object), residuals(object),
-                                 parameters, object$occurrence, object$other, cl=cl, ...)));
+                                 parameters, object$occurrence, object$other,
+                                 recursive=!is.null(object$other$arima), cl=cl, ...)));
 }
 
 # The distributions built on the Normal one: their scale is the variance sigma^2, as in the
@@ -102,7 +103,7 @@ sm.alm <- function(object, formula=NULL, data=NULL,
 scaleNormalBased <- c("dnorm","dlnorm","dbcnorm","dlogitnorm","dfnorm","drectnorm");
 
 scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu, y, residuals,
-                   parameters=NULL, occurrence=NULL, other=NULL, ...){
+                   parameters=NULL, occurrence=NULL, other=NULL, recursive=FALSE, ...){
     # The function estimates the scale model
 
     # Start measuring the time of calculations
@@ -261,7 +262,8 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
                           "dlnorm"=,
                           "dbcnorm"=,
                           "dlogitnorm"=,
-                          "dfnorm"=scale,
+                          "dfnorm"=,
+                          "drectnorm"=scale,
                           "dlogis"=sqrt(scale),
                           "dlaplace"=,
                           "dllaplace"=,
@@ -281,7 +283,9 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
 
     #### The function estimates parameters of scale model ####
     CFScale <- function(B){
-        scale <- fitterScale(B, distribution);
+        scaleAll <- fitterScale(B, distribution);
+        # The densities are evaluated on the non-zeroes, with their scales
+        scale <- scaleAll[otU];
         CFValue <- -sum(switch(distribution,
                                "dnorm" = dnorm(y[otU], mean=mu[otU], sd=sqrt(scale), log=TRUE),
                                "dlaplace" = dlaplace(y[otU], mu=mu[otU], scale=scale, log=TRUE),
@@ -301,6 +305,7 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
                                "dbcnorm" = dbcnorm(y[otU], mu=mu[otU], sigma=sqrt(scale),
                                                    lambda=other, log=TRUE),
                                "dfnorm" = dfnorm(y[otU], mu=mu[otU], sigma=sqrt(scale), log=TRUE),
+                               "drectnorm" = drectnorm(y[otU], mu=mu[otU], sigma=sqrt(scale), log=TRUE),
                                "dinvgauss" = dinvgauss(y[otU], mean=mu[otU],
                                                        dispersion=scale/mu[otU], log=TRUE),
                                "dgamma" = dgamma(y[otU], shape=1/scale,
@@ -316,55 +321,21 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
                                #              plogis(mu[otU][!ot], location=0, scale=1, lower.tail=FALSE, log.p=TRUE))
         ));
 
-        # The differential entropy for the models with the missing data
-        if(occurrenceModel){
-            CFValue[] <- CFValue + sum(switch(distribution,
-                                              "dnorm" =,
-                                              "dlnorm" =,
-                                              "dfnorm" =,
-                                              "dbcnorm" =,
-                                              "dlogitnorm" = obsZero*(log(sqrt(2*pi)*sqrt(scale[!otU]))+0.5),
-                                              "dgnorm" =,
-                                              "dlgnorm" =obsZero*(1/other-
-                                                                      log(other /
-                                                                              (2*scale[!otU]*gamma(1/other)))),
-                                              # "dinvgauss" = 0.5*(obsZero*(log(pi/2)+1+suppressWarnings(log(scale[!otU])))-
-                                              #                                 sum(log(mu[!otU]))),
-                                              "dinvgauss" = obsZero*(0.5*(log(pi/2)+1+suppressWarnings(log(scale[!otU])))),
-                                              "dgamma" = obsZero*(1/scale[!otU] + log(scale[!otU]) +
-                                                                      log(gamma(1/scale[!otU])) +
-                                                                      (1-1/scale[!otU])*digamma(1/scale[!otU])),
-                                              "dlaplace" =,
-                                              "dllaplace" =,
-                                              "ds" =,
-                                              "dls" = obsZero*(2 + 2*log(2*scale[!otU])),
-                                              "dalaplace" = obsZero*(1 + log(2*scale[!otU])),
-                                              "dlogis" = obsZero*2,
-                                              "dt" = obsZero*((scale[!otU]+1)/2 *
-                                                                  (digamma((scale[!otU]+1)/2)-digamma(scale[!otU]/2)) +
-                                                                  log(sqrt(scale[!otU]) * beta(scale[!otU]/2,0.5))),
-                                              "dchisq" = obsZero*(log(2)*gamma(scale[!otU]/2)-
-                                                                      (1-scale[!otU]/2)*digamma(scale[!otU]/2)+
-                                                                      scale[!otU]/2),
-                                              # "dbeta" = sum(log(beta(mu[otU],scale[!otU][otU]))-
-                                              #                   (mu[otU]-1)*
-                                              #                   (digamma(mu[otU])-
-                                              #                        digamma(mu[otU]+scale[!otU][otU]))-
-                                              #                   (scale[!otU][otU]-1)*
-                                              #                   (digamma(scale[!otU][otU])-
-                                              #                        digamma(mu[otU]+scale[!otU][otU]))),
-                                              # This is a normal approximation of the real entropy
-                                              # "dpois" = sum(0.5*log(2*pi*scale[!otU])+0.5),
-                                              # "dnbinom" = obsZero*(log(sqrt(2*pi)*scale[!otU])+0.5),
-                                              0
-            ));
+        # The differential entropy of the zeros, when the location model is recursive, as in alm()
+        if(occurrenceModel && recursive){
+            CFValue[] <- CFValue + sum(entropyZero(distribution,
+                                                   switch(distribution,
+                                                          "dnorm"=,"dlnorm"=,"dbcnorm"=,"dlogitnorm"=,
+                                                          "dfnorm"=,"drectnorm"=sqrt(scaleAll[!otU]),
+                                                          scaleAll[!otU]),
+                                                   mu[!otU], other));
         }
         return(CFValue);
     }
 
     # Prepare parameters
     if(is.null(B)){
-        if(any(distribution==c("dnorm","dlnorm","dbcnorm","dlogitnorm","dfnorm","dlogis"))){
+        if(any(distribution==c("dnorm","dlnorm","dbcnorm","dlogitnorm","dfnorm","drectnorm","dlogis"))){
             B <- .lm.fit(matrixXregScale[otU,,drop=FALSE],2*log(abs(residuals[otU])))$coefficients;
         }
         else if(any(distribution==c("dlaplace","dllaplace","dalaplace"))){
@@ -420,7 +391,8 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
                      "dlnorm"=,
                      "dbcnorm"=,
                      "dlogitnorm"=,
-                     "dfnorm"=residuals[subset]^2,
+                     "dfnorm"=,
+                     "drectnorm"=residuals[subset]^2,
                      "dlogis"=,
                      "dlaplace"=,
                      "dllaplace"=,

@@ -11,6 +11,11 @@ Bugfixes:
 * extractSigma() of a model with a scale model returned the variance rather than the standard deviation for dgamma and dinvgauss.
 * predict() of a dlogis model with a scale model took the standard deviation of the logistic distribution for its variance, making the prediction intervals too wide.
 * predict() of a scale model transformed the values for dgamma and dinvgauss, while its fitted values are the scale itself.
+* The scale model of alm() failed for dfnorm and drectnorm.
+* The differential entropy of the zeroes in the occurrence models with ARIMA terms was computed in several places with differing formulae, some of them wrong (e.g. dlnorm, dgamma, dinvgauss, dbeta and the count distributions). It now comes from a single helper used by the loss, pointLik() and the scale model, so the logLik of such models changes and equals sum(pointLik()).
+* The scale model of an alm() with an occurrence model misaligned the scale with the non-zero observations, and its logLik did not include the one of the occurrence model.
+* alm() with an occurrence model and ARIMA orders failed when the smooth package was available.
+* pointLik() of dbinom used the wrong probability.
 
 
 greybox v2.0.8 (Release data: 2026-02-20)

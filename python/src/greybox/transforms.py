@@ -35,11 +35,12 @@ def mean_fast(
                 return np.mean(x_sorted[n_trim:-n_trim])
             return np.mean(x)
         else:
+            # R's meanFast keeps the floor(n * (1 - trim)) highest values for
+            # side="lower" and the lowest ones for side="upper"
             x_sorted = np.sort(x)
-            n_trimmed = int(np.floor(len(x) * trim))
             if side == "lower":
-                return np.mean(x_sorted[n_trimmed:])
-            else:
-                return np.mean(x_sorted[:-n_trimmed])
+                x_sorted = x_sorted[::-1]
+            n_kept = int(np.floor(len(x) * (1 - trim)))
+            return np.mean(x_sorted[:n_kept])
     else:
         return np.sum(x) / df

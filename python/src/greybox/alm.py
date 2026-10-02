@@ -25,6 +25,7 @@ from .fitters import (
 )
 from .methods.summary import SummaryResult
 from .transforms import bc_transform_inv as _bc_transform_inv
+from .transforms import mean_fast
 from .xreg import xreg_expander
 
 
@@ -224,8 +225,8 @@ class ALM:
         Size parameter for Negative Binomial/Binomial distributions.
     nu : float, optional
         Degrees of freedom for Student's t or Chi-squared distributions.
-    trim : float, default=0.0
-        Trim proportion for ROLE loss.
+    trim : float, optional
+        Trim proportion for ROLE loss; 0.05 when not provided, as in R.
     lambda_l1 : float, optional
         L1 regularization parameter for LASSO.
     lambda_l2 : float, optional
@@ -344,7 +345,7 @@ class ALM:
         lambda_bc=None,
         size=None,
         nu=None,
-        trim=0.0,
+        trim=None,
         lambda_l1=None,
         lambda_l2=None,
         nlopt_kargs=None,
@@ -359,6 +360,7 @@ class ALM:
         self.shape = shape
         self.lambda_bc = lambda_bc
         self.size = size
+        self.size_: float | None = None
         self.nu = nu
         self.trim = trim
         self.lambda_l1 = lambda_l1
@@ -600,6 +602,13 @@ class ALM:
             if i_order > 0:
                 yr = np.diff(yr, n=i_order)
             B_ols = _ols_init(X_init, yr)
+        elif self.distribution == "dbinom" and i_order == 0:
+            # R: least squares on the series smoothed by supsmu (alm.R, dbinom)
+            from .smoothers import supsmu
+
+            mask = y != 0 if isinstance(self.occurrence, ALM) else np.ones(len(y), bool)
+            smoothed = supsmu(np.flatnonzero(mask) + 1.0, y[mask])["y"]
+            B_ols = _ols_init(X_init[mask], smoothed)
         elif self.distribution == "dpois":
             if i_order > 0:
                 # ARI: log-link OLS (matches R's I(d) branch)
@@ -699,6 +708,13 @@ class ALM:
         # fit the size model on the non-zero subset, mirroring R's
         # `alm(y~., data, occurrence=<fitted alm>)`.
         occurrence_is_model = isinstance(self.occurrence, ALM)
+        # R: the size of dbinom is the number of distinct values less one, and one
+        # fewer with an occurrence model, whose zeroes are removed
+        self.size_ = (
+            len(np.unique(y)) - 1 - int(occurrence_is_model)
+            if self.distribution == "dbinom"
+            else self.size
+        )
         if occurrence_is_model:
             occ_fitted = np.asarray(self.occurrence.fitted_values_, dtype=float)
             if len(occ_fitted) != n_samples:
@@ -738,13 +754,13 @@ class ALM:
                 ),
                 other=other_val,
                 a_parameter_provided=a_parameter_provided,
-                trim=self.trim,
+                trim=self._trim_value(),
                 lambda_bc=(
                     self.lambda_bc
                     if self.distribution == "dbcnorm" and a_parameter_provided
                     else 0.0
                 ),
-                size=self.size if self.distribution == "dbinom" else 1.0,
+                size=self.size_ if self.distribution == "dbinom" else 1.0,
                 otU=otU_full if occurrence_is_model else None,
                 obs_zero=obs_zero,
                 obs_nonzero=obs_nonzero,
@@ -914,6 +930,7 @@ class ALM:
             other_val,
             otU_full,
             obs_nonzero,
+            self._trim_value(),
         )
         fitter_return["scale"] = scale
         self.other_ = other_val
@@ -974,7 +991,7 @@ class ALM:
 
         self._loss_value = objective_func(B_opt, np.zeros(n_params))
 
-        if self.loss == "likelihood":
+        if self.loss in ("likelihood", "ROLE"):
             self._log_lik = -self._loss_value
             if self.distribution == "dbeta":
                 n_params_calc = 2 * n_params_base
@@ -1034,10 +1051,14 @@ class ALM:
             other_val,
             otU_full,
             obs_nonzero,
+            self._trim_value(),
         )
         # The scale of the Normal-based distributions is the variance (ADAM monograph)
         if self.distribution in VARIANCE_SCALE_DISTRIBUTIONS:
             scale = scale**2
+        # R stores the size as the scale of dbinom
+        elif self.distribution == "dbinom":
+            scale = float(self.size_)
         self._scale = scale
 
         XtX = X.T @ X
@@ -1172,9 +1193,9 @@ class ALM:
                 lambda_val=lambda_val,
                 other=other_val,
                 a_parameter_provided=a_parameter_provided,
-                trim=self.trim,
+                trim=self._trim_value(),
                 lambda_bc=lambda_bc_val,
-                size=self.size if self.distribution == "dbinom" else 1.0,
+                size=self.size_ if self.distribution == "dbinom" else 1.0,
             )
 
         FI = _numerical_hessian(cf_wrapper, B_reg)
@@ -1453,7 +1474,7 @@ class ALM:
                     )
 
             elif d == "dbinom":
-                binom_size = self.size if self.size is not None else 1
+                binom_size = self.size_ if self.size_ is not None else 1
                 lower[:, i] = np.exp(lp_l) * binom_size
                 upper[:, i] = np.exp(lp_u) * binom_size
                 if interval == "prediction":
@@ -1636,7 +1657,8 @@ class ALM:
             ar_coefs = np.array(list(self.arima_polynomial_.values()))
             n_exog = self._n_features_exog
             ari_order = self._ari_order
-            lambda_bc_val = self.lambda_bc if self.distribution == "dbcnorm" else 0.0
+            # The lambda of the fit, estimated or provided
+            lambda_bc_val = self.other_ if self.distribution == "dbcnorm" else 0.0
 
             if X.shape[1] != n_exog:
                 raise ValueError(
@@ -1710,7 +1732,7 @@ class ALM:
             self.distribution,
             mu,
             scale_sd(self.distribution, self.scale) if self.scale is not None else 1.0,
-            self.lambda_bc if self.distribution == "dbcnorm" else 0.0,
+            self.other_ if self.distribution == "dbcnorm" else 0.0,
         )
 
         variances = None
@@ -1927,21 +1949,23 @@ class ALM:
         -------
         sigma : float
             Residual standard error, computed as sqrt(sum(residuals^2) / (n - k))
-            where n is the number of observations and k is the number of parameters
-            (including the scale parameter).
-            For dinvgauss/dgamma/dexp, uses (residuals - 1) since residuals are
-            on a multiplicative scale (y/mu), matching R's sigma.alm().
+            where n is the number of observations and k is :attr:`nparam`, as R's
+            sigma.alm(). For dinvgauss/dgamma/dexp, uses (residuals - 1) since
+            residuals are on a multiplicative scale (y/mu); for ROLE it is the
+            trimmed mean of the squared residuals; for plogis/pnorm, the scale.
         """
         if self.residuals_ is None:
             raise ValueError("Model not fitted. Call fit() first.")
-        n = len(self.residuals_)
-        k = (
-            self._n_features + 1 - self._i_order
-        )  # i_order constrained lags are not free params
-        resid = self.residuals_
+        if self.distribution in ("plogis", "pnorm"):
+            return float(self.scale) if self.scale is not None else np.nan
+        resid = np.asarray(self.residuals_, dtype=float)
         if self.distribution in ("dinvgauss", "dgamma", "dexp"):
             resid = resid - 1
-        return np.sqrt(np.sum(resid**2) / (n - k))
+        elif self.loss == "ROLE":
+            return float(
+                np.sqrt(mean_fast(resid**2, trim=self._trim_value(), side="both"))
+            )
+        return float(np.sqrt(np.sum(resid**2) / (len(resid) - self.nparam)))
 
     @property
     def loglik(self) -> float | None:
@@ -2151,6 +2175,12 @@ class ALM:
             upper_ci = upper_ci[parm]
 
         return np.column_stack([lower_ci, upper_ci])
+
+    def _trim_value(self) -> float:
+        """The trimming of ROLE: 0.05 unless provided, as in R; 0 for other losses."""
+        if self.loss != "ROLE":
+            return 0.0
+        return 0.05 if self.trim is None else float(self.trim)
 
     def _get_other_parameter(self):
         """Get the additional parameter for distributions that require it."""

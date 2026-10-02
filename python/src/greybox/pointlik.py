@@ -45,8 +45,7 @@ def point_lik_cumulative(model: ALM) -> np.ndarray:
         size = model.other_ if model.other_ is not None else 1.0
         return dist.pnbinom(y, loc=mu, size=size)
     if distribution == "dbinom":
-        size = model.size if model.size is not None else 1
-        return dist.pbinom(y, size=int(size), prob=1.0 / (mu + 1.0))
+        return dist.pbinom(y, size=int(model.size_ or 1), prob=1.0 / (mu + 1.0))
     raise ValueError(
         f"point_lik_cumulative is not defined for distribution={distribution!r}"
     )
@@ -91,10 +90,17 @@ def point_lik(
         raise TypeError("object must be a fitted ALM model")
 
     distribution = model.distribution
-    y = np.asarray(model.actuals, dtype=float)
+    y_all = np.asarray(model.actuals, dtype=float)
+    # With an occurrence model, the density is that of the non-zeroes, and the
+    # occurrence model's point likelihoods are added to all the observations
+    occurrence = model.occurrence if isinstance(model.occurrence, ALM) else None
+    otU = y_all != 0 if occurrence is not None else np.ones(len(y_all), dtype=bool)
+    y = y_all[otU]
     # The location of the distribution, as R's pointLik.alm uses object$mu
-    mu = np.asarray(model.mu_, dtype=float)
+    mu = np.asarray(model.mu_, dtype=float)[otU]
     scale = scale_sd(distribution, model.scale)
+    if np.size(scale) > 1:
+        scale = np.asarray(scale)[otU]
     other = model.other_
 
     def log_y_density(density):
@@ -133,10 +139,24 @@ def point_lik(
         "dgeom": lambda: dist.dgeom(y, prob=1 / (mu + 1), log=True),
         "dpois": lambda: dist.dpois(y, loc=mu, log=True),
         "dnbinom": lambda: dist.dnbinom(y, loc=mu, size=other, log=True),
+        "dbinom": lambda: dist.dbinom(
+            y - int(occurrence is not None),
+            size=model.size_,
+            prob=1 / (mu + 1),
+            log=True,
+        ),
         "dchisq": lambda: stats.ncx2.logpdf(y, df=scale, nc=mu),
         "dbeta": lambda: dist.dbeta(y, a=mu, b=scale, log=True),
+        # The occurrence models: the probability of the observed outcome
+        "plogis": lambda: np.where(
+            y != 0, stats.logistic.logcdf(mu), stats.logistic.logsf(mu)
+        ),
+        "pnorm": lambda: np.where(y != 0, stats.norm.logcdf(mu), stats.norm.logsf(mu)),
     }
     if distribution not in densities:
         raise ValueError(f"point_lik is not defined for distribution={distribution!r}")
-    lik = np.asarray(densities[distribution](), dtype=float)
+    lik = np.zeros(len(y_all))
+    lik[otU] = densities[distribution]()
+    if occurrence is not None:
+        lik = lik + point_lik(occurrence)
     return lik if log else np.exp(lik)
