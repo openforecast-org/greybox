@@ -63,8 +63,8 @@ pointLik.alm <- function(object, log=TRUE, ...){
         mu <- object$mu;
     }
     scale <- extractScale(object);
-    # The scale of dnorm and dlnorm is the variance, while the densities need the standard deviation
-    if(any(distribution==c("dnorm","dlnorm"))){
+    # The scale of the Normal-based distributions is the variance, the densities need the standard deviation
+    if(any(distribution==scaleNormalBased)){
         scale <- sqrt(scale);
     }
 

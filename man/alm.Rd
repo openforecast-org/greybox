@@ -147,8 +147,9 @@ Function returns \code{model} - the final model of the class
 \item residuals - residuals of the model,
 \item mu - the estimated location parameter of the distribution,
 \item scale - the estimated scale parameter of the distribution. This is the variance
-\eqn{\sigma^2} for \code{dnorm} and \code{dlnorm} (for the latter, the variance of the
-logarithms), following the ADAM monograph. If a formula was provided for
+\eqn{\sigma^2} for the distributions built on the Normal one: \code{dnorm},
+\code{dlnorm} (the variance of the logarithms), \code{dbcnorm}, \code{dlogitnorm},
+\code{dfnorm} and \code{drectnorm}, following the ADAM monograph. If a formula was provided for
 scale, then an object of class "scale" will be returned.
 \item distribution - distribution used in the estimation,
 \item logLik - log-likelihood of the model. Only returned, when \code{loss="likelihood"} or

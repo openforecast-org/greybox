@@ -44,8 +44,9 @@ In case of a simpler model, the functions will return the scalar using
 standard error of the residuals respectively.
 
 The scale follows the ADAM monograph: it is the variance \eqn{\sigma^2} for the
-Normal and Log-Normal distributions (\code{dnorm} and \code{dlnorm}), so that
-\code{extractSigma()} returns its square root in these cases.
+distributions built on the Normal one (\code{dnorm}, \code{dlnorm}, \code{dbcnorm},
+\code{dlogitnorm}, \code{dfnorm} and \code{drectnorm}), so that \code{extractSigma()}
+returns its square root in these cases.
 }
 \examples{
 # Generate the data

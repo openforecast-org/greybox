@@ -91,88 +91,52 @@ def point_lik(
         raise TypeError("object must be a fitted ALM model")
 
     distribution = model.distribution
-    y = model.actuals
-    fitted = model.fitted
-    mu = fitted
+    y = np.asarray(model.actuals, dtype=float)
+    # The location of the distribution, as R's pointLik.alm uses object$mu
+    mu = np.asarray(model.mu_, dtype=float)
     scale = scale_sd(distribution, model.scale)
+    other = model.other_
 
-    if distribution == "dnorm":
-        if log:
-            lik = stats.norm.logpdf(y, loc=mu, scale=scale)
-        else:
-            lik = stats.norm.pdf(y, loc=mu, scale=scale)
+    def log_y_density(density):
+        # The log-domain distributions: the density of log(y) and its Jacobian
+        return density(np.log(y)) - np.log(y)
 
-    elif distribution == "dlaplace":
-        if log:
-            lik = stats.laplace.logpdf(y, loc=mu, scale=scale)
-        else:
-            lik = stats.laplace.pdf(y, loc=mu, scale=scale)
-
-    elif distribution == "dlogis":
-        if log:
-            lik = stats.logistic.logpdf(y, loc=mu, scale=scale)
-        else:
-            lik = stats.logistic.pdf(y, loc=mu, scale=scale)
-
-    elif distribution == "dt":
-        df_res = model.df_residual_
-        if log:
-            lik = stats.t.logpdf(y, df=df_res, loc=mu, scale=scale)
-        else:
-            lik = stats.t.pdf(y, df=df_res, loc=mu, scale=scale)
-
-    elif distribution == "dlnorm":
-        sdlog = scale
-        meanlog = np.log(mu)
-        if log:
-            lik = stats.lognorm.logpdf(y, s=sdlog, scale=np.exp(meanlog))
-        else:
-            lik = stats.lognorm.pdf(y, s=sdlog, scale=np.exp(meanlog))
-
-    elif distribution == "dgnorm":
-        shape = model.other_ if model.other_ is not None else 2.0
-        if log:
-            lik = stats.gennorm.logpdf(y, beta=shape, loc=mu, scale=scale)
-        else:
-            lik = stats.gennorm.pdf(y, beta=shape, loc=mu, scale=scale)
-
-    elif distribution == "dgamma":
-        if scale is None or scale == 0:
-            shape = 1.0
-        else:
-            shape = 1 / scale
-        if log:
-            lik = stats.gamma.logpdf(y, a=shape, scale=scale * mu)
-        else:
-            lik = stats.gamma.pdf(y, a=shape, scale=scale * mu)
-
-    elif distribution == "dexp":
-        if log:
-            lik = stats.expon.logpdf(y, scale=mu)
-        else:
-            lik = stats.expon.pdf(y, scale=mu)
-
-    elif distribution == "dpois":
-        if log:
-            lik = stats.poisson.logpmf(np.round(y), mu=mu)
-        else:
-            lik = stats.poisson.pmf(np.round(y), mu=mu)
-
-    elif distribution == "dnbinom":
-        size = model.other_ if model.other_ is not None else 1.0
-        p_val = size / (size + mu)
-        if log:
-            lik = stats.nbinom.logpmf(np.round(y), n=size, p=p_val)
-        else:
-            lik = stats.nbinom.pmf(np.round(y), n=size, p=p_val)
-
-    elif distribution == "dlogitnorm":
-        lik = dist.dlogitnorm(y, loc=mu, scale=scale, log=log)
-
-    else:
-        if log:
-            lik = stats.norm.logpdf(y, loc=mu, scale=scale)
-        else:
-            lik = stats.norm.pdf(y, loc=mu, scale=scale)
-
-    return lik
+    densities = {
+        "dnorm": lambda: dist.dnorm(y, loc=mu, scale=scale, log=True),
+        "dlnorm": lambda: dist.dlnorm(y, loc=mu, scale=scale, log=True),
+        "dgnorm": lambda: dist.dgnorm(y, loc=mu, scale=scale, shape=other, log=True),
+        "dlgnorm": lambda: log_y_density(
+            lambda q: dist.dgnorm(q, loc=mu, scale=scale, shape=other, log=True)
+        ),
+        "dfnorm": lambda: dist.dfnorm(y, loc=mu, scale=scale, log=True),
+        "drectnorm": lambda: dist.drectnorm(y, loc=mu, scale=scale, log=True),
+        "dbcnorm": lambda: dist.dbcnorm(
+            y, loc=mu, scale=scale, lambda_bc=other, log=True
+        ),
+        "dlogitnorm": lambda: dist.dlogitnorm(y, loc=mu, scale=scale, log=True),
+        "dexp": lambda: dist.dexp(y, scale=mu, log=True),
+        "dinvgauss": lambda: dist.dinvgauss(y, loc=mu, scale=scale / mu, log=True),
+        "dgamma": lambda: dist.dgamma(y, shape=1 / scale, scale=scale * mu, log=True),
+        "dlaplace": lambda: dist.dlaplace(y, loc=mu, scale=scale, log=True),
+        "dllaplace": lambda: log_y_density(
+            lambda q: dist.dlaplace(q, loc=mu, scale=scale, log=True)
+        ),
+        "dalaplace": lambda: dist.dalaplace(
+            y, loc=mu, scale=scale, alpha=other, log=True
+        ),
+        "dlogis": lambda: dist.dlogis(y, loc=mu, scale=scale, log=True),
+        "dt": lambda: dist.dt(y - mu, df=scale, log=True),
+        "ds": lambda: dist.ds(y, loc=mu, scale=scale, log=True),
+        "dls": lambda: log_y_density(
+            lambda q: dist.ds(q, loc=mu, scale=scale, log=True)
+        ),
+        "dgeom": lambda: dist.dgeom(y, prob=1 / (mu + 1), log=True),
+        "dpois": lambda: dist.dpois(y, loc=mu, log=True),
+        "dnbinom": lambda: dist.dnbinom(y, loc=mu, size=other, log=True),
+        "dchisq": lambda: stats.ncx2.logpdf(y, df=scale, nc=mu),
+        "dbeta": lambda: dist.dbeta(y, a=mu, b=scale, log=True),
+    }
+    if distribution not in densities:
+        raise ValueError(f"point_lik is not defined for distribution={distribution!r}")
+    lik = np.asarray(densities[distribution](), dtype=float)
+    return lik if log else np.exp(lik)

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 from greybox.formula import formula, expand_formula
 from greybox.alm import ALM
+from greybox.pointlik import point_lik
 from scipy.special import erfc
 
 
@@ -1634,3 +1635,48 @@ class TestALMOrders:
         # arima_polynomial_ covers all ari_order=2 lags
         assert list(model.arima_polynomial_.keys()) == ["mpgLag1", "mpgLag2"]
 
+
+_RNG = np.random.default_rng(7)
+_X1 = _RNG.normal(size=150)
+_Z = 1 + 0.4 * _X1 + _RNG.normal(0, 0.5, 150)
+_COUNTS = _RNG.poisson(np.exp(_Z)).astype(float)
+_POINT_LIK_DATA = {
+    "dnorm": _Z,
+    "dlaplace": _Z,
+    "ds": _Z,
+    "dgnorm": _Z,
+    "dlogis": _Z,
+    "dt": _Z,
+    "dalaplace": _Z,
+    "dlnorm": np.exp(_Z),
+    "dllaplace": np.exp(_Z),
+    "dls": np.exp(_Z),
+    "dlgnorm": np.exp(_Z),
+    "dinvgauss": np.exp(_Z),
+    "dgamma": np.exp(_Z),
+    "dexp": np.exp(_Z),
+    "dbcnorm": np.exp(_Z),
+    "dchisq": np.exp(_Z),
+    "dlogitnorm": 1 / (1 + np.exp(-(_Z - 1))),
+    "dbeta": 1 / (1 + np.exp(-(_Z - 1))),
+    "dfnorm": np.abs(_Z - 1),
+    "drectnorm": np.maximum(_Z - 1, 0) + 1e-9,
+    "dpois": _COUNTS,
+    "dnbinom": _COUNTS,
+    "dgeom": _COUNTS,
+}
+_POINT_LIK_KWARGS = {
+    "dbcnorm": {"lambda_bc": 0.1},
+    "dalaplace": {"alpha": 0.3},
+    "dgnorm": {"shape": 1.5},
+    "dlgnorm": {"shape": 1.5},
+}
+
+
+@pytest.mark.parametrize("distribution", sorted(_POINT_LIK_DATA))
+def test_point_lik_sums_to_loglik(distribution):
+    """The point likelihoods add up to the log-likelihood, as in R's pointLik."""
+    X = np.column_stack([np.ones(150), _X1])
+    model = ALM(distribution=distribution, **_POINT_LIK_KWARGS.get(distribution, {}))
+    model.fit(X, _POINT_LIK_DATA[distribution])
+    assert np.sum(point_lik(model)) == pytest.approx(model.loglik, rel=1e-8)

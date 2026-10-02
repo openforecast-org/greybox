@@ -370,6 +370,7 @@ class ALM:
         self._scale = None
         self.other_ = None
         self.fitted_values_ = None
+        self.mu_: np.ndarray | None = None
         self.residuals_ = None
         self._loss_value = None
         self._log_lik = None
@@ -892,6 +893,9 @@ class ALM:
                 or self.distribution == "dbeta"
             ):
                 mu_computed = np.exp(linear_pred)
+            elif self.distribution == "dchisq":
+                # The non-centrality, as in the fitter (R: (X B)^2)
+                mu_computed = np.where(linear_pred < 0, 1e100, linear_pred**2)
             else:
                 mu_computed = linear_pred
 
@@ -948,6 +952,8 @@ class ALM:
             else (self.lambda_bc if self.distribution == "dbcnorm" else 0.0)
         )
 
+        # The location of the distribution, R's object$mu
+        self.mu_ = np.asarray(fitter_return["mu"], dtype=float)
         self.fitted_values_ = extractor_fitted(
             self.distribution,
             fitter_return["mu"],
@@ -1029,7 +1035,7 @@ class ALM:
             otU_full,
             obs_nonzero,
         )
-        # The scale of dnorm and dlnorm is the variance, as in the ADAM monograph
+        # The scale of the Normal-based distributions is the variance (ADAM monograph)
         if self.distribution in VARIANCE_SCALE_DISTRIBUTIONS:
             scale = scale**2
         self._scale = scale
@@ -1673,7 +1679,9 @@ class ALM:
                         extractor_fitted(
                             self.distribution,
                             np.array([mu_i]),
-                            self.scale if self.scale is not None else 1.0,
+                            scale_sd(self.distribution, self.scale)
+                            if self.scale is not None
+                            else 1.0,
                             lambda_bc_val,
                         )[0]
                     )
@@ -1701,7 +1709,7 @@ class ALM:
         mean = extractor_fitted(
             self.distribution,
             mu,
-            self.scale if self.scale is not None else 1.0,
+            scale_sd(self.distribution, self.scale) if self.scale is not None else 1.0,
             self.lambda_bc if self.distribution == "dbcnorm" else 0.0,
         )
 

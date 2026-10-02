@@ -9,8 +9,9 @@ greybox for Python v1.0.8 (unreleased)
 ==============
 
 Changes:
-* `ALM` now stores sigma^2 (the variance) as the `scale` of dnorm and
-  dlnorm (for the latter, the variance of log(y)), following the ADAM
+* `ALM` now stores sigma^2 (the variance) as the `scale` of the
+  distributions built on the Normal one: dnorm, dlnorm (the variance of
+  log(y)), dbcnorm, dlogitnorm, dfnorm and drectnorm, following the ADAM
   monograph (Tables 11.1-11.2 and Chapter 17), the smooth package and the R
   greybox v2.0.9. The same applies to the `scale` of `CALM()` and
   `stepwise()`. All the other distributions keep their scale. The estimates,
@@ -18,6 +19,22 @@ Changes:
   `point_lik()` and `outlier_dummy()` are unchanged numerically.
 
 Bugfixes:
+* `ALM(distribution="dinvgauss")` diverged (an intercept of 569 and a scale of
+  6e249 on mtcars, where R's `alm()` gives 3.60 and 0.0138): the likelihood
+  still passed the parameters of the Inverse Gaussian in the form used before
+  `dinvgauss()` moved to R's `(mean, dispersion)`. It now evaluates
+  `dinvgauss(y, mean=mu, dispersion=scale/mu)` as R, and matches it.
+* `point_lik()` evaluated the densities at the fitted values rather than at the
+  location `mu`, and had no branch for a dozen distributions, which fell back
+  to the Normal density: its sum differed from the log-likelihood for
+  `dlogitnorm`, `dfnorm`, `drectnorm`, `dinvgauss` and others. It now follows
+  R's `pointLik.alm` for every distribution, with greybox's densities, and adds
+  up to the log-likelihood. The location is kept as `ALM.mu_`.
+* `dchisq` was estimated with a central chi-squared density, and its location
+  after the fit was not squared; the non-centrality is `(X B)^2`, as in the
+  fitter and in R's code.
+* The scale of `CALM()` for dnorm and dfnorm divided by n-k, where R's
+  `calm()` divides by n.
 * The native extensions are compiled with floating-point contraction disabled
   (`-ffp-contract=off` on GCC/Clang, `/fp:precise` on MSVC). They exist to
   reproduce R bit for bit, and a fused multiply-add rounds once where the

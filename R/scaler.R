@@ -97,6 +97,10 @@ sm.alm <- function(object, formula=NULL, data=NULL,
                                  parameters, object$occurrence, object$other, cl=cl, ...)));
 }
 
+# The distributions built on the Normal one: their scale is the variance sigma^2, as in the
+# ADAM monograph, while their densities take the standard deviation, sqrt(scale).
+scaleNormalBased <- c("dnorm","dlnorm","dbcnorm","dlogitnorm","dfnorm","drectnorm");
+
 scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu, y, residuals,
                    parameters=NULL, occurrence=NULL, other=NULL, ...){
     # The function estimates the scale model
@@ -251,13 +255,13 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
 
     fitterScale <- function(B, distribution){
         scale <- exp(matrixXregScale %*% B);
-        # The scale of dnorm and dlnorm is the variance, as in the ADAM monograph
+        # The scale of the Normal-based distributions is the variance, as in the ADAM monograph
         scale[] <- switch(distribution,
                           "dnorm"=,
-                          "dlnorm"=scale,
+                          "dlnorm"=,
                           "dbcnorm"=,
                           "dlogitnorm"=,
-                          "dfnorm"=,
+                          "dfnorm"=scale,
                           "dlogis"=sqrt(scale),
                           "dlaplace"=,
                           "dllaplace"=,
@@ -294,9 +298,9 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
                                "dls" = ds(log(y[otU]), mu=mu[otU], scale=scale, log=TRUE)-log(y[otU]),
                                "dlgnorm" = dgnorm(log(y[otU]), mu=mu[otU], scale=scale,
                                                   shape=other, log=TRUE)-log(y[otU]),
-                               "dbcnorm" = dbcnorm(y[otU], mu=mu[otU], sigma=scale,
+                               "dbcnorm" = dbcnorm(y[otU], mu=mu[otU], sigma=sqrt(scale),
                                                    lambda=other, log=TRUE),
-                               "dfnorm" = dfnorm(y[otU], mu=mu[otU], sigma=scale, log=TRUE),
+                               "dfnorm" = dfnorm(y[otU], mu=mu[otU], sigma=sqrt(scale), log=TRUE),
                                "dinvgauss" = dinvgauss(y[otU], mean=mu[otU],
                                                        dispersion=scale/mu[otU], log=TRUE),
                                "dgamma" = dgamma(y[otU], shape=1/scale,
@@ -304,7 +308,7 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
                                "dchisq" = dchisq(y[otU], df=scale, ncp=mu[otU], log=TRUE),
                                "dpois" = dpois(y[otU], lambda=mu[otU], log=TRUE),
                                "dnbinom" = dnbinom(y[otU], mu=mu[otU], size=scale, log=TRUE),
-                               "dlogitnorm" = dlogitnorm(y[otU], mu=mu[otU], sigma=scale, log=TRUE)
+                               "dlogitnorm" = dlogitnorm(y[otU], mu=mu[otU], sigma=sqrt(scale), log=TRUE)
                                # "dbeta" = dbeta(y[otU], shape1=mu[otU], shape2=scale, log=TRUE),
                                # "pnorm" = c(pnorm(mu[otU][ot], mean=0, sd=1, log.p=TRUE),
                                #             pnorm(mu[otU][!ot], mean=0, sd=1, lower.tail=FALSE, log.p=TRUE)),
@@ -316,10 +320,10 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
         if(occurrenceModel){
             CFValue[] <- CFValue + sum(switch(distribution,
                                               "dnorm" =,
-                                              "dlnorm" = obsZero*(log(sqrt(2*pi)*sqrt(scale[!otU]))+0.5),
+                                              "dlnorm" =,
                                               "dfnorm" =,
                                               "dbcnorm" =,
-                                              "dlogitnorm" = obsZero*(log(sqrt(2*pi)*scale[!otU])+0.5),
+                                              "dlogitnorm" = obsZero*(log(sqrt(2*pi)*sqrt(scale[!otU]))+0.5),
                                               "dgnorm" =,
                                               "dlgnorm" =obsZero*(1/other-
                                                                       log(other /
@@ -413,10 +417,10 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
     # Extract the actual values from the model
     errors <- switch(distribution,
                      "dnorm"=,
-                     "dlnorm"=residuals[subset]^2,
+                     "dlnorm"=,
                      "dbcnorm"=,
                      "dlogitnorm"=,
-                     "dfnorm"=,
+                     "dfnorm"=residuals[subset]^2,
                      "dlogis"=,
                      "dlaplace"=,
                      "dllaplace"=,
@@ -452,7 +456,7 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
         matrixXregScale <- cbind(errors,matrixXregScale);
     }
     colnames(matrixXregScale)[1] <- "residuals";
-    if(any(distribution==c("dnorm","dlnorm"))){
+    if(any(distribution==scaleNormalBased)){
         errors[] <- residuals[subset] / sqrt(scale);
     }
     else{

@@ -684,8 +684,9 @@ sigma.varest <- function(object, ...){
 #' standard error of the residuals respectively.
 #'
 #' The scale follows the ADAM monograph: it is the variance \eqn{\sigma^2} for the
-#' Normal and Log-Normal distributions (\code{dnorm} and \code{dlnorm}), so that
-#' \code{extractSigma()} returns its square root in these cases.
+#' distributions built on the Normal one (\code{dnorm}, \code{dlnorm}, \code{dbcnorm},
+#' \code{dlogitnorm}, \code{dfnorm} and \code{drectnorm}), so that \code{extractSigma()}
+#' returns its square root in these cases.
 #'
 #' @param object The model estimated using lm / alm / etc.
 #' @param ... Other parameters (currently nothing).
@@ -759,13 +760,13 @@ extractSigma.greybox <- function(object, ...){
     if(is.scale(object$scale)){
         return(switch(object$distribution,
                       "dnorm"=,
-                      "dlnorm"=sqrt(extractScale(object)),
+                      "dlnorm"=,
                       "dlogitnorm"=,
                       "dbcnorm"=,
                       "dfnorm"=,
                       "drectnorm"=,
                       "dinvgauss"=,
-                      "dgamma"=extractScale(object),
+                      "dgamma"=sqrt(extractScale(object)),
                       "dlaplace"=,
                       "dllaplace"=sqrt(2*extractScale(object)),
                       "ds"=,
@@ -1579,10 +1580,10 @@ plot.greybox <- function(x, which=c(1,2,4,6), level=0.95, legend=FALSE,
                 if(!any(names(ellipsis)=="main")){
                     ellipsis$main <- "QQ-plot of Folded Normal distribution";
                 }
-                ellipsis$x <- qfnorm(ppoints(nsim), mu=0, sigma=extractScale(x));
+                ellipsis$x <- qfnorm(ppoints(nsim), mu=0, sigma=sqrt(extractScale(x)));
 
                 do.call(qqplot, ellipsis);
-                qqline(ellipsis$y, distribution=function(p) qfnorm(p, mu=0, sigma=extractScale(x)));
+                qqline(ellipsis$y, distribution=function(p) qfnorm(p, mu=0, sigma=sqrt(extractScale(x))));
             }
             else if(x$distribution=="drectnorm"){
                 # Standardise residuals
@@ -1590,10 +1591,10 @@ plot.greybox <- function(x, which=c(1,2,4,6), level=0.95, legend=FALSE,
                 if(!any(names(ellipsis)=="main")){
                     ellipsis$main <- "QQ-plot of Rectified Normal distribution";
                 }
-                ellipsis$x <- qrectnorm(ppoints(nsim), mu=0, sigma=extractScale(x));
+                ellipsis$x <- qrectnorm(ppoints(nsim), mu=0, sigma=sqrt(extractScale(x)));
 
                 do.call(qqplot, ellipsis);
-                qqline(ellipsis$y, distribution=function(p) qrectnorm(p, mu=0, sigma=extractScale(x)));
+                qqline(ellipsis$y, distribution=function(p) qrectnorm(p, mu=0, sigma=sqrt(extractScale(x))));
             }
             else if(any(x$distribution==c("dgnorm","dlgnorm"))){
                 # Standardise residuals
@@ -2759,10 +2760,10 @@ rstandard.greybox <- function(model, ...){
     # If it is scale model, there's no need to divide by scale anymore
     if(!is.scale(model)){
         # The proper residuals with leverage are currently done only for normal-based distributions
-        if(any(model$distribution==c("dnorm","dlnorm"))){
+        if(any(model$distribution==c("dnorm","dlnorm","dbcnorm","dlogitnorm"))){
             errors[] <- errors / (sqrt(extractScale(model))*sqrt(1-hatvalues(model)));
         }
-        else if(any(model$distribution==c("dt","dbcnorm","dlogitnorm"))){
+        else if(model$distribution=="dt"){
             errors[] <- errors / (extractScale(model)*sqrt(1-hatvalues(model)));
         }
         else if(any(model$distribution==c("ds","dls"))){
@@ -2776,7 +2777,7 @@ rstandard.greybox <- function(model, ...){
             errors[residsToGo] <- errors[residsToGo] / mean(errors[residsToGo]);
         }
         else if(any(model$distribution==c("dfnorm","drectnorm"))){
-            errors[residsToGo] <- (errors[residsToGo]) / sqrt(extractScale(model)^2 * obs / df);
+            errors[residsToGo] <- (errors[residsToGo]) / sqrt(extractScale(model) * obs / df);
         }
         else if(any(model$distribution==c("dpois","dnbinom","dbinom","dgeom"))){
             errors[residsToGo] <- qnorm(pointLikCumulative(model));
@@ -3506,7 +3507,7 @@ predict.alm <- function(object, newdata=NULL, interval=c("none", "confidence", "
                 sigma <- sqrt(greyboxForecast$variances);
             }
             else{
-                sigma <- sqrt(greyboxForecast$variances - sigma(object)^2 + extractScale(object)^2);
+                sigma <- sqrt(greyboxForecast$variances - sigma(object)^2 + extractScale(object));
             }
             greyboxForecast$scale <- sigma;
         }
@@ -3912,11 +3913,11 @@ predict.greybox <- function(object, newdata=NULL, interval=c("none", "confidence
                     # Get variance from the scale
                     sigmaValues[] <- switch(object$distribution,
                                             "dnorm"=,
-                                            "dlnorm"=sigmaValues,
+                                            "dlnorm"=,
                                             "dbcnorm"=,
                                             "dlogitnorm"=,
                                             "dfnorm"=,
-                                            "drectnorm"=sigmaValues^2,
+                                            "drectnorm"=sigmaValues,
                                             "dlaplace"=,
                                             "dllaplace"=2*sigmaValues^2,
                                             "dalaplace"=sigmaValues^2*
@@ -3927,7 +3928,7 @@ predict.greybox <- function(object, newdata=NULL, interval=c("none", "confidence
                                             "dgnorm"=,
                                             "dlgnorm"=sigmaValues^2*gamma(3/object$other$shape)/
                                                 gamma(1/object$other$shape),
-                                            "dlogis"=sigmaValues*pi/sqrt(3),
+                                            "dlogis"=sigmaValues^2*pi^2/3,
                                             "dgamma"=,
                                             "dinvgauss"=,
                                             sigmaValues);
@@ -4210,11 +4211,11 @@ predict.scale <- function(object, newdata=NULL, interval=c("none", "confidence",
     scalePredicted$mean[] <- exp(scalePredicted$mean);
     scalePredicted$mean[] <- switch(object$distribution,
                                     "dnorm"=,
-                                    "dlnorm"=scalePredicted$mean,
+                                    "dlnorm"=,
                                     "dbcnorm"=,
                                     "dlogitnorm"=,
                                     "dfnorm"=,
-                                    "drectnorm"=,
+                                    "drectnorm"=scalePredicted$mean,
                                     "dlogis"=sqrt(scalePredicted$mean),
                                     "dlaplace"=,
                                     "dllaplace"=,
@@ -4223,11 +4224,8 @@ predict.scale <- function(object, newdata=NULL, interval=c("none", "confidence",
                                     "dls"=scalePredicted$mean^2,
                                     "dgnorm"=,
                                     "dlgnorm"=scalePredicted$mean^{1/object$other},
-                                    "dgamma"=sqrt(scalePredicted$mean)+1,
-                                    # This is based on polynomial from y = (x-1)^2/x
-                                    "dinvgauss"=(scalePredicted$mean+2+
-                                                     sqrt(scalePredicted$mean^2+
-                                                              4*scalePredicted$mean))/2,
+                                    "dgamma"=,
+                                    "dinvgauss"=scalePredicted$mean,
                                     scalePredicted$mean);
     return(scalePredicted);
 }

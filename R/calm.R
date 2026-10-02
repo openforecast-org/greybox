@@ -630,9 +630,9 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
 
     scale <- switch(distribution,
                     "dnorm" = mean((y-mu)^2),
-                    "dfnorm" = sqrt(mean((y-mu)^2)),
-                    "dbcnorm" = sqrt(mean((bcTransform(y,other)-mu)^2)),
-                    "dlogitnorm" = sqrt(mean((log(y/(1-y))-mu)^2)),
+                    "dfnorm" = mean((y-mu)^2),
+                    "dbcnorm" = mean((bcTransform(y,other)-mu)^2),
+                    "dlogitnorm" = mean((log(y/(1-y))-mu)^2),
                     "dlaplace" = mean(abs(y-mu)),
                     "ds" = mean(sqrt(abs(y-mu))) / 2,
                     "dgnorm" = (otherParameters*mean(abs(y-mu)^otherParameters))^{1/otherParameters},
@@ -653,7 +653,7 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
     );
 
     yFitted <- switch(distribution,
-                      "dfnorm" = sqrt(2/pi)*scale*exp(-mu^2/(2*scale^2))+mu*(1-2*pnorm(-mu/scale)),
+                      "dfnorm" = sqrt(2/pi)*sqrt(scale)*exp(-mu^2/(2*scale))+mu*(1-2*pnorm(-mu/sqrt(scale))),
                       "dnorm" =,
                       "dlaplace" =,
                       "ds" =,

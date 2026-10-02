@@ -1112,16 +1112,10 @@ def _combine_scale(
 
     Matches R lmCombine's switch(distribution, ...) block for scale.
     """
-    n = len(y)
-    df = n - n_params  # residual degrees of freedom
-
+    # The scale of the Normal-based distributions is the variance, as in the
+    # ADAM monograph; R's calm() divides by n
     if distribution in ("dnorm", "dfnorm"):
-        if df > 0:
-            variance = float(np.sum((y - mu) ** 2) / df)
-        else:
-            variance = float(np.mean((y - mu) ** 2))
-        # The scale of dnorm is the variance, as in the ADAM monograph
-        return variance if distribution == "dnorm" else float(np.sqrt(variance))
+        return float(np.mean((y - mu) ** 2))
     elif distribution == "dlaplace":
         return float(np.mean(np.abs(y - mu)))
     elif distribution == "ds":
@@ -1167,9 +1161,9 @@ def _combine_scale(
             y_bc = np.log(y)
         else:
             y_bc = (y**lambda_bc - 1) / lambda_bc
-        return float(np.sqrt(np.mean((y_bc - mu) ** 2)))
+        return float(np.mean((y_bc - mu) ** 2))
     elif distribution == "dlogitnorm":
-        return float(np.sqrt(np.mean((np.log(y / (1 - y)) - mu) ** 2)))
+        return float(np.mean((np.log(y / (1 - y)) - mu) ** 2))
     elif distribution == "pnorm":
         return float(
             np.sqrt(np.mean(stats.norm.ppf((y - stats.norm.cdf(mu) + 1) / 2) ** 2))
@@ -1217,8 +1211,10 @@ def _combine_fitted(
     Matches R lmCombine's switch(distribution, ...) block for yFitted.
     """
     if distribution == "dfnorm":
-        return np.sqrt(2 / np.pi) * scale * np.exp(-(mu**2) / (2 * scale**2)) + mu * (
-            1 - 2 * stats.norm.cdf(-mu / scale)
+        # The scale of dfnorm is the variance
+        sd = np.sqrt(scale)
+        return np.sqrt(2 / np.pi) * sd * np.exp(-(mu**2) / (2 * scale)) + mu * (
+            1 - 2 * stats.norm.cdf(-mu / sd)
         )
     elif distribution == "dlogitnorm":
         return np.exp(mu) / (1 + np.exp(mu))

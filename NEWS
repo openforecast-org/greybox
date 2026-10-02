@@ -2,10 +2,15 @@ greybox v2.0.9 (Release data: 2026-10-01)
 ==============
 
 Changes:
-* alm() now stores sigma^2 (the variance) as the scale of dnorm and dlnorm (for the latter, the variance of log(y)), following the ADAM monograph (Tables 11.1-11.2 and Chapter 17) and the smooth package. extractScale() returns sigma^2 for them, and so do the fitted values of the scale model (sm() / alm(..., scale=~...)) and predict() applied to it. All the other distributions keep their scale. The estimates, logLik, ICs, sigma(), extractSigma(), the intervals of predict(), pointLik(), rstandard(), rstudent() and outlierdummy() are unchanged numerically. The same applies to calm(), lmDynamic() and stepwise().
+* alm() now stores sigma^2 (the variance) as the scale of the distributions built on the Normal one: dnorm, dlnorm (the variance of log(y)), dbcnorm, dlogitnorm, dfnorm and drectnorm, following the ADAM monograph (Tables 11.1-11.2 and Chapter 17) and the smooth package. extractScale() returns sigma^2 for them, and so do the fitted values of the scale model (sm() / alm(..., scale=~...)) and predict() applied to it. All the other distributions keep their scale. The estimates, logLik, ICs, sigma(), extractSigma(), the intervals of predict(), pointLik(), rstandard(), rstudent() and outlierdummy() are unchanged numerically. The same applies to calm(), lmDynamic() and stepwise().
 * ALM in case of ARI now does not do optimisation and relies on the OLS estimates of parameters.
 * Cook's distance lines now correspond to heuristics of 4/n, 4/(n-k) and 1.
 * New function - stick() - that implements Hans' Levenbach STI classification scheme and supports additional plot() method.
+
+Bugfixes:
+* extractSigma() of a model with a scale model returned the variance rather than the standard deviation for dgamma and dinvgauss.
+* predict() of a dlogis model with a scale model took the standard deviation of the logistic distribution for its variance, making the prediction intervals too wide.
+* predict() of a scale model transformed the values for dgamma and dinvgauss, while its fitted values are the scale itself.
 
 
 greybox v2.0.8 (Release data: 2026-02-20)

@@ -5,6 +5,7 @@ the loss function (likelihood, MSE, MAE, etc.).
 """
 
 import numpy as np
+from scipy import stats
 
 from . import distributions as dist
 from .transforms import mean_fast
@@ -84,17 +85,16 @@ def _compute_log_lik_array(
     elif distribution == "drectnorm":
         return dist.drectnorm(y_otU, loc=mu_otU, scale=scale, log=True)
     elif distribution == "dinvgauss":
-        disp = scale / (mu_otU + 1e-300)
-        lam = 1.0 / (disp + 1e-300)
-        return dist.dinvgauss(
-            y_otU, loc=scale * np.ones_like(y_otU), scale=lam, log=True
-        )
+        # R: dinvgauss(y, mean=mu, dispersion=scale/mu); greybox's dinvgauss takes
+        # the mean and the dispersion, as R's does
+        return dist.dinvgauss(y_otU, loc=mu_otU, scale=scale / mu_otU, log=True)
     elif distribution == "dgamma":
         return dist.dgamma(y_otU, shape=1 / scale, scale=scale * mu_otU, log=True)
     elif distribution == "dexp":
         return dist.dexp(y_otU, loc=0, scale=mu_otU, log=True)
     elif distribution == "dchisq":
-        return dist.dchi2(y_otU, df=scale, log=True)
+        # R: dchisq(y, df=scale, ncp=mu), the non-central chi-squared
+        return stats.ncx2.logpdf(y_otU, df=scale, nc=mu_otU)
     elif distribution == "dgeom":
         return dist.dgeom(y_otU, prob=1 / (mu_otU + 1), log=True)
     elif distribution == "dpois":
