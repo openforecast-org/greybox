@@ -1,12 +1,12 @@
-// The log-densities of the Laplace, S and Generalised Normal distributions as
-// R's greybox computes them, those of their log-variants as R's alm()
-// computes them, and R's gamma function.
+// The densities and log-densities of the Laplace, S and Generalised Normal
+// distributions as R's greybox computes them, the log-densities of their
+// log-variants as R's alm() computes them, and R's gamma function.
 //
-// The logs are analytical, in R's order of operations and through libm, as R
-// evaluates log(), exp() and ^: NumPy's vectorised kernels round differently
-// in the last bit (log on ~0.4% of the arguments, pow on ~5%), and the
-// likelihood surfaces of smooth's models are flat enough for that bit to move
-// the optimiser. lgamma(1/shape) and gamma(1/shape) are R's (nmath.h).
+// Everything is in R's order of operations and through libm, as R evaluates
+// log(), exp() and ^: NumPy's vectorised kernels round differently in the last
+// bit (log on ~0.4% of the arguments, pow on ~5%), and the likelihood surfaces
+// of smooth's models are flat enough for that bit to move the optimiser. The
+// logs are analytical. lgamma(1/shape) and gamma(1/shape) are R's (nmath.h).
 
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
@@ -40,6 +40,23 @@ inline double ds_log_one(double q, double mu, double scale) {
 inline double dgnorm_log_one(double q, double mu, double scale, double shape) {
     return std::log(shape) - std::log(2 * scale) - greybox_nmath::lgammafn(1 / shape) -
            greybox_nmath::r_pow(std::fabs(q - mu) / scale, shape);
+}
+
+// 1/(2*scale)*exp(-abs(mu-q)/scale)
+inline double dlaplace_one(double q, double mu, double scale) {
+    return 1 / (2 * scale) * std::exp(-std::fabs(mu - q) / scale);
+}
+
+// 1/(4*scale^2)*exp(-sqrt(abs(mu-q))/scale)
+inline double ds_one(double q, double mu, double scale) {
+    return 1 / (4 * greybox_nmath::r_pow(scale, 2)) *
+           std::exp(-std::sqrt(std::fabs(mu - q)) / scale);
+}
+
+// exp(-(abs(q-mu)/scale)^shape)*shape/(2*scale*gamma(1/shape))
+inline double dgnorm_one(double q, double mu, double scale, double shape) {
+    return std::exp(-greybox_nmath::r_pow(std::fabs(q - mu) / scale, shape)) * shape /
+           (2 * scale * greybox_nmath::gammafn(1 / shape));
 }
 
 // The log-variants, as alm() takes their log-likelihoods:
@@ -92,8 +109,8 @@ py::array_t<double> elementwise(F f, const std::array<Array, N>& args) {
 }  // namespace
 
 PYBIND11_MODULE(_native_densities, m) {
-    m.doc() = "Log-densities of the Laplace, S and Generalised Normal distributions "
-              "and their log-variants, and the gamma function, as in R.";
+    m.doc() = "Densities and log-densities of the Laplace, S and Generalised Normal "
+              "distributions and their log-variants, and the gamma function, as in R.";
     m.def(
         "dlaplace_log",
         [](Array q, Array mu, Array scale) {
@@ -110,6 +127,24 @@ PYBIND11_MODULE(_native_densities, m) {
         "dgnorm_log",
         [](Array q, Array mu, Array scale, Array shape) {
             return elementwise<4>(dgnorm_log_one, {q, mu, scale, shape});
+        },
+        py::arg("q"), py::arg("mu"), py::arg("scale"), py::arg("shape"));
+    m.def(
+        "dlaplace",
+        [](Array q, Array mu, Array scale) {
+            return elementwise<3>(dlaplace_one, {q, mu, scale});
+        },
+        py::arg("q"), py::arg("mu"), py::arg("scale"));
+    m.def(
+        "ds",
+        [](Array q, Array mu, Array scale) {
+            return elementwise<3>(ds_one, {q, mu, scale});
+        },
+        py::arg("q"), py::arg("mu"), py::arg("scale"));
+    m.def(
+        "dgnorm",
+        [](Array q, Array mu, Array scale, Array shape) {
+            return elementwise<4>(dgnorm_one, {q, mu, scale, shape});
         },
         py::arg("q"), py::arg("mu"), py::arg("scale"), py::arg("shape"));
     m.def(

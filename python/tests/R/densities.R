@@ -1,6 +1,6 @@
-# The reference values of test_densities.py: R's log-densities of the
-# Laplace, S and Generalised Normal distributions, those of their log-variants
-# as alm() takes them, and gamma(), in hex to the bit.
+# The reference values of test_densities.py: R's densities and log-densities of
+# the Laplace, S and Generalised Normal distributions, the log-densities of
+# their log-variants as alm() takes them, and gamma(), in hex to the bit.
 # Run from the repository root with this branch's greybox installed:
 #   Rscript python/tests/R/densities.R
 library(greybox)
@@ -24,6 +24,10 @@ rows <- rbind(data.frame(name="q", value=q),
               data.frame(name="y", value=y),
               data.frame(name="dllaplace", value=dlaplace(log(y), 0.37, 1.913, log=TRUE)-log(y)),
               data.frame(name="dls", value=ds(log(y), 0.37, 1.913, log=TRUE)-log(y)),
-              perShape("dlgnorm", shapes, function(shape) dgnorm(log(y), 0.37, 1.913, shape, log=TRUE)-log(y)))
+              perShape("dlgnorm", shapes, function(shape) dgnorm(log(y), 0.37, 1.913, shape, log=TRUE)-log(y)),
+              # The densities themselves
+              data.frame(name="pdf_dlaplace", value=dlaplace(q, 0.37, 1.913)),
+              data.frame(name="pdf_ds", value=ds(q, 0.37, 1.913)),
+              perShape("pdf_dgnorm", shapes, function(shape) dgnorm(q, 0.37, 1.913, shape)))
 rows$value <- sprintf("%a", rows$value)
 write.csv(rows, "python/tests/densities.csv", row.names=FALSE)

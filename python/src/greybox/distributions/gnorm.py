@@ -44,19 +44,17 @@ def dgnorm(q, loc=0, scale=1, shape=1, log=False):
             / (2 * scale * gamma(1 / shape))
         )
 
-    # Analytically and through libm, with R's lgamma(), as R computes it
-    if log:
-        return _native_densities.dgnorm_log(
-            np.asarray(q, dtype=float),
-            np.atleast_1d(np.asarray(loc, dtype=float)),
-            scale.astype(float),
-            shape.astype(float),
-        )
-    return (
-        np.exp(-((np.abs(q - loc) / scale) ** shape))
-        * shape
-        / (2 * scale * _native_densities.gammafn(1 / shape))
+    # Through libm, with R's gamma() and lgamma(), as R computes it, and the log
+    # analytically
+    args = (
+        np.asarray(q, dtype=float),
+        np.atleast_1d(np.asarray(loc, dtype=float)),
+        scale.astype(float),
+        shape.astype(float),
     )
+    if log:
+        return _native_densities.dgnorm_log(*args)
+    return _native_densities.dgnorm(*args)
 
 
 def pgnorm(q, loc=0, scale=1, shape=1, lower_tail=True, log=False):

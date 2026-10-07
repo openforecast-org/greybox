@@ -1,6 +1,6 @@
-"""The log-densities of the Laplace, S and Generalised Normal distributions and
-of their log-variants, and gamma(), are R's to the bit (reference values from
-tests/R/densities.R)."""
+"""The densities and log-densities of the Laplace, S and Generalised Normal
+distributions, the log-densities of their log-variants and gamma() are R's to
+the bit (reference values from tests/R/densities.R)."""
 
 import pathlib
 import sys
@@ -85,3 +85,17 @@ def test_the_log_variants_do_not_floor_their_logs_in_the_tails():
     assert dllaplace(1e300, 0, 1, log=True) < np.log(1e-300)
     assert dls(1e300, 0, 0.1, log=True) < np.log(1e-300)
     assert dlgnorm(1e300, 0, 1, 2, log=True) < np.log(1e-300)
+
+
+def test_the_laplace_and_s_densities_are_those_of_r(reference):
+    q = reference["q"]
+    assert_r_equal(dlaplace(q, 0.37, 1.913), reference["pdf_dlaplace"])
+    assert_r_equal(ds(q, 0.37, 1.913), reference["pdf_ds"])
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_the_generalised_normal_density_is_that_of_r(reference, shape):
+    assert_r_equal(
+        dgnorm(reference["q"], 0.37, 1.913, float(shape)),
+        reference[f"pdf_dgnorm{shape}"],
+    )

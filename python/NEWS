@@ -20,6 +20,10 @@ Changes:
   models are flat enough for these bits to move the estimates.
 * `dgamma()` takes R's `lgamma()` in the Stirling remainder of non-half
   integers up to 15 instead of the C library's, as R does.
+* `dlaplace()`, `ds()` and `dgnorm()` without the log return R's values to
+  the last bit too, computed in `_native_densities` in R's order of
+  operations: SciPy's `laplace.pdf()` and NumPy's `exp()` and `**` differed
+  from R in the last bit on some values.
 
 Bugfixes:
 * The log-densities of `dgnorm()` no longer underflow to -Inf in the tails.

@@ -32,16 +32,20 @@ def dlaplace(q, loc=0, scale=1, log=False):
     array
         Density values.
     """
-    if log:
-        # Analytically and through libm, as R computes it
-        if _native_densities is None:  # pragma: no cover - fallback path
+    if _native_densities is None:  # pragma: no cover - fallback path
+        if log:
             return stats.laplace.logpdf(q, loc=loc, scale=scale)
-        return _native_densities.dlaplace_log(
-            np.asarray(q, dtype=float),
-            np.atleast_1d(np.asarray(loc, dtype=float)),
-            np.atleast_1d(np.asarray(scale, dtype=float)),
-        )
-    return stats.laplace.pdf(q, loc=loc, scale=scale)
+        return stats.laplace.pdf(q, loc=loc, scale=scale)
+
+    # Through libm, as R computes it, and the log analytically
+    args = (
+        np.asarray(q, dtype=float),
+        np.atleast_1d(np.asarray(loc, dtype=float)),
+        np.atleast_1d(np.asarray(scale, dtype=float)),
+    )
+    if log:
+        return _native_densities.dlaplace_log(*args)
+    return _native_densities.dlaplace(*args)
 
 
 def plaplace(q, loc=0, scale=1):
