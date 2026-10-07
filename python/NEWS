@@ -24,6 +24,12 @@ Changes:
   the last bit too, computed in `_native_densities` in R's order of
   operations: SciPy's `laplace.pdf()` and NumPy's `exp()` and `**` differed
   from R in the last bit on some values.
+* `dgamma()` returns R's values to the last bit, with and without the log.
+  The deviance part of its saddle-point form is computed by R's `ebd0()`
+  (R >= 4.2) with R's `log1pmx()`, in place of the older `bd0()`, and the
+  density without the log in R's order of operations instead of as the exp()
+  of the log-density. It differed from R in the last bits on most values
+  (up to 1.7e-13 relative at a shape of 10000, 9e-13 without the log).
 
 Bugfixes:
 * The log-densities of `dgnorm()` no longer underflow to -Inf in the tails.

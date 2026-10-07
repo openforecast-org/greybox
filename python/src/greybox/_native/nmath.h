@@ -1,5 +1,6 @@
 // R's gamma functions, ported from R's nmath sources (R 4.3):
-//   src/nmath/gamma.c, lgamma.c, lgammacor.c, chebyshev.c, stirlerr.c
+//   src/nmath/gamma.c, lgamma.c, lgammacor.c, chebyshev.c, stirlerr.c,
+//   and logcf() and log1pmx() of pgamma.c
 //
 // std::tgamma, std::lgamma, math.gamma and SciPy's gamma all round differently
 // from R in the last bit on most arguments. The Generalised Normal density
@@ -187,6 +188,60 @@ inline double lgammafn(double x) {
 
 // R's x^y: R_POW takes x*x for y == 2, and libm's pow otherwise.
 inline double r_pow(double x, double y) { return y == 2.0 ? x * x : std::pow(x, y); }
+
+// The continued fraction of sum_{k=0}^Inf x^k/(i+k*d), to a relative tolerance
+// eps. R/nmath/pgamma.c.
+inline double logcf(double x, double i, double d, double eps) {
+    constexpr double scalefactor = 0x1p256;  // 2^256, R's SQR(SQR(SQR(2^32)))
+    double c1 = 2 * d;
+    double c2 = i + d;
+    double c4 = c2 + d;
+    double a1 = c2;
+    double b1 = i * (c2 - i * x);
+    double b2 = d * d * x;
+    double a2 = c4 * c2 - b2;
+    b2 = c4 * b1 - i * b2;
+    while (std::fabs(a2 * b1 - a1 * b2) > std::fabs(eps * b1 * b2)) {
+        double c3 = c2 * c2 * x;
+        c2 += d;
+        c4 += d;
+        a1 = c4 * a2 - c3 * a1;
+        b1 = c4 * b2 - c3 * b1;
+
+        c3 = c1 * c1 * x;
+        c1 += d;
+        c4 += d;
+        a2 = c4 * a1 - c3 * a2;
+        b2 = c4 * b1 - c3 * b2;
+
+        if (std::fabs(b2) > scalefactor) {
+            a1 /= scalefactor;
+            b1 /= scalefactor;
+            a2 /= scalefactor;
+            b2 /= scalefactor;
+        } else if (std::fabs(b2) < 1 / scalefactor) {
+            a1 *= scalefactor;
+            b1 *= scalefactor;
+            a2 *= scalefactor;
+            b2 *= scalefactor;
+        }
+    }
+    return a2 / b2;
+}
+
+// log(1+x) - x, accurate also for small x. R/nmath/pgamma.c.
+inline double log1pmx(double x) {
+    constexpr double minLog1Value = -0.79149064;
+    if (x > 1 || x < minLog1Value) return std::log1p(x) - x;
+    // -.791 <= x <= 1: expand in [x/(2+x)]^2 =: y
+    const double r = x / (2 + x), y = r * r;
+    if (std::fabs(x) < 1e-2) {
+        constexpr double two = 2;
+        return r * ((((two / 9 * y + two / 7) * y + two / 5) * y + two / 3) * y - x);
+    }
+    constexpr double tol_logcf = 1e-14;
+    return r * (2 * y * logcf(y, 3, 2, tol_logcf) - x);
+}
 
 }  // namespace greybox_nmath
 

@@ -1,4 +1,4 @@
-"""The densities and log-densities of the Laplace, S and Generalised Normal
+"""The densities and log-densities of the Laplace, S, Generalised Normal and Gamma
 distributions, the log-densities of their log-variants and gamma() are R's to
 the bit (reference values from tests/R/densities.R)."""
 
@@ -11,6 +11,7 @@ import pytest
 
 from greybox import _native_densities
 from greybox.distributions import (
+    dgamma,
     dgnorm,
     dlaplace,
     dlgnorm,
@@ -21,6 +22,7 @@ from greybox.distributions import (
 
 # As R formats them in the names of the reference values
 SHAPES = ["0.07", "0.3", "0.5", "0.93", "1", "1.37", "2", "2.6", "7.3", "31"]
+GAMMA_SHAPES = ["0.07", "0.4", "0.93", "1", "1.37", "2", "12.6", "33.3", "143", "10000"]
 
 
 @pytest.fixture(scope="module")
@@ -99,3 +101,10 @@ def test_the_generalised_normal_density_is_that_of_r(reference, shape):
         dgnorm(reference["q"], 0.37, 1.913, float(shape)),
         reference[f"pdf_dgnorm{shape}"],
     )
+
+
+@pytest.mark.parametrize("shape", GAMMA_SHAPES)
+def test_the_gamma_density_and_its_log_are_those_of_r(reference, shape):
+    q = reference[f"dgamma_q{shape}"]
+    assert_r_equal(dgamma(q, float(shape), 0.8, log=True), reference[f"dgamma{shape}"])
+    assert_r_equal(dgamma(q, float(shape), 0.8), reference[f"pdf_dgamma{shape}"])

@@ -44,12 +44,14 @@ def dgamma(q, shape=1, scale=1, log=False):
             return stats.gamma.logpdf(q, a=shape, scale=scale)
         return stats.gamma.pdf(q, a=shape, scale=scale)
 
-    out = _dgamma_native.dgamma_log(
+    args = (
         np.asarray(q, dtype=float),
         np.atleast_1d(np.asarray(shape, dtype=float)),
         np.atleast_1d(np.asarray(scale, dtype=float)),
     )
-    return out if log else np.exp(out)
+    if log:
+        return _dgamma_native.dgamma_log(*args)
+    return _dgamma_native.dgamma(*args)
 
 
 def pgamma(q, shape=1, scale=1):
