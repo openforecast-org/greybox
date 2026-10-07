@@ -5,7 +5,27 @@ Python port of the R `greybox` package. The port tracks the R package,
 the most recent release of which is greybox v2.0.9 (Release date: 2026-02-24).
 
 
-greybox for Python v1.0.8 (unreleased)
+greybox for Python v1.0.9 (unreleased)
+==============
+
+Changes:
+* `dlaplace()`, `ds()` and `dgnorm()` with `log=True` return R's values to
+  the last bit (R's greybox v2.0.10): the analytical logs are computed in a
+  native extension (`_native_densities`) in R's order of operations and
+  through libm, as R evaluates `log()`, `exp()` and `^` (NumPy's vectorised
+  kernels round differently in the last bit), with R's `lgamma()`. R's gamma
+  functions are ported in `_native/nmath.h`, and `dgnorm()` takes R's
+  `gamma()` (`_native_densities.gammafn`) in place of SciPy's, which differs
+  in the last bit on most arguments. The likelihood surfaces of smooth's
+  models are flat enough for these bits to move the estimates.
+* `dgamma()` takes R's `lgamma()` in the Stirling remainder of non-half
+  integers up to 15 instead of the C library's, as R does.
+
+Bugfixes:
+* The log-densities of `dgnorm()` no longer underflow to -Inf in the tails.
+
+
+greybox for Python v1.0.8
 ==============
 
 Changes:

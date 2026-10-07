@@ -61,11 +61,11 @@
 #' @export ds
 #' @aliases SDistribution ds
 ds <- function(q, mu=0, scale=1, log=FALSE){
-    svetReturn <- 1/(4*scale^2)*exp(-sqrt(abs(mu-q))/scale);
+    # The log is taken analytically: the log of the density underflows in the tails
     if(log){
-        svetReturn[] <- log(svetReturn);
+        return(-2*log(2*scale)-sqrt(abs(mu-q))/scale);
     }
-    return(svetReturn);
+    return(1/(4*scale^2)*exp(-sqrt(abs(mu-q))/scale));
 }
 
 #' @rdname SDistribution

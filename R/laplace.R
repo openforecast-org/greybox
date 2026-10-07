@@ -63,11 +63,11 @@
 #' @export dlaplace
 #' @aliases Laplace dlaplace
 dlaplace <- function(q, mu=0, scale=1, log=FALSE){
-    laplaceReturn <- 1/(2*scale)*exp(-abs(mu-q)/scale);
+    # The log is taken analytically: the log of the density underflows in the tails
     if(log){
-        laplaceReturn[] <- log(laplaceReturn);
+        return(-log(2*scale)-abs(mu-q)/scale);
     }
-    return(laplaceReturn);
+    return(1/(2*scale)*exp(-abs(mu-q)/scale));
 }
 
 #' @rdname Laplace

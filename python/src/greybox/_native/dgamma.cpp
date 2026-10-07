@@ -1,7 +1,7 @@
 // Gamma log-density matching R's stats::dgamma to near machine precision.
 //
 // Adapted from R's nmath sources:
-//   src/nmath/dgamma.c, dpois.c, stirlerr.c, bd0.c
+//   src/nmath/dgamma.c, dpois.c, bd0.c (stirlerr.c and lgamma.c in nmath.h)
 //
 // SciPy's gamma.logpdf evaluates (a-1)*log(x) - x/s - lgamma(a) - a*log(s)
 // directly, which cancels catastrophically once the shape grows: at a shape of
@@ -26,56 +26,16 @@
 #include <limits>
 #include <stdexcept>
 
+#include "nmath.h"
+
 namespace py = pybind11;
 
 namespace {
 
-constexpr double kLnSqrt2Pi = 0.918938533204672741780329736406;
+using greybox_nmath::lgammafn;
+using greybox_nmath::stirlerr;
+
 constexpr double kTwoPi = 6.283185307179586476925286766559;
-
-// Coefficients of the Stirling series: 1/12, 1/360, 1/1260, 1/1680, 1/1188.
-constexpr double kS0 = 0.083333333333333333333;
-constexpr double kS1 = 0.00277777777777777777778;
-constexpr double kS2 = 0.00079365079365079365079365;
-constexpr double kS3 = 0.000595238095238095238095238;
-constexpr double kS4 = 0.0008417508417508417508417508;
-
-// stirlerr(n) for n = 0, 0.5, 1.0, ..., 15.0, tabulated because the series is
-// least accurate exactly where the arguments are smallest.
-constexpr double kSferrHalves[31] = {
-    0.0,
-    0.1534264097200273452913848,   0.0810614667953272582196702,
-    0.0548141210519176538961390,   0.0413406959554092940938221,
-    0.03316287351993628748511048,  0.02767792568499833914878929,
-    0.02374616365629749597132920,  0.02079067210376509311152277,
-    0.01848845053267318523077934,  0.01664469118982119216319487,
-    0.01513497322191737887351255,  0.01387612882307074799874573,
-    0.01281046524292022692424986,  0.01189670994589177009505572,
-    0.01110455975820691732662991,  0.010411265261972096497478567,
-    0.009799416126158803298389475, 0.009255462182712732917728637,
-    0.008768700134139385462952823, 0.008330563433362871256469318,
-    0.007934114564314020547248100, 0.007573675487951840794972024,
-    0.007244554301320383179543912, 0.006942840107209529865664152,
-    0.006665247032707682442354394, 0.006408994188004207068439631,
-    0.006171712263039457647532867, 0.005951370112758847735624416,
-    0.005746216513010115682023589, 0.005554733551962801371038690};
-
-// log(n!) - [log(sqrt(2*pi*n)) + n*log(n) - n], the error in Stirling's
-// approximation. R/nmath/stirlerr.c.
-inline double stirlerr(double n) {
-    if (n <= 15.0) {
-        const double nn = n + n;
-        if (nn == static_cast<double>(static_cast<int>(nn))) {
-            return kSferrHalves[static_cast<int>(nn)];
-        }
-        return std::lgamma(n + 1.0) - (n + 0.5) * std::log(n) + n - kLnSqrt2Pi;
-    }
-    const double nn = n * n;
-    if (n > 500.0) return (kS0 - kS1 / nn) / n;
-    if (n > 80.0) return (kS0 - (kS1 - kS2 / nn) / nn) / n;
-    if (n > 35.0) return (kS0 - (kS1 - (kS2 - kS3 / nn) / nn) / nn) / n;
-    return (kS0 - (kS1 - (kS2 - (kS3 - kS4 / nn) / nn) / nn) / nn) / n;
-}
 
 // x*log(x/np) + np - x, evaluated by a series when x and np are close so that
 // the two nearly-equal terms are never subtracted. R/nmath/bd0.c.
@@ -107,7 +67,7 @@ inline double dpois_raw_log(double x, double lambda) {
     if (x <= lambda * std::numeric_limits<double>::min()) return -lambda;
     if (lambda < x * std::numeric_limits<double>::min()) {
         if (!std::isfinite(x)) return -std::numeric_limits<double>::infinity();
-        return -lambda + x * std::log(lambda) - std::lgamma(x + 1.0);
+        return -lambda + x * std::log(lambda) - lgammafn(x + 1.0);
     }
     return -0.5 * std::log(kTwoPi * x) - stirlerr(x) - bd0(x, lambda);
 }

@@ -8,6 +8,11 @@ import numpy as np
 from scipy import stats
 from scipy.special import gamma
 
+try:
+    from greybox import _native_densities  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover - source checkout without the extension
+    _native_densities = None
+
 
 def dgnorm(q, loc=0, scale=1, shape=1, log=False):
     """Generalized Normal distribution density."""
@@ -20,20 +25,33 @@ def dgnorm(q, loc=0, scale=1, shape=1, log=False):
     shape = np.where(np.isnan(shape), 0, shape)
     shape = np.where(shape == 0, 1e-10, shape)
 
-    if log:
+    if _native_densities is None:  # pragma: no cover - fallback path
+        if log:
+            return (
+                np.log(shape)
+                - np.log(2 * scale)
+                - np.log(gamma(1 / shape))
+                - (np.abs(q - loc) / scale) ** shape
+            )
         return (
-            -((np.abs(q - loc) / scale) ** shape)
-            + np.log(shape)
-            - np.log(2 * scale)
-            - np.log(gamma(1 / shape))
+            np.exp(-((np.abs(q - loc) / scale) ** shape))
+            * shape
+            / (2 * scale * gamma(1 / shape))
         )
 
-    result = (
+    # Analytically and through libm, with R's lgamma(), as R computes it
+    if log:
+        return _native_densities.dgnorm_log(
+            np.asarray(q, dtype=float),
+            np.atleast_1d(np.asarray(loc, dtype=float)),
+            scale.astype(float),
+            shape.astype(float),
+        )
+    return (
         np.exp(-((np.abs(q - loc) / scale) ** shape))
         * shape
-        / (2 * scale * gamma(1 / shape))
+        / (2 * scale * _native_densities.gammafn(1 / shape))
     )
-    return result
 
 
 def pgnorm(q, loc=0, scale=1, shape=1, lower_tail=True, log=False):

@@ -4,7 +4,13 @@ Density, cumulative distribution, quantile functions and random number
 generation for the Laplace distribution.
 """
 
+import numpy as np
 from scipy import stats
+
+try:
+    from greybox import _native_densities  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover - source checkout without the extension
+    _native_densities = None
 
 
 def dlaplace(q, loc=0, scale=1, log=False):
@@ -27,7 +33,14 @@ def dlaplace(q, loc=0, scale=1, log=False):
         Density values.
     """
     if log:
-        return stats.laplace.logpdf(q, loc=loc, scale=scale)
+        # Analytically and through libm, as R computes it
+        if _native_densities is None:  # pragma: no cover - fallback path
+            return stats.laplace.logpdf(q, loc=loc, scale=scale)
+        return _native_densities.dlaplace_log(
+            np.asarray(q, dtype=float),
+            np.atleast_1d(np.asarray(loc, dtype=float)),
+            np.atleast_1d(np.asarray(scale, dtype=float)),
+        )
     return stats.laplace.pdf(q, loc=loc, scale=scale)
 
 
