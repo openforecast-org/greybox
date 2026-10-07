@@ -32,22 +32,24 @@ def reference():
     return {name: values[rows.name == name].to_numpy() for name in rows.name.unique()}
 
 
-def assert_r_equal(actual, desired):
+def assert_r_equal(actual, desired, log=False):
     """Bit for bit, as R computes it on Linux, where the reference values come
     from. The densities go through the C library's exp(), log() and pow(), as
     R's do, and Windows' rounds differently from glibc in the last bit on some
-    arguments (R for Windows has its own too), so there they agree to rounding.
+    arguments (R for Windows has its own too), so there they agree to rounding:
+    relatively, and absolutely for the logs, which can cancel to near zero.
     """
     if sys.platform != "win32":
         np.testing.assert_array_equal(actual, desired)
         return
-    np.testing.assert_allclose(actual, desired, rtol=1e-13, atol=1e-300)
+    atol = 1e-13 if log else 1e-300
+    np.testing.assert_allclose(actual, desired, rtol=1e-13, atol=atol)
 
 
 def test_the_laplace_and_s_log_densities_are_those_of_r(reference):
     q = reference["q"]
-    assert_r_equal(dlaplace(q, 0.37, 1.913, log=True), reference["dlaplace"])
-    assert_r_equal(ds(q, 0.37, 1.913, log=True), reference["ds"])
+    assert_r_equal(dlaplace(q, 0.37, 1.913, log=True), reference["dlaplace"], log=True)
+    assert_r_equal(ds(q, 0.37, 1.913, log=True), reference["ds"], log=True)
 
 
 @pytest.mark.parametrize("shape", SHAPES)
@@ -55,6 +57,7 @@ def test_the_generalised_normal_log_density_is_that_of_r(reference, shape):
     assert_r_equal(
         dgnorm(reference["q"], 0.37, 1.913, float(shape), log=True),
         reference[f"dgnorm{shape}"],
+        log=True,
     )
 
 
@@ -70,8 +73,10 @@ def test_the_logs_stay_finite_in_the_tails():
 
 def test_the_log_laplace_and_log_s_log_densities_are_those_of_alm(reference):
     y = reference["y"]
-    assert_r_equal(dllaplace(y, 0.37, 1.913, log=True), reference["dllaplace"])
-    assert_r_equal(dls(y, 0.37, 1.913, log=True), reference["dls"])
+    assert_r_equal(
+        dllaplace(y, 0.37, 1.913, log=True), reference["dllaplace"], log=True
+    )
+    assert_r_equal(dls(y, 0.37, 1.913, log=True), reference["dls"], log=True)
 
 
 @pytest.mark.parametrize("shape", SHAPES)
@@ -79,6 +84,7 @@ def test_the_log_generalised_normal_log_density_is_that_of_alm(reference, shape)
     assert_r_equal(
         dlgnorm(reference["y"], 0.37, 1.913, float(shape), log=True),
         reference[f"dlgnorm{shape}"],
+        log=True,
     )
 
 
@@ -106,5 +112,7 @@ def test_the_generalised_normal_density_is_that_of_r(reference, shape):
 @pytest.mark.parametrize("shape", GAMMA_SHAPES)
 def test_the_gamma_density_and_its_log_are_those_of_r(reference, shape):
     q = reference[f"dgamma_q{shape}"]
-    assert_r_equal(dgamma(q, float(shape), 0.8, log=True), reference[f"dgamma{shape}"])
+    assert_r_equal(
+        dgamma(q, float(shape), 0.8, log=True), reference[f"dgamma{shape}"], log=True
+    )
     assert_r_equal(dgamma(q, float(shape), 0.8), reference[f"pdf_dgamma{shape}"])
