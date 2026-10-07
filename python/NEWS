@@ -5,7 +5,42 @@ Python port of the R `greybox` package. The port tracks the R package,
 the most recent release of which is greybox v2.0.9 (Release date: 2026-02-24).
 
 
-greybox for Python v1.0.8 (unreleased)
+greybox for Python v1.0.9 (unreleased)
+==============
+
+Changes:
+* `dlaplace()`, `ds()` and `dgnorm()` with `log=True` return R's values to
+  the last bit (R's greybox v2.0.10): the analytical logs are computed in a
+  native extension (`_native_densities`) in R's order of operations and
+  through libm, as R evaluates `log()`, `exp()` and `^` (NumPy's vectorised
+  kernels round differently in the last bit), with R's `lgamma()`. R's gamma
+  functions are ported in `_native/nmath.h`, and `dgnorm()` takes R's
+  `gamma()` (`_native_densities.gammafn`) in place of SciPy's, which differs
+  in the last bit on most arguments. The likelihood surfaces of smooth's
+  models are flat enough for these bits to move the estimates.
+* `dgamma()` takes R's `lgamma()` in the Stirling remainder of non-half
+  integers up to 15 instead of the C library's, as R does.
+* `dlaplace()`, `ds()` and `dgnorm()` without the log return R's values to
+  the last bit too, computed in `_native_densities` in R's order of
+  operations: SciPy's `laplace.pdf()` and NumPy's `exp()` and `**` differed
+  from R in the last bit on some values.
+* `dgamma()` returns R's values to the last bit, with and without the log.
+  The deviance part of its saddle-point form is computed by R's `ebd0()`
+  (R >= 4.2) with R's `log1pmx()`, in place of the older `bd0()`, and the
+  density without the log in R's order of operations instead of as the exp()
+  of the log-density. It differed from R in the last bits on most values
+  (up to 1.7e-13 relative at a shape of 10000, 9e-13 without the log).
+
+Bugfixes:
+* The log-densities of `dgnorm()` no longer underflow to -Inf in the tails.
+* The log-densities of `dllaplace()`, `dls()` and `dlgnorm()` are computed as
+  R's `alm()` takes them, `dlaplace(log(y), log=TRUE) - log(y)` and so on,
+  analytically and to R's last bit. They were the log of the density floored
+  at 1e-300, flat at about -690.8 in the tails, and entered the likelihood of
+  `ALM` with these distributions that way.
+
+
+greybox for Python v1.0.8
 ==============
 
 Changes:

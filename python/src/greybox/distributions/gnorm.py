@@ -8,32 +8,53 @@ import numpy as np
 from scipy import stats
 from scipy.special import gamma
 
+try:
+    from greybox import _native_densities  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover - source checkout without the extension
+    _native_densities = None
 
-def dgnorm(q, loc=0, scale=1, shape=1, log=False):
-    """Generalized Normal distribution density."""
+
+def _density_parameters(scale, shape):
+    """The scale and shape of the densities, with their failsafes applied."""
     scale = np.atleast_1d(scale)
     shape = np.atleast_1d(shape)
-    q = np.atleast_1d(q)
-
     scale = np.where(np.isnan(scale), 0, scale)
     scale = np.where(scale < 0, 0, scale)
     shape = np.where(np.isnan(shape), 0, shape)
     shape = np.where(shape == 0, 1e-10, shape)
+    return scale, shape
 
-    if log:
+
+def dgnorm(q, loc=0, scale=1, shape=1, log=False):
+    """Generalized Normal distribution density."""
+    scale, shape = _density_parameters(scale, shape)
+    q = np.atleast_1d(q)
+
+    if _native_densities is None:  # pragma: no cover - fallback path
+        if log:
+            return (
+                np.log(shape)
+                - np.log(2 * scale)
+                - np.log(gamma(1 / shape))
+                - (np.abs(q - loc) / scale) ** shape
+            )
         return (
-            -((np.abs(q - loc) / scale) ** shape)
-            + np.log(shape)
-            - np.log(2 * scale)
-            - np.log(gamma(1 / shape))
+            np.exp(-((np.abs(q - loc) / scale) ** shape))
+            * shape
+            / (2 * scale * gamma(1 / shape))
         )
 
-    result = (
-        np.exp(-((np.abs(q - loc) / scale) ** shape))
-        * shape
-        / (2 * scale * gamma(1 / shape))
+    # Through libm, with R's gamma() and lgamma(), as R computes it, and the log
+    # analytically
+    args = (
+        np.asarray(q, dtype=float),
+        np.atleast_1d(np.asarray(loc, dtype=float)),
+        scale.astype(float),
+        shape.astype(float),
     )
-    return result
+    if log:
+        return _native_densities.dgnorm_log(*args)
+    return _native_densities.dgnorm(*args)
 
 
 def pgnorm(q, loc=0, scale=1, shape=1, lower_tail=True, log=False):

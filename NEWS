@@ -1,3 +1,13 @@
+greybox v2.0.10 (Release data: 2026-10-??)
+==============
+
+Changes:
+* dlaplace(), ds() and dgnorm() with log=TRUE compute the log of the density analytically instead of taking the log of the density, which underflowed to -Inf in the tails (e.g. dgnorm(1000, 0, 1, 31, log=TRUE)). The values are the same up to the last bits, which now agree with the Python greybox.
+
+Bugfixes:
+* spread() labelled the levels of categorical variables on the vertical axes in alphabetical order, while the boxplots and tableplots follow the order of the levels, so the labels were wrong whenever the two differed (e.g. a factor with levels c("rent","own"), or a numeric variable with 10 values, which was labelled 1, 10, 2, ...). The labels now follow the order of the levels. Thanks to the student of MSCI521 who spotted it.
+
+
 greybox v2.0.9 (Release data: 2026-10-01)
 ==============
 

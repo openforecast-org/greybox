@@ -8,6 +8,13 @@ Note: Random generation and CDF are not implemented as per requirements.
 import numpy as np
 from scipy import stats
 
+try:
+    from greybox import _native_densities  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover - source checkout without the extension
+    _native_densities = None
+
+from .laplace import dlaplace
+
 
 def dllaplace(q, loc=0, scale=1, log=False):
     """Log-Laplace distribution density.
@@ -34,11 +41,20 @@ def dllaplace(q, loc=0, scale=1, log=False):
         Density values.
     """
     q = np.asarray(q)
+    if log:
+        # As alm() takes it, dlaplace(log(q), log=TRUE) - log(q): analytically
+        # and through libm, as R computes it
+        if _native_densities is None:  # pragma: no cover - fallback path
+            log_q = np.log(q)
+            return dlaplace(log_q, loc=loc, scale=scale, log=True) - log_q
+        return _native_densities.dllaplace_log(
+            np.asarray(q, dtype=float),
+            np.atleast_1d(np.asarray(loc, dtype=float)),
+            np.atleast_1d(np.asarray(scale, dtype=float)),
+        )
     log_q = np.log(q)
     density = stats.laplace.pdf(log_q, loc=loc, scale=scale) / q
     density = np.maximum(density, 1e-300)
-    if log:
-        return np.log(density)
     return density
 
 

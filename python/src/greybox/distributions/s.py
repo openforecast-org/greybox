@@ -6,6 +6,11 @@ generation for the S distribution.
 
 import numpy as np
 
+try:
+    from greybox import _native_densities  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover - source checkout without the extension
+    _native_densities = None
+
 from .gnorm import qgnorm
 
 
@@ -30,10 +35,20 @@ def ds(q, loc=0, scale=1, log=False):
     array
         Density values.
     """
+    if _native_densities is None:  # pragma: no cover - fallback path
+        if log:
+            return -2 * np.log(2 * scale) - np.sqrt(np.abs(loc - q)) / scale
+        return 1 / (4 * scale**2) * np.exp(-np.sqrt(np.abs(loc - q)) / scale)
+
+    # Through libm, as R computes it, and the log analytically
+    args = (
+        np.asarray(q, dtype=float),
+        np.atleast_1d(np.asarray(loc, dtype=float)),
+        np.atleast_1d(np.asarray(scale, dtype=float)),
+    )
     if log:
-        return -np.log(4) - 2 * np.log(scale) - np.sqrt(np.abs(loc - q)) / scale
-    density = 1 / (4 * scale**2) * np.exp(-np.sqrt(np.abs(loc - q)) / scale)
-    return density
+        return _native_densities.ds_log(*args)
+    return _native_densities.ds(*args)
 
 
 def ps(q, loc=0, scale=1):

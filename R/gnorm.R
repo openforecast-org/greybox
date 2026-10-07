@@ -87,10 +87,11 @@ dgnorm <- function(q, mu = 0, scale = 1, shape = 1,
     if(any(is.na(shape))){
         shape[is.na(shape)] <- 0
     }
-    gnormValues <- (exp(-(abs(q-mu)/ scale)^shape)* shape/(2*scale*gamma(1/shape)))
+    # The log is taken analytically: the log of the density underflows in the tails
     if(log){
-        gnormValues[] <- log(gnormValues)
+        return(log(shape)-log(2*scale)-lgamma(1/shape)-(abs(q-mu)/scale)^shape)
     }
+    gnormValues <- (exp(-(abs(q-mu)/ scale)^shape)* shape/(2*scale*gamma(1/shape)))
 
     return(gnormValues)
 }

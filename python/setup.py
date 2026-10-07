@@ -31,6 +31,12 @@ ext_modules = [
         include_dirs=_EXTERN_INCLUDE_DIRS,
         cxx_std=17,
     ),
+    Pybind11Extension(
+        "greybox._native_densities",
+        sources=["src/greybox/_native/densities.cpp"],
+        include_dirs=_EXTERN_INCLUDE_DIRS,
+        cxx_std=17,
+    ),
 ]
 
 
