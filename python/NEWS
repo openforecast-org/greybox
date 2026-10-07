@@ -23,6 +23,11 @@ Changes:
 
 Bugfixes:
 * The log-densities of `dgnorm()` no longer underflow to -Inf in the tails.
+* The log-densities of `dllaplace()`, `dls()` and `dlgnorm()` are computed as
+  R's `alm()` takes them, `dlaplace(log(y), log=TRUE) - log(y)` and so on,
+  analytically and to R's last bit. They were the log of the density floored
+  at 1e-300, flat at about -690.8 in the tails, and entered the likelihood of
+  `ALM` with these distributions that way.
 
 
 greybox for Python v1.0.8

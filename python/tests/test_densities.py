@@ -1,5 +1,6 @@
 """The log-densities of the Laplace, S and Generalised Normal distributions and
-gamma() are R's to the bit (reference values from tests/R/densities.R)."""
+of their log-variants, and gamma(), are R's to the bit (reference values from
+tests/R/densities.R)."""
 
 import pathlib
 import sys
@@ -9,7 +10,14 @@ import pandas as pd
 import pytest
 
 from greybox import _native_densities
-from greybox.distributions import dgnorm, dlaplace, ds
+from greybox.distributions import (
+    dgnorm,
+    dlaplace,
+    dlgnorm,
+    dllaplace,
+    dls,
+    ds,
+)
 
 # As R formats them in the names of the reference values
 SHAPES = ["0.07", "0.3", "0.5", "0.93", "1", "1.37", "2", "2.6", "7.3", "31"]
@@ -56,3 +64,24 @@ def test_the_logs_stay_finite_in_the_tails():
     assert np.isfinite(dgnorm(1e3, 0, 1, 31, log=True))
     assert np.isfinite(dlaplace(1e5, 0, 1, log=True))
     assert np.isfinite(ds(1e8, 0, 1, log=True))
+
+
+def test_the_log_laplace_and_log_s_log_densities_are_those_of_alm(reference):
+    y = reference["y"]
+    assert_r_equal(dllaplace(y, 0.37, 1.913, log=True), reference["dllaplace"])
+    assert_r_equal(dls(y, 0.37, 1.913, log=True), reference["dls"])
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_the_log_generalised_normal_log_density_is_that_of_alm(reference, shape):
+    assert_r_equal(
+        dlgnorm(reference["y"], 0.37, 1.913, float(shape), log=True),
+        reference[f"dlgnorm{shape}"],
+    )
+
+
+def test_the_log_variants_do_not_floor_their_logs_in_the_tails():
+    """The logs used to be taken of the density floored at 1e-300."""
+    assert dllaplace(1e300, 0, 1, log=True) < np.log(1e-300)
+    assert dls(1e300, 0, 0.1, log=True) < np.log(1e-300)
+    assert dlgnorm(1e300, 0, 1, 2, log=True) < np.log(1e-300)

@@ -1,5 +1,6 @@
 // The log-densities of the Laplace, S and Generalised Normal distributions as
-// R's greybox computes them, and R's gamma function.
+// R's greybox computes them, those of their log-variants as R's alm()
+// computes them, and R's gamma function.
 //
 // The logs are analytical, in R's order of operations and through libm, as R
 // evaluates log(), exp() and ^: NumPy's vectorised kernels round differently
@@ -41,6 +42,20 @@ inline double dgnorm_log_one(double q, double mu, double scale, double shape) {
            greybox_nmath::r_pow(std::fabs(q - mu) / scale, shape);
 }
 
+// The log-variants, as alm() takes their log-likelihoods:
+// dlaplace(log(y), mu, scale, log=TRUE) - log(y), and so on.
+inline double dllaplace_log_one(double y, double mu, double scale) {
+    return dlaplace_log_one(std::log(y), mu, scale) - std::log(y);
+}
+
+inline double dls_log_one(double y, double mu, double scale) {
+    return ds_log_one(std::log(y), mu, scale) - std::log(y);
+}
+
+inline double dlgnorm_log_one(double y, double mu, double scale, double shape) {
+    return dgnorm_log_one(std::log(y), mu, scale, shape) - std::log(y);
+}
+
 // Length-1 inputs broadcast against the longest argument, matching numpy.
 inline std::size_t pick(std::size_t n, std::size_t i) { return n == 1 ? 0 : i; }
 
@@ -77,8 +92,8 @@ py::array_t<double> elementwise(F f, const std::array<Array, N>& args) {
 }  // namespace
 
 PYBIND11_MODULE(_native_densities, m) {
-    m.doc() = "Log-densities of the Laplace, S and Generalised Normal distributions, "
-              "and the gamma function, as in R.";
+    m.doc() = "Log-densities of the Laplace, S and Generalised Normal distributions "
+              "and their log-variants, and the gamma function, as in R.";
     m.def(
         "dlaplace_log",
         [](Array q, Array mu, Array scale) {
@@ -97,6 +112,24 @@ PYBIND11_MODULE(_native_densities, m) {
             return elementwise<4>(dgnorm_log_one, {q, mu, scale, shape});
         },
         py::arg("q"), py::arg("mu"), py::arg("scale"), py::arg("shape"));
+    m.def(
+        "dllaplace_log",
+        [](Array y, Array mu, Array scale) {
+            return elementwise<3>(dllaplace_log_one, {y, mu, scale});
+        },
+        py::arg("y"), py::arg("mu"), py::arg("scale"));
+    m.def(
+        "dls_log",
+        [](Array y, Array mu, Array scale) {
+            return elementwise<3>(dls_log_one, {y, mu, scale});
+        },
+        py::arg("y"), py::arg("mu"), py::arg("scale"));
+    m.def(
+        "dlgnorm_log",
+        [](Array y, Array mu, Array scale, Array shape) {
+            return elementwise<4>(dlgnorm_log_one, {y, mu, scale, shape});
+        },
+        py::arg("y"), py::arg("mu"), py::arg("scale"), py::arg("shape"));
     m.def(
         "gammafn",
         [](Array x) {

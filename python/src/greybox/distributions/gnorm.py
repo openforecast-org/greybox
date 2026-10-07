@@ -14,16 +14,21 @@ except ImportError:  # pragma: no cover - source checkout without the extension
     _native_densities = None
 
 
-def dgnorm(q, loc=0, scale=1, shape=1, log=False):
-    """Generalized Normal distribution density."""
+def _density_parameters(scale, shape):
+    """The scale and shape of the densities, with their failsafes applied."""
     scale = np.atleast_1d(scale)
     shape = np.atleast_1d(shape)
-    q = np.atleast_1d(q)
-
     scale = np.where(np.isnan(scale), 0, scale)
     scale = np.where(scale < 0, 0, scale)
     shape = np.where(np.isnan(shape), 0, shape)
     shape = np.where(shape == 0, 1e-10, shape)
+    return scale, shape
+
+
+def dgnorm(q, loc=0, scale=1, shape=1, log=False):
+    """Generalized Normal distribution density."""
+    scale, shape = _density_parameters(scale, shape)
+    q = np.atleast_1d(q)
 
     if _native_densities is None:  # pragma: no cover - fallback path
         if log:
