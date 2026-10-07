@@ -196,7 +196,7 @@ spread <- function(data, histograms=FALSE, log=FALSE, lowess=FALSE, ...){
                         else{
                             uniqueValues <- levels(data[[j]]);
                             axis(2, at=seq(1,length(uniqueValues),length.out=length(uniqueValues)),
-                                 labels=sort(uniqueValues,na.last=TRUE));
+                                 labels=uniqueValues);
                         }
                     }
                 }
@@ -226,11 +226,11 @@ spread <- function(data, histograms=FALSE, log=FALSE, lowess=FALSE, ...){
                         if(j==nVariables){
                             axis(4, at=seq(histPlottedYRange[1],histPlottedYRange[2]-0.5,
                                            length.out=length(uniqueValues)),
-                                 labels=sort(uniqueValues,na.last=TRUE));
+                                 labels=uniqueValues);
                         }
                         else{
                             axis(4, at=seq(1,length(uniqueValues), length.out=length(uniqueValues)),
-                                 labels=sort(uniqueValues,na.last=TRUE));
+                                 labels=uniqueValues);
                         }
                     }
                 }
