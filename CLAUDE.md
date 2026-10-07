@@ -99,3 +99,9 @@ x86-64 by rebuilding with `-mfma -ffp-contract=fast`.
 - Type hints on all function signatures
 - Import order: stdlib, third-party, local (blank line between groups)
 - Linter/formatter: `ruff`; type checker: `mypy`
+
+## Commits and Pull Requests
+
+- Never add links to the Claude session (`https://claude.ai/code/session_...`,
+  or a `Claude-Session:` trailer) to commit messages, PR titles or
+  descriptions, or GitHub comments.
