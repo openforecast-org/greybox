@@ -2,6 +2,7 @@ greybox v2.0.10 (Release data: 2026-10-??)
 ==============
 
 Changes:
+* rmcb() has a new parameter correction=c("none","hac"). With "hac", the critical distances account for the autocorrelation between the rows of the data (e.g. successive time points of one series): the test uses the effective sample size T/f, where f is the Newey-West long-run variance factor (Bartlett kernel) of the columns of the data used in the test, averaged over the columns and bounded below by one. The default "none" gives the same results as before. The factor is returned in the "factor" element.
 * dlaplace(), ds() and dgnorm() with log=TRUE compute the log of the density analytically instead of taking the log of the density, which underflowed to -Inf in the tails (e.g. dgnorm(1000, 0, 1, 31, log=TRUE)). The values are the same up to the last bits, which now agree with the Python greybox.
 
 Bugfixes:

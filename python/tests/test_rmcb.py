@@ -181,3 +181,46 @@ def test_plot_invalid_outplot(separated_data):
     with pytest.raises(ValueError):
         result.plot(outplot="bananas")
     plt.close("all")
+
+
+def _ar1_matrix(phi=0.8, n=150, k=5, seed=1):
+    rng = np.random.default_rng(seed)
+    e = rng.normal(size=(n, k))
+    x = np.zeros((n, k))
+    for t in range(1, n):
+        x[t] = phi * x[t - 1] + e[t]
+    x += np.arange(k) * 0.3
+    return x
+
+
+def test_correction_default_unchanged(separated_data):
+    res = rmcb(separated_data, outplot="none")
+    res_none = rmcb(separated_data, outplot="none", correction="none")
+    assert res.correction == "none"
+    assert res.factor == 1.0
+    pd.testing.assert_frame_equal(res.interval, res_none.interval)
+    assert "long-run" not in str(res)
+
+
+def test_correction_hac_factor_at_least_one(separated_data):
+    res = rmcb(separated_data, outplot="none", correction="hac")
+    assert res.correction == "hac"
+    assert res.factor >= 1.0
+    assert "long-run variance factor" in str(res)
+
+
+@pytest.mark.parametrize("distribution", ["tukey", "dnorm"])
+def test_correction_hac_autocorrelated(distribution):
+    x = _ar1_matrix()
+    base = rmcb(x, distribution=distribution, outplot="none")
+    hac = rmcb(x, distribution=distribution, outplot="none", correction="hac")
+    assert hac.factor > 1.5
+    w0 = (base.interval.iloc[:, 1] - base.interval.iloc[:, 0]).to_numpy()
+    w1 = (hac.interval.iloc[:, 1] - hac.interval.iloc[:, 0]).to_numpy()
+    assert np.all(w1 > w0)
+    np.testing.assert_allclose(w1 / w0, np.sqrt(hac.factor), rtol=1e-8)
+
+
+def test_correction_invalid_raises(separated_data):
+    with pytest.raises(ValueError):
+        rmcb(separated_data, correction="foo")
