@@ -9,6 +9,11 @@ greybox for Python v1.0.9 (unreleased)
 ==============
 
 Changes:
+* `rmcb()` has a new parameter `correction=("none", "hac")`, as in R's
+  greybox v2.0.10. With "hac", the critical distances account for the
+  autocorrelation between the rows of the data through the effective sample
+  size T/f, where f is the Newey-West long-run variance factor (Bartlett
+  kernel). The default "none" gives the same results as before.
 * `dlaplace()`, `ds()` and `dgnorm()` with `log=True` return R's values to
   the last bit (R's greybox v2.0.10): the analytical logs are computed in a
   native extension (`_native_densities`) in R's order of operations and
