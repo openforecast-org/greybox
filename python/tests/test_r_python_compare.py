@@ -1205,3 +1205,46 @@ class TestRMCBvsR:
         assert_allclose(py.mean.to_numpy(), r_mean, rtol=1e-8)
         assert_allclose(py.interval.to_numpy(), r_interval, atol=1e-8)
         assert_allclose(py.p_value, r_pvalue, atol=1e-8)
+
+    def _run_hac(self, distribution):
+        from greybox import rmcb
+        import pandas as pd
+
+        rng = np.random.default_rng(7)
+        n, k = 150, 5
+        e = rng.normal(size=(n, k))
+        data = np.zeros((n, k))
+        for t in range(1, n):
+            data[t] = 0.8 * data[t - 1] + e[t]
+        data += np.arange(k) * 0.3
+        names = [f"M{i + 1}" for i in range(k)]
+        ro.globalenv["flat"] = ro.FloatVector(data.flatten(order="F").tolist())
+        ro.globalenv["nm"] = ro.StrVector(names)
+        r_set = ro.r(
+            f"d <- matrix(flat, nrow={n}, ncol={k});"
+            "colnames(d) <- nm;"
+            f'rmcb(d, level=0.95, outplot="none", distribution="{distribution}",'
+            ' correction="hac")'
+        )
+        r_factor = float(np.array(r_set.rx2("factor"))[0])
+        r_mean = np.array(r_set.rx2("mean"))
+        r_interval = np.array(r_set.rx2("interval"))
+        py = rmcb(
+            pd.DataFrame(data, columns=names),
+            distribution=distribution,
+            correction="hac",
+        )
+        return r_factor, r_mean, r_interval, py
+
+    @pytest.mark.parametrize("distribution", ["tukey", "dnorm"])
+    def test_rmcb_hac(self, distribution):
+        r_factor, r_mean, r_interval, py = self._run_hac(distribution)
+        assert r_factor > 1.0
+        assert_allclose(py.factor, r_factor, rtol=1e-10)
+        assert_allclose(py.mean.to_numpy(), r_mean, rtol=1e-10)
+        if distribution == "tukey":
+            # scipy's studentized_range.ppf differs from R's qtukey at ~1e-9
+            # (also without correction), hence the looser tolerance.
+            assert_allclose(py.interval.to_numpy(), r_interval, atol=1e-6)
+        else:
+            assert_allclose(py.interval.to_numpy(), r_interval, rtol=1e-10)

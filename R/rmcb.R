@@ -37,6 +37,17 @@
 #' to get the same effect.
 #' @param select What column of data to highlight on the plot. If NULL, then
 #' the method with the lowest value is selected.
+#' @param correction Correction of the critical distances for the dependence
+#' between the observations (rows of \code{data}). \code{"none"} (default)
+#' assumes that the rows are independent, as in the original Nemenyi / MCB test.
+#' \code{"hac"} accounts for the autocorrelation in the rows (e.g. when they are
+#' successive time points of one time series): the long-run variance factor
+#' \eqn{f = 1 + 2 \sum_{j=1}^{L} (1 - j/(L+1)) \rho_j} (Newey-West, Bartlett
+#' kernel, \eqn{L = \lfloor 4 (T/100)^{2/9} \rfloor}) is calculated for each
+#' column of the data used in the test (ranks in case of \code{"tukey"} and
+#' \code{"dnorm"}), averaged over the columns and bounded below by one. The test
+#' is then done on the effective sample size \eqn{T/f}, which widens the
+#' critical distances by \eqn{\sqrt{f}}.
 #' @param ... Other parameters passed to \link[base]{rank} function.
 #' \code{distribution} parameter can also be passed here to alter the behaviour of
 #'  the function.
@@ -60,6 +71,8 @@
 #' \item model lm model produced for the calculation of the intervals.
 #' \item outplot Style of the plot to produce.
 #' \item select The selected variable to highlight.
+#' \item correction The type of correction used.
+#' \item factor The long-run variance factor \eqn{f} (one if \code{correction="none"}).
 #' }
 #
 #' @keywords htest
@@ -69,6 +82,8 @@
 #' \item  Demsar, J. (2006). Statistical Comparisons of Classifiers over
 #' Multiple Data Sets. Journal of Machine Learning Research, 7, 1-30.
 #' \url{https://www.jmlr.org/papers/volume7/demsar06a/demsar06a.pdf}
+#' \item Newey, W. K., West, K. D. (1994). Automatic Lag Selection in Covariance
+#' Matrix Estimation. The Review of Economic Studies, 61(4), 631-653.
 #' }
 #
 #' @examples
@@ -94,13 +109,19 @@
 #' par(mar=c(2,2,4,0)+0.1)
 #' plot(ourTest, main="Four methods")
 #'
-#' @importFrom stats pchisq friedman.test qtukey
+#' # Account for the autocorrelation between the rows of the data
+#' ourTest <- rmcb(ourData, level=0.95, correction="hac", outplot="none")
+#' ourTest$factor
+#'
+#' @importFrom stats pchisq friedman.test qtukey acf
 #' @rdname rmcb
 #' @export rmcb
-rmcb <- function(data, level=0.95, outplot=c("mcb","lines","none"), select=NULL, ...){
+rmcb <- function(data, level=0.95, outplot=c("mcb","lines","none"), select=NULL,
+                 correction=c("none","hac"), ...){
 
     ellipsis <- list(...);
     outplot <- match.arg(outplot,c("mcb","lines","none"));
+    correction <- match.arg(correction,c("none","hac"));
 
     #### Prepare the data ####
     obs <- nrow(data);
@@ -149,6 +170,12 @@ rmcb <- function(data, level=0.95, outplot=c("mcb","lines","none"), select=NULL,
     # Use ranks if the distribution is either the default or tukey
     if(any(distribution==c("dnorm","tukey"))){
         data[] <- t(apply(data,1,rank,na.last=na.last,ties.method=ties.method));
+    }
+
+    # Long-run variance factor for the dependence between the rows of data
+    lrFactor <- 1;
+    if(correction=="hac"){
+        lrFactor <- rmcbLongRunFactor(data, log=(distribution=="dlnorm"));
     }
 
     # Form the matrix of dummy variables, excluding the first one
@@ -216,10 +243,11 @@ rmcb <- function(data, level=0.95, outplot=c("mcb","lines","none"), select=NULL,
     # Construct confidence intervals
     if(distribution=="tukey"){
         # Division by 2 is needed to use the critical distance correctly for |R_i - R_j| >= CD
-        qStat <- qtukey(level, nMethods, Inf) * sqrt((nMethods*(nMethods+1))/(12*obs)) / 2;
+        # The effective sample size obs/lrFactor is used (lrFactor=1 without correction)
+        qStat <- qtukey(level, nMethods, Inf) * sqrt((nMethods*(nMethods+1))/(12*obs/lrFactor)) / 2;
     }
     else{
-        qStat <- qt((1+level)/2,df=lmModel$df.residual) * lmSE;
+        qStat <- qt((1+level)/2,df=lmModel$df.residual) * lmSE * sqrt(lrFactor);
     }
 
     lmIntervals[,1] <- lmCoefs - qStat;
@@ -299,7 +327,8 @@ rmcb <- function(data, level=0.95, outplot=c("mcb","lines","none"), select=NULL,
     returnedClass <- structure(list(mean=lmCoefs, interval=lmIntervals, vlines=vlines, groups=groups,
                                     methods=methodGroups, p.value=p.value,
                                     level=level, model=lmModel, select=select,
-                                    distribution=distribution),
+                                    distribution=distribution,
+                                    correction=correction, factor=lrFactor),
                                class="rmcb");
     if(outplot!="none"){
         plot(returnedClass, outplot=outplot);
@@ -472,4 +501,34 @@ print.rmcb <- function(x, ...){
     cat(paste0("The significance level is ",(1-x$level)*100,"%\n"));
     cat(paste0("The number of observations is ",nobs(x$model)/length(x$mean),", the number of methods is ",length(x$mean),"\n"));
     cat(paste0("Significance test p-value: ",round(x$p.value,5),"\n"));
+    if(!is.null(x$correction) && x$correction!="none"){
+        cat(paste0("Critical distances corrected for dependence (",x$correction,
+                   "), long-run variance factor: ",round(x$factor,3),"\n"));
+    }
+}
+
+# Long-run variance factor of the columns of data (Newey-West, Bartlett kernel),
+# averaged over the columns and bounded below by one. Used in rmcb(correction="hac").
+rmcbLongRunFactor <- function(data, log=FALSE){
+    data <- as.matrix(data);
+    if(log){
+        data <- log(data);
+    }
+    obs <- nrow(data);
+    lagMax <- floor(4*(obs/100)^(2/9));
+    if(lagMax<1){
+        return(1);
+    }
+    factors <- apply(data, 2, function(x){
+        x <- x[!is.na(x)];
+        rho <- acf(x, lag.max=lagMax, plot=FALSE, demean=TRUE)$acf[-1];
+        if(length(rho)<lagMax || any(!is.finite(rho))){
+            return(NA);
+        }
+        return(1 + 2*sum((1-(1:lagMax)/(lagMax+1))*rho));
+    });
+    if(all(is.na(factors))){
+        return(1);
+    }
+    return(max(1, mean(factors, na.rm=TRUE)));
 }

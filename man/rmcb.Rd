@@ -6,7 +6,7 @@
 \title{Regression for Multiple Comparison with the Best}
 \usage{
 rmcb(data, level = 0.95, outplot = c("mcb", "lines", "none"),
-  select = NULL, ...)
+  select = NULL, correction = c("none", "hac"), ...)
 
 \method{plot}{rmcb}(x, outplot = c("mcb", "lines"), select = NULL, ...)
 }
@@ -23,6 +23,18 @@ to get the same effect.}
 
 \item{select}{What column of data to highlight on the plot. If NULL, then
 the method with the lowest value is selected.}
+
+\item{correction}{Correction of the critical distances for the dependence
+between the observations (rows of \code{data}). \code{"none"} (default)
+assumes that the rows are independent, as in the original Nemenyi / MCB test.
+\code{"hac"} accounts for the autocorrelation in the rows (e.g. when they are
+successive time points of one time series): the long-run variance factor
+\eqn{f = 1 + 2 \sum_{j=1}^{L} (1 - j/(L+1)) \rho_j} (Newey-West, Bartlett
+kernel, \eqn{L = \lfloor 4 (T/100)^{2/9} \rfloor}) is calculated for each
+column of the data used in the test (ranks in case of \code{"tukey"} and
+\code{"dnorm"}), averaged over the columns and bounded below by one. The test
+is then done on the effective sample size \eqn{T/f}, which widens the
+critical distances by \eqn{\sqrt{f}}.}
 
 \item{...}{Other parameters passed to \link[base]{rank} function.
 \code{distribution} parameter can also be passed here to alter the behaviour of
@@ -50,6 +62,8 @@ value from the F test of the linear regression.
 \item model lm model produced for the calculation of the intervals.
 \item outplot Style of the plot to produce.
 \item select The selected variable to highlight.
+\item correction The type of correction used.
+\item factor The long-run variance factor \eqn{f} (one if \code{correction="none"}).
 }
 }
 \description{
@@ -103,12 +117,18 @@ plot(ourTest, outplot="lines")
 par(mar=c(2,2,4,0)+0.1)
 plot(ourTest, main="Four methods")
 
+# Account for the autocorrelation between the rows of the data
+ourTest <- rmcb(ourData, level=0.95, correction="hac", outplot="none")
+ourTest$factor
+
 }
 \references{
 \itemize{
 \item  Demsar, J. (2006). Statistical Comparisons of Classifiers over
 Multiple Data Sets. Journal of Machine Learning Research, 7, 1-30.
 \url{https://www.jmlr.org/papers/volume7/demsar06a/demsar06a.pdf}
+\item Newey, W. K., West, K. D. (1994). Automatic Lag Selection in Covariance
+Matrix Estimation. The Review of Economic Studies, 61(4), 631-653.
 }
 }
 \author{

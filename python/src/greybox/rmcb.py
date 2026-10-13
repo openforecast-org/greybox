@@ -87,10 +87,16 @@ class RMCBResult:
         1-based position (in the sorted order) of the highlighted method.
     distribution : str
         The distribution used for the calculations.
+    correction : str
+        The type of correction used (``"none"`` or ``"hac"``).
+    factor : float
+        The long-run variance factor (one if ``correction="none"``).
     """
 
     __slots__ = (
+        "correction",
         "distribution",
+        "factor",
         "groups",
         "interval",
         "level",
@@ -114,7 +120,11 @@ class RMCBResult:
         model: Any,
         select: int,
         distribution: str,
+        correction: str = "none",
+        factor: float = 1.0,
     ):
+        self.correction = correction
+        self.factor = factor
         self.mean = mean
         self.interval = interval
         self.vlines = vlines
@@ -131,13 +141,20 @@ class RMCBResult:
         # The model carries the total number of rows (obs * n_methods).
         n_total = _model_nobs(self.model)
         n_obs = n_total // n_methods if n_methods else 0
-        return (
+        out = (
             "Regression for Multiple Comparison with the Best\n"
             f"The significance level is {(1 - self.level) * 100:g}%\n"
             f"The number of observations is {n_obs}, "
             f"the number of methods is {n_methods}\n"
             f"Significance test p-value: {round(self.p_value, 5)}"
         )
+        if self.correction != "none":
+            out += (
+                f"\nCritical distances corrected for dependence "
+                f"({self.correction}), long-run variance factor: "
+                f"{round(self.factor, 3)}"
+            )
+        return out
 
     def __repr__(self) -> str:
         return (
@@ -429,6 +446,44 @@ def _ols_fit(x: np.ndarray, y: np.ndarray, df_residual: int) -> dict:
     }
 
 
+def _long_run_factor(data: np.ndarray, log: bool = False) -> float:
+    """Long-run variance factor of the columns (Newey-West, Bartlett kernel).
+
+    The factor is calculated for each column, averaged over the columns and
+    bounded below by one. Mirrors R's ``rmcbLongRunFactor()``.
+    """
+    data = np.asarray(data, dtype=float)
+    if log:
+        data = np.log(data)
+    obs = data.shape[0]
+    lag_max = int(np.floor(4 * (obs / 100) ** (2 / 9)))
+    if lag_max < 1:
+        return 1.0
+    factors = []
+    for j in range(data.shape[1]):
+        x = data[:, j]
+        x = x[~np.isnan(x)]
+        n = len(x)
+        if n - 1 < lag_max:
+            factors.append(np.nan)
+            continue
+        xc = x - x.mean()
+        denom = float(np.sum(xc**2))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            rho = np.array(
+                [np.sum(xc[: n - k] * xc[k:]) / denom for k in range(1, lag_max + 1)]
+            )
+        if not np.all(np.isfinite(rho)):
+            factors.append(np.nan)
+            continue
+        weights = 1 - np.arange(1, lag_max + 1) / (lag_max + 1)
+        factors.append(1 + 2 * float(np.sum(weights * rho)))
+    factors_arr = np.asarray(factors, dtype=float)
+    if np.all(np.isnan(factors_arr)):
+        return 1.0
+    return float(max(1.0, np.nanmean(factors_arr)))
+
+
 def rmcb(
     data,
     level: float = 0.95,
@@ -437,6 +492,7 @@ def rmcb(
     distribution: str = "tukey",
     na_last: bool = True,
     ties_method: str = "average",
+    correction: str = "none",
 ) -> RMCBResult:
     """Regression for Multiple Comparison with the Best.
 
@@ -471,6 +527,18 @@ def rmcb(
     ties_method : str, default "average"
         Method for handling ties when ranking (mirrors R's
         ``rank(ties.method=)``).
+    correction : {"none", "hac"}, default "none"
+        Correction of the critical distances for the dependence between the
+        observations (rows of ``data``). ``"none"`` assumes that the rows are
+        independent, as in the original Nemenyi / MCB test. ``"hac"`` accounts
+        for the autocorrelation in the rows (e.g. when they are successive
+        time points of one time series): the long-run variance factor
+        ``f = 1 + 2 * sum_{j=1}^{L} (1 - j/(L+1)) * rho_j`` (Newey-West,
+        Bartlett kernel, ``L = floor(4 * (T/100)^(2/9))``) is calculated for
+        each column of the data used in the test (ranks in case of ``"tukey"``
+        and ``"dnorm"``), averaged over the columns and bounded below by one.
+        The test is then done on the effective sample size ``T/f``, which
+        widens the critical distances by ``sqrt(f)``.
 
     Returns
     -------
@@ -484,6 +552,9 @@ def rmcb(
     Data Sets. Journal of Machine Learning Research, 7, 1-30.
     https://www.jmlr.org/papers/volume7/demsar06a/demsar06a.pdf
 
+    Newey, W. K., West, K. D. (1994). Automatic Lag Selection in Covariance
+    Matrix Estimation. The Review of Economic Studies, 61(4), 631-653.
+
     Examples
     --------
     >>> import numpy as np
@@ -496,6 +567,9 @@ def rmcb(
     >>> bool((result.mean.to_numpy()[:-1] <= result.mean.to_numpy()[1:]).all())
     True
     """
+    if correction not in ("none", "hac"):
+        raise ValueError('correction must be one of "none" or "hac".')
+
     if isinstance(data, pd.DataFrame):
         names_methods = list(data.columns)
         data_arr = data.to_numpy(dtype=float)
@@ -521,6 +595,11 @@ def rmcb(
     # Use ranks for the rank-based distributions.
     if distribution in ("dnorm", "tukey"):
         data_arr = _rank_rows(data_arr, na_last, ties_method)
+
+    # Long-run variance factor for the dependence between the rows of data.
+    lr_factor = 1.0
+    if correction == "hac":
+        lr_factor = _long_run_factor(data_arr, log=(distribution == "dlnorm"))
 
     # Response in column-major order (R's c(data) / unlist(data.frame)).
     y = data_arr.flatten(order="F")
@@ -566,11 +645,13 @@ def rmcb(
     if distribution == "tukey":
         q_stat = (
             stats.studentized_range.ppf(level, n_methods, np.inf)
-            * np.sqrt(n_methods * (n_methods + 1) / (12 * obs))
+            * np.sqrt(n_methods * (n_methods + 1) / (12 * obs / lr_factor))
             / 2
         )
     else:
-        q_stat = stats.t.ppf((1 + level) / 2, df=df_residual) * lm_se
+        q_stat = (
+            stats.t.ppf((1 + level) / 2, df=df_residual) * lm_se * np.sqrt(lr_factor)
+        )
 
     intervals = np.column_stack([lm_coefs - q_stat, lm_coefs + q_stat])
 
@@ -675,6 +756,8 @@ def rmcb(
         model=model,
         select=select_pos,
         distribution=distribution,
+        correction=correction,
+        factor=lr_factor,
     )
 
 
