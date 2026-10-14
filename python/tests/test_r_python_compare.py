@@ -1316,3 +1316,48 @@ class TestOccurrenceARIvsR:
         model = ALM(distribution=distribution, occurrence=occurrence,
                     orders=orders).fit(X, y[:196])
         assert_allclose(np.sqrt(np.diag(model.vcov())), r, rtol=1e-2)
+
+
+class TestXregExpanderSmoothvsR:
+    """gaps="auto" extrapolates with smooth's ADAM, as R's xregExpander()."""
+
+    @staticmethod
+    def _data():
+        return TestOccurrenceARIvsR._data()[1]
+
+    def test_lags_and_leads(self):
+        pytest.importorskip("smooth")
+        from greybox.xreg import xreg_expander
+
+        y = self._data()
+        y = y[y != 0][:60]
+        ro.globalenv["y"] = to_r_array(y)
+        r = np.array(ro.r("xregExpander(y, lags=c(-3,-1,2), gaps='auto')"))
+        assert_allclose(xreg_expander(y, lags=[-3, -1, 2], gaps="auto"), r, rtol=1e-6)
+
+    @pytest.mark.parametrize("distribution", ["dnorm", "dgamma", "dlaplace"])
+    @pytest.mark.parametrize("orders", [(1, 0, 0), (2, 0, 0), (1, 1, 0)])
+    def test_alm(self, distribution, orders):
+        """The lags before the sample of the models without an occurrence model."""
+        pytest.importorskip("smooth")
+        from greybox.alm import ALM
+
+        x, y = TestOccurrenceARIvsR._data()
+        observed = y[:196] != 0
+        ro.globalenv["x"], ro.globalenv["y"] = to_r_array(x), to_r_array(y)
+        r = np.array(ro.r(f"""local({{
+            d <- data.frame(y=y, x=x)[1:196,]; d <- d[d$y!=0,]
+            m <- alm(y~x, d, distribution="{distribution}",
+                     orders=c({orders[0]},{orders[1]},0))
+            p <- predict(m, data.frame(x=x[197:200]), interval="prediction")
+            c(logLik(m), p$mean, p$upper)
+        }})"""))
+        X = np.column_stack([np.ones(observed.sum()), x[:196][observed]])
+        model = ALM(distribution=distribution, orders=orders).fit(X, y[:196][observed])
+        prediction = model.predict(
+            np.column_stack([np.ones(4), x[196:]]), interval="prediction"
+        )
+        python = np.r_[
+            model.loglik, np.ravel(prediction.mean), np.ravel(prediction.upper)
+        ]
+        assert_allclose(python, r, rtol=1e-4)

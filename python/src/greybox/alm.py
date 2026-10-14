@@ -281,12 +281,12 @@ class ALM:
         Dictionary of nlopt parameters. Options:
         - "algorithm": str, default="NLOPT_LN_NELDERMEAD"
         - "maxeval": int, default=40 per parameter (200 for LASSO / RIDGE and the
-          ARI models with an occurrence model)
+          ARI models)
         - "maxtime": float, default=600 seconds
         - "xtol_rel": float, default=1e-6
         - "xtol_abs": float, default=1e-8
         - "ftol_rel": float, default=1e-4 (1e-8 for LASSO / RIDGE and the ARI
-          models with an occurrence model)
+          models)
         - "ftol_abs": float, default=0
         - "print_level": int, default=0 (0=none, 3=full)
     verbose : int, default=0
@@ -910,25 +910,23 @@ class ALM:
 
         opt.set_xtol_rel(self.nlopt_kargs.get("xtol_rel", 1e-6))
         opt.set_xtol_abs(self.nlopt_kargs.get("xtol_abs", 1e-8))
-        # LASSO / RIDGE and the recursive models, whose latent sizes make the likelihood
-        # flat, need the accurate estimation, as in R
-        accurate = latent is not None or self.loss in ("LASSO", "RIDGE")
+        # LASSO / RIDGE and the ARI models, whose likelihood is flat in the AR
+        # parameters, need the accurate estimation, as in R
+        accurate = ari_order > 0 or self.loss in ("LASSO", "RIDGE")
         opt.set_ftol_rel(self.nlopt_kargs.get("ftol_rel", 1e-8 if accurate else 1e-4))
         opt.set_ftol_abs(self.nlopt_kargs.get("ftol_abs", 0))
 
         maxeval = self.nlopt_kargs.get("maxeval")
 
         if maxeval is None:
-            if latent is not None:
-                maxeval = n_params * 200
-            elif self.distribution in (
-                "dnorm",
-                "dlnorm",
-                "dlogitnorm",
-            ) and self.loss in ("likelihood", "MSE"):
+            if (
+                latent is None
+                and self.distribution in ("dnorm", "dlnorm", "dlogitnorm")
+                and self.loss in ("likelihood", "MSE")
+            ):
                 maxeval = 1
             else:
-                maxeval = n_params * 40
+                maxeval = n_params * (200 if ari_order > 0 else 40)
             if self.loss in ("LASSO", "RIDGE"):
                 maxeval = n_params * 200
                 if self.lambda_l1 == 1.0 or self.loss == "RIDGE":

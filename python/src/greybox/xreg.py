@@ -5,7 +5,7 @@ variables for use in regression models.
 """
 
 import re
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 
@@ -186,8 +186,10 @@ def xreg_expander(
         - "NAs": leave missing values
         - "zero": substitute them by zeroes
         - "naive": use the last / first actual value
-        - "extrapolate": use linear extrapolation
-        - "auto": let the function select between "extrapolate" and "naive"
+        - "extrapolate": forecast the leads and backcast the lags with smooth's
+          ``ADAM`` if smooth is installed (the naive values otherwise, and for the
+          binary variables), as R
+        - "auto": "extrapolate", or "naive" for series longer than 10000
 
     Returns
     -------
@@ -197,7 +199,7 @@ def xreg_expander(
     Examples
     --------
     >>> x = np.array([1, 2, 3, 4, 5])
-    >>> xreg_expander(x, lags=[-1, 0, 1])
+    >>> xreg_expander(x, lags=[-1, 0, 1], gaps="naive")
     array([[1., 1., 2.],
            [2., 1., 3.],
            [3., 2., 4.],
@@ -219,60 +221,64 @@ def xreg_expander(
     if len(lags) == 0:
         return xreg
 
-    # Deduplicate while preserving intent, then sort deterministically:
-    # negative lags by abs ascending (−1, −2, …), then positive leads (1, 2, …)
-    seen: set = set()
-    unique_lags = [
-        v
-        for v in lags
-        if not (v in seen or seen.add(v))  # type: ignore[func-returns-value]
-    ]
-    neg_lags = sorted([v for v in unique_lags if v < 0], key=abs)
-    pos_lags = sorted([v for v in unique_lags if v > 0])
-    lags = neg_lags + pos_lags
+    # The lags, then the leads, each in the given order, as R
+    lags = [v for v in lags if v < 0] + [v for v in lags if v > 0]
 
     if not silent:
         print("Preparing matrices...    ")
 
     n_lags = len(lags)
     lag_mat = np.full((n_obs, n_vars * n_lags), np.nan)
+    max_lag = max([-lag for lag in lags if lag < 0], default=0)
+    max_lead = max([lag for lag in lags if lag > 0], default=0)
+
+    # As R, "auto" extrapolates with smooth's ADAM when smooth is installed, and takes
+    # the first / last values for the long series
+    if gaps == "auto" and n_obs > 10000:
+        gaps = "naive"
+    smooth_adam: Any = None
+    if gaps in ("auto", "extrapolate"):
+        try:
+            import smooth
+
+            smooth_adam = smooth.ADAM
+        except ImportError:
+            pass
 
     for c_idx in range(n_vars):
+        x = xreg[:, c_idx]
+        head = np.full(max_lag, np.nan)
+        tail = np.full(max_lead, np.nan)
+        if gaps == "zero":
+            head[:], tail[:] = 0.0, 0.0
+        elif gaps != "NAs":
+            head[:], tail[:] = x[0], x[-1]
+            # ADAM forecasts the leads and backcasts the lags on the reversed series,
+            # with the model of the leads if there are any, as R. The binary variables
+            # keep the naive values: R takes oes() for them, which has no Python port
+            if smooth_adam is not None and not np.all(np.isin(x, (0.0, 1.0))):
+                lead_model = None
+                if max_lead > 0:
+                    lead_model = smooth_adam(occurrence="auto").fit(x)
+                    tail = np.asarray(lead_model.predict(h=max_lead).mean, dtype=float)
+                if max_lag > 0:
+                    lag_kwargs = {"occurrence": "auto"}
+                    if lead_model is not None:
+                        om = lead_model.om_model
+                        lag_kwargs = {
+                            "model": lead_model.model_type,
+                            "persistence": lead_model.persistence_vector,
+                            "occurrence": "none" if om is None else om.occurrence,
+                        }
+                    lag_model = smooth_adam(**lag_kwargs).fit(x[::-1])
+                    head = np.asarray(lag_model.predict(h=max_lag).mean, dtype=float)[
+                        ::-1
+                    ]
+        extended = np.concatenate([head, x, tail])
         for lag_idx, lag in enumerate(lags):
-            t_col = c_idx * n_lags + lag_idx
-
-            if lag < 0:
-                shift = abs(lag)
-                if shift < n_obs:
-                    lag_mat[shift:, t_col] = xreg[: n_obs - shift, c_idx]
-            else:
-                if lag < n_obs:
-                    lag_mat[: n_obs - lag, t_col] = xreg[lag:n_obs, c_idx]
-
-    if gaps == "zero":
-        lag_mat = np.nan_to_num(lag_mat, nan=0.0)
-    elif gaps == "naive":
-        for col_idx in range(lag_mat.shape[1]):
-            col = lag_mat[:, col_idx]
-            first_valid = np.argmax(~np.isnan(col))
-            if first_valid > 0:
-                col[:first_valid] = col[first_valid]
-            last_valid = n_obs - 1 - np.argmax(~np.isnan(col[::-1]))
-            if last_valid < n_obs - 1:
-                col[last_valid + 1 :] = col[last_valid]
-            lag_mat[:, col_idx] = col
-    elif gaps in ("auto", "extrapolate"):
-        for col_idx in range(lag_mat.shape[1]):
-            col = lag_mat[:, col_idx]
-            valid_mask = ~np.isnan(col)
-            if np.any(valid_mask):
-                valid_indices = np.where(valid_mask)[0]
-                if valid_indices[0] > 0:
-                    first_val = col[valid_indices[0]]
-                    col[: valid_indices[0]] = first_val
-                if valid_indices[-1] < n_obs - 1:
-                    last_val = col[valid_indices[-1]]
-                    col[valid_indices[-1] + 1 :] = last_val
+            lag_mat[:, c_idx * n_lags + lag_idx] = extended[
+                max_lag + lag : max_lag + lag + n_obs
+            ]
 
     # Prepend original columns (matches R's xregExpander output layout)
     return np.hstack([xreg, lag_mat])

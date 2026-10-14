@@ -149,14 +149,13 @@
 #' \item \code{algorithm} - the algorithm to use in optimisation
 #' (\code{"NLOPT_LN_NELDERMEAD"} by default);
 #' \item \code{maxeval} - maximum number of evaluations to carry out. Default is 40 per
-#' estimated parameter. In case of LASSO / RIDGE and of the ARI models with an occurrence
-#' model the default is 200 per estimated parameter;
+#' estimated parameter. In case of LASSO / RIDGE and of the ARI models the default is 200 per
+#' estimated parameter;
 #' \item \code{maxtime} - stop, when the optimisation time (in seconds) exceeds this;
 #' \item \code{xtol_rel} - the precision of the optimiser (the default is 1E-6);
 #' \item \code{xtol_abs} - the absolute precision of the optimiser (the default is 1E-8);
 #' \item \code{ftol_rel} - the stopping criterion in case of the relative change in the loss
-#' function (the default is 1E-4, and 1E-8 for LASSO / RIDGE and the ARI models with an
-#' occurrence model);
+#' function (the default is 1E-4, and 1E-8 for LASSO / RIDGE and the ARI models);
 #' \item \code{ftol_abs} - the stopping criterion in case of the absolute change in the loss
 #' function (the default is 0 - not used);
 #' \item \code{print_level} - the level of output for the optimiser (0 by default).
@@ -1809,26 +1808,19 @@ alm <- function(formula, data, subset, na.action,
         }
 
         #### Define what to do with the maxeval ####
-        # The latent sizes make the likelihood flat, so the recursive models need the accurate
-        # estimation, as LASSO / RIDGE
-        if(recursiveModel && is.null(ellipsis$ftol_rel)){
+        # The likelihood is flat in the AR parameters (and more so with the latent sizes), so the
+        # ARI models need the accurate estimation, as LASSO / RIDGE
+        if(ariModel && is.null(ellipsis$ftol_rel)){
             ftol_rel <- 1e-8;
         }
         if(is.null(ellipsis$maxeval)){
-            if(recursiveModel){
-                maxeval <- length(B) * 200;
-            }
-            else if(any(distribution==c("dchisq","dgeom","dpois","dnbinom","dbinom","dbcnorm","plogis","pnorm"))){
-                # maxeval <- 500;
-                maxeval <- length(B) * 40;
-            }
             # The following ones don't really need the estimation. This is for consistency only
-            else if(any(distribution==c("dnorm","dlnorm","dlogitnorm")) & !recursiveModel && !scaleModel &&
-                    any(loss==c("likelihood","MSE"))){
+            if(any(distribution==c("dnorm","dlnorm","dlogitnorm")) && !recursiveModel && !scaleModel &&
+               any(loss==c("likelihood","MSE"))){
                 maxeval <- 1;
             }
             else{
-                maxeval <- length(B) * 40;
+                maxeval <- length(B) * ifelseFast(ariModel, 200, 40);
             }
             if(any(loss==c("LASSO","RIDGE"))){
                 maxeval <- length(B) * 200;

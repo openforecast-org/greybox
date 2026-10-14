@@ -22,9 +22,17 @@ Changes:
 * `predict()` of the ARI models continues the recursion after the last observed
   sizes and takes the variance of the filter over the horizon, so the
   prediction intervals widen with the horizon.
-* The ARI models with an occurrence model are estimated with `ftol_rel=1e-8`
-  and 200 evaluations per parameter, and LASSO / RIDGE with `ftol_rel=1e-8`, as
-  in R.
+* The ARI models are estimated with `ftol_rel=1e-8` and 200 evaluations per
+  parameter, and LASSO / RIDGE with `ftol_rel=1e-8`, as in R.
+* `xreg_expander(gaps="auto")` and `gaps="extrapolate"` extrapolate with smooth's
+  `ADAM` when smooth is installed, as R's `xregExpander()`: the leads are
+  forecast, and the lags backcast on the reversed series. They take the first /
+  last values otherwise, for the binary variables (R takes `oes()`, which has no
+  Python port) and, with "auto", for the series longer than 10000. The lags
+  before the sample of the ARI models without an occurrence model follow, so
+  they match R's.
+* `xreg_expander()` keeps the lags and leads in the given order, as R: it sorted
+  them and dropped the duplicates.
 * dlgnorm takes the lags of log(y), as the other distributions in logs.
 * dgamma and dinvgauss take the lags of log(y) in the ARI models, as dexp and as
   R: with the lags of y, the I(d) models could not be estimated.
