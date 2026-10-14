@@ -102,6 +102,24 @@ def point_lik(
     if np.size(scale) > 1:
         scale = np.asarray(scale)[otU]
     other = model.other_
+    # The errors after the latent sizes of a dynamic occurrence model have the variances
+    # of the Kalman filter, which depend on the polynomial and the zeros only (R)
+    latent = getattr(model, "_latent", None)
+    if latent is not None and latent["filter"]:
+        from ._native_alm_latent import alm_latent
+
+        polynomial = np.array(list(model.arima_polynomial_.values()), dtype=float)
+        variance = alm_latent(
+            np.zeros(len(y_all)),
+            polynomial,
+            np.zeros(len(y_all)),
+            otU.astype(int),
+            np.zeros(len(polynomial)),
+            np.zeros(0),
+            True,
+            0,
+        )["variance"]
+        scale = scale * variance[otU] ** (1 / latent["scale_power"])
 
     def log_y_density(density):
         # The log-domain distributions: the density of log(y) and its Jacobian

@@ -658,6 +658,17 @@ sigma.alm <- function(object, ...){
         return(sqrt(sum((residuals(object)-1)^2)/(nobs(object, ...)-nparam(object))));
     }
     else{
+        # The errors after the latent sizes of a dynamic occurrence model, standardised by the
+        # variances of the Kalman filter
+        if(is.occurrence(object$occurrence) && !is.null(object$other$polynomial) &&
+           any(object$distribution==ariFilterDistributions)){
+            observed <- actuals(object)!=0;
+            object$residuals <- object$residuals /
+                sqrt(almLatentCpp(numeric(length(observed)), object$other$polynomial,
+                                  numeric(length(observed)), observed,
+                                  numeric(length(object$other$polynomial)), numeric(0),
+                                  TRUE, 0L)$variance);
+        }
         return(sigma.greybox(object, ...));
     }
 }
@@ -3377,12 +3388,12 @@ predict.alm <- function(object, newdata=NULL, interval=c("none", "confidence", "
     else if(object$distribution=="dlgnorm"){
         # Use the connection between the variance and scale in Generalised Normal distribution
         if(interval!="none"){
-            scaleValues <- sqrt(greyboxForecast$variances*(gamma(1/object$other$beta)/gamma(3/object$other$beta)));
+            scaleValues <- sqrt(greyboxForecast$variances*(gamma(1/object$other$shape)/gamma(3/object$other$shape)));
             greyboxForecast$scale <- scaleValues;
         }
         if(interval=="prediction"){
-            greyboxForecast$lower[] <- exp(qgnorm(levelLow,greyboxForecast$mean,scaleValues,object$other$beta));
-            greyboxForecast$upper[] <- exp(qgnorm(levelUp,greyboxForecast$mean,scaleValues,object$other$beta));
+            greyboxForecast$lower[] <- exp(qgnorm(levelLow,greyboxForecast$mean,scaleValues,object$other$shape));
+            greyboxForecast$upper[] <- exp(qgnorm(levelUp,greyboxForecast$mean,scaleValues,object$other$shape));
         }
         else if(interval=="confidence"){
             greyboxForecast$lower[] <- exp(greyboxForecast$lower);
@@ -4074,9 +4085,10 @@ predict_almari <- function(object, newdata=NULL, interval=c("none", "confidence"
     parameters <- c(parameters,ariParameters);
 
     # If the newdata is provided, do the recursive thingy
+    ariVariance <- 1;
     if(newdataProvided){
-    # Fill in the tails with the available data
         if(any(object$distribution==c("plogis","pnorm"))){
+            # Fill in the tails with the available data
             matrixOfxregFull <- cbind(matrixOfxreg, matrix(NA,h,ariOrder,dimnames=list(NULL,ariNames)));
             matrixOfxregFull <- rbind(matrix(NA,ariOrder,ncol(matrixOfxregFull)),matrixOfxregFull);
             if(interceptIsNeeded){
@@ -4087,72 +4099,61 @@ predict_almari <- function(object, newdata=NULL, interval=c("none", "confidence"
                 matrixOfxregFull[1:ariOrder,] <- tail(object$data[,-1,drop=FALSE],ariOrder);
             }
             h <- h+ariOrder;
-        }
-        else{
-            matrixOfxregFull <- cbind(matrixOfxreg, matrix(NA,h,ariOrder,dimnames=list(NULL,ariNames)));
-            for(i in 1:ariOrder){
-                matrixOfxregFull[1:min(h,i),nonariParametersNumber+i] <- tail(y,i)[1:min(h,i)];
-            }
-        }
 
-        # Transform the lagged response variables
-        if(any(object$distribution==c("dlnorm","dllaplace","dls","dpois","dnbinom","dbinom"))){
-            if(any(y==0) & !is.occurrence(object$occurrence)){
-                # Use Box-Cox if there are zeroes
-                matrixOfxregFull[,nonariParametersNumber+c(1:ariOrder)] <- (matrixOfxregFull[,nonariParametersNumber+c(1:ariOrder)]^0.01-1)/0.01;
-                colnames(matrixOfxregFull)[nonariParametersNumber+c(1:ariOrder)] <- paste0(ariNames,"Box-Cox");
-            }
-            else{
-                matrixOfxregFull[,nonariParametersNumber+c(1:ariOrder)] <- log(matrixOfxregFull[,nonariParametersNumber+c(1:ariOrder)]);
-                colnames(matrixOfxregFull)[nonariParametersNumber+c(1:ariOrder)] <- paste0(ariNames,"Log");
-            }
-        }
-        else if(object$distribution=="dbcnorm"){
-            # Use Box-Cox if there are zeroes
-            matrixOfxregFull[,nonariParametersNumber+c(1:ariOrder)] <- (matrixOfxregFull[,nonariParametersNumber+c(1:ariOrder)]^
-                                                                            object$other$lambdaBC-1)/object$other$lambdaBC;
-            colnames(matrixOfxregFull)[nonariParametersNumber+c(1:ariOrder)] <- paste0(ariNames,"Box-Cox");
-        }
-        else if(object$distribution=="dlogitnorm"){
-            matrixOfxregFull[,nonariParametersNumber+c(1:ariOrder)] <-
-                log(matrixOfxregFull[,nonariParametersNumber+c(1:ariOrder)]/
-                        (1-matrixOfxregFull[,nonariParametersNumber+c(1:ariOrder)]));
-            colnames(matrixOfxregFull)[nonariParametersNumber+c(1:ariOrder)] <- paste0(ariNames,"Logit");
-        }
-        else if(object$distribution=="dchisq"){
-            matrixOfxregFull[,nonariParametersNumber+c(1:ariOrder)] <- sqrt(matrixOfxregFull[,nonariParametersNumber+c(1:ariOrder)]);
-            colnames(matrixOfxregFull)[nonariParametersNumber+c(1:ariOrder)] <- paste0(ariNames,"Sqrt");
-        }
-
-        # if(object$distribution=="dbeta"){
-        #     # We predict values for shape1 and shape2 and write them down in mean and variance.
-        #     ourForecast <- as.vector(exp(matrixOfxregFull %*% parameters[1:(length(parameters)/2)]));
-        #     vectorOfVariances <- as.vector(exp(matrixOfxregFull %*% parameters[-c(1:(length(parameters)/2))]));
-        #     # ourForecast <- ourForecast / (ourForecast + as.vector(exp(matrixOfxregFull %*% parameters[-c(1:(length(parameters)/2))])));
-        #
-        #     lower <- NULL;
-        #     upper <- NULL;
-        # }
-        # else{
-
-        # Produce forecasts iteratively
-        ourForecast <- vector("numeric", h);
-        for(i in 1:h){
-            ourForecast[i] <- matrixOfxregFull[i,] %*% parameters;
-            for(j in 1:ariOrder){
-                if(i+j-1==h){
-                    break;
+            # Produce forecasts iteratively
+            ourForecast <- vector("numeric", h);
+            for(i in 1:h){
+                ourForecast[i] <- matrixOfxregFull[i,] %*% parameters;
+                for(j in 1:ariOrder){
+                    if(i+j-1==h){
+                        break;
+                    }
+                    matrixOfxregFull[i+j,nonariParametersNumber+j] <- ourForecast[i];
                 }
-                matrixOfxregFull[i+j,nonariParametersNumber+j] <- ourForecast[i];
             }
-        }
-
-        if(any(object$distribution==c("plogis","pnorm"))){
             matrixOfxreg <- matrixOfxregFull[-c(1:ariOrder),1:(nonariParametersNumber+arOrder),drop=FALSE];
             ourForecast <- ourForecast[-c(1:ariOrder)];
         }
         else{
-            matrixOfxreg <- matrixOfxregFull[,1:(nonariParametersNumber+arOrder),drop=FALSE];
+            # The lags start from the state after the last observation: the filter over the latent
+            # sizes of an occurrence model, the last values otherwise. The forecasts go on with the
+            # recursion of the model, with the variances of its errors over the horizon (the Kalman
+            # filter for the distributions additive in the space of the lags)
+            distribution <- object$distribution;
+            yAll <- actuals(object);
+            occurrenceModel <- is.occurrence(object$occurrence);
+            observed <- if(occurrenceModel) yAll!=0 else rep(TRUE, length(yAll));
+            lagsIn <- as.matrix(object$data[,ncol(object$data)-ariOrder+c(1:ariOrder),drop=FALSE]);
+            # The response in the space of the lags, as in alm()
+            if(any(distribution==c("dexp","dlnorm","dllaplace","dls","dlgnorm","dgeom","dpois","dnbinom","dbinom"))){
+                responseIn <- if(any(yAll[observed]==0)) (yAll^0.01-1)/0.01 else suppressWarnings(log(yAll));
+            }
+            else if(distribution=="dbcnorm"){
+                lambdaBC <- if(occurrenceModel) object$other$lambdaBC else 0.1;
+                responseIn <- if(lambdaBC==0) suppressWarnings(log(yAll)) else (yAll^lambdaBC-1)/lambdaBC;
+            }
+            else if(distribution=="dchisq"){
+                responseIn <- sqrt(yAll);
+            }
+            else{
+                responseIn <- yAll;
+            }
+            # The location of the model, from the mean
+            locationIn <- switch(distribution,
+                                 "dinvgauss"=,"dgamma"=,"dexp"=,"dpois"=,"dnbinom"=,"dbinom"=,"dgeom"=,
+                                 "dbeta"=log(object$mu),
+                                 "dchisq"=sqrt(object$mu),
+                                 object$mu);
+            ariFilter <- any(distribution==ariFilterDistributions);
+            ariLink <- if(any(distribution==c("dinvgauss","dgamma"))) 1L else 0L;
+            latentIn <- almLatentCpp(locationIn - lagsIn %*% ariParameters, ariParameters, responseIn,
+                                     observed, lagsIn[1,], numeric(0), ariFilter, ariLink);
+            latentOut <- almLatentCpp(matrixOfxreg %*% parameters[1:nonariParametersNumber], ariParameters,
+                                      numeric(h), rep(FALSE, h), latentIn$stateMean,
+                                      latentIn$stateCovariance, ariFilter, ariLink);
+            ourForecast <- latentOut$mu;
+            ariVariance <- latentOut$variance;
+            matrixOfxreg <- cbind(matrixOfxreg, latentOut$lags)[,1:(nonariParametersNumber+arOrder),drop=FALSE];
         }
     }
     else{
@@ -4173,7 +4174,7 @@ predict_almari <- function(object, newdata=NULL, interval=c("none", "confidence"
             }
         }
         else if(interval=="prediction"){
-            vectorOfVariances[] <- vectorOfVariances + sigma(object)^2;
+            vectorOfVariances[] <- vectorOfVariances + sigma(object)^2 * ariVariance;
             for(i in 1:nLevels){
                 yLower[,i] <- ourForecast + paramQuantiles[i] * sqrt(vectorOfVariances);
                 yUpper[,i] <- ourForecast + paramQuantiles[i+nLevels] * sqrt(vectorOfVariances);

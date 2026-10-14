@@ -132,100 +132,6 @@ def _compute_log_lik_array(
         return np.zeros_like(y_otU, dtype=float)
 
 
-def entropy_zero(distribution: str, scale, mu, other=None) -> np.ndarray:
-    """Differential entropy of each zero of an occurrence model (R: ``entropyZero``).
-
-    Minus the expected log-density at the location ``mu``, with the scale in the
-    form that the density takes (the standard deviation for the Normal-based
-    distributions). The log-domain distributions add the Jacobian
-    ``E[log(y)] = mu``. Where there is no closed form, it is the entropy of a
-    Normal distribution with the same variance.
-    """
-    from scipy.special import betaln, digamma, gammaln
-
-    mu = np.asarray(mu, dtype=float)
-    log_sqrt_2pi = 0.5 * np.log(2 * np.pi)
-    if distribution in ("dnorm", "dfnorm", "drectnorm", "dbcnorm", "dlogitnorm"):
-        # Normal approximation for the folded, rectified, Box-Cox and logit Normal
-        entropy = log_sqrt_2pi + np.log(scale) + 0.5
-    elif distribution == "dlnorm":
-        entropy = log_sqrt_2pi + np.log(scale) + 0.5 + mu
-    elif distribution in ("dgnorm", "dlgnorm"):
-        entropy = 1 / other - np.log(other / (2 * scale)) + gammaln(1 / other)
-        if distribution == "dlgnorm":
-            entropy = entropy + mu
-    elif distribution in ("dlaplace", "dllaplace"):
-        entropy = 1 + np.log(2 * scale)
-        if distribution == "dllaplace":
-            entropy = entropy + mu
-    elif distribution == "dalaplace":
-        entropy = 1 + np.log(scale / (other * (1 - other)))
-    elif distribution in ("ds", "dls"):
-        entropy = 2 + 2 * np.log(2 * scale)
-        if distribution == "dls":
-            entropy = entropy + mu
-    elif distribution == "dlogis":
-        entropy = 2 + np.log(scale)
-    elif distribution == "dt":
-        entropy = (
-            (scale + 1) / 2 * (digamma((scale + 1) / 2) - digamma(scale / 2))
-            + np.log(np.sqrt(scale))
-            + betaln(scale / 2, 0.5)
-        )
-    elif distribution == "dexp":
-        entropy = 1 + np.log(mu)
-    elif distribution == "dgamma":
-        entropy = (
-            1 / scale
-            + np.log(scale * mu)
-            + gammaln(1 / scale)
-            + (1 - 1 / scale) * digamma(1 / scale)
-        )
-    elif distribution == "dinvgauss":
-        # Normal approximation with the variance mu^2 * scale
-        entropy = np.log(np.sqrt(2 * np.pi * scale) * mu) + 0.5
-    elif distribution == "dchisq":
-        # The central chi-squared with df=scale, without the non-centrality
-        entropy = (
-            scale / 2
-            + np.log(2)
-            + gammaln(scale / 2)
-            + (1 - scale / 2) * digamma(scale / 2)
-        )
-    elif distribution == "dbeta":
-        entropy = (
-            betaln(mu, scale)
-            - (mu - 1) * digamma(mu)
-            - (scale - 1) * digamma(scale)
-            + (mu + scale - 2) * digamma(mu + scale)
-        )
-    # Normal approximations for the counts
-    elif distribution == "dpois":
-        entropy = 0.5 * np.log(2 * np.pi * mu) + 0.5
-    elif distribution == "dnbinom":
-        entropy = 0.5 * np.log(2 * np.pi * (mu + mu**2 / other)) + 0.5
-    elif distribution == "dgeom":
-        entropy = 0.5 * np.log(2 * np.pi * mu * (1 + mu)) + 0.5
-    elif distribution == "dbinom":
-        entropy = 0.5 * np.log(2 * np.pi * other * mu / (1 + mu) ** 2) + 0.5
-    else:
-        entropy = 0.0
-    # One value per zero, also where the entropy does not depend on mu
-    return np.broadcast_to(np.asarray(entropy, dtype=float), mu.shape).copy()
-
-
-def _entropy_adjustment(
-    distribution: str,
-    scale,
-    other_val,
-    mu: np.ndarray,
-    otU: np.ndarray,
-) -> float:
-    """The differential entropy of the zeros (recursive occurrence models)."""
-    scale_zero = scale[~otU] if np.ndim(scale) > 0 and np.size(scale) > 1 else scale
-    return float(np.sum(entropy_zero(distribution, scale_zero, mu[~otU], other_val)))
-
-
 def cf(
     B: np.ndarray,
     distribution: str,
@@ -249,6 +155,7 @@ def cf(
     lambda_bc: float = 0.0,
     size: float = 1.0,
     fitter_func=None,
+    latent: dict | None = None,
 ) -> float:
     """Cost function for optimization.
 
@@ -301,13 +208,17 @@ def cf(
         Size parameter for binomial.
     fitter_func : callable, optional
         Fitter function to call.
+    latent : dict, optional
+        The settings of the latent sizes of a dynamic model with an occurrence model
+        (see ``fitter_recursive``): the sizes at the zeros go on with the recursion
+        of the model, and the zeros have only the likelihood of the occurrence.
 
     Returns
     -------
     float
         Cost function value (negative log-likelihood or loss).
     """
-    from .fitters import extractor_fitted, fitter
+    from .fitters import extractor_fitted, fitter, fitter_recursive
 
     if otU is None:
         otU = np.ones(len(y), dtype=bool)
@@ -318,20 +229,22 @@ def cf(
 
     y_otU = y[otU]
 
-    fitter_return = fitter(
-        B,
-        distribution,
-        y,
-        matrix_xreg,
-        other=other,
-        a_parameter_provided=a_parameter_provided,
-        ar_order=ar_order,
-        i_order=i_order,
-        loss=loss,
-        lambda_val=lambda_val,
-        otU=otU,
-        trim=trim,
-    )
+    fitter_kwargs = {
+        "other": other,
+        "a_parameter_provided": a_parameter_provided,
+        "ar_order": ar_order,
+        "i_order": i_order,
+        "loss": loss,
+        "lambda_val": lambda_val,
+        "otU": otU,
+        "trim": trim,
+    }
+    if latent is not None:
+        fitter_return = fitter_recursive(
+            B, distribution, y, matrix_xreg, latent, **fitter_kwargs
+        )
+    else:
+        fitter_return = fitter(B, distribution, y, matrix_xreg, **fitter_kwargs)
 
     mu = fitter_return["mu"]
     mu_otU = mu[otU]
@@ -339,6 +252,11 @@ def cf(
     other_val = fitter_return["other"]
 
     if loss in ("likelihood", "ROLE"):
+        # The errors after the latent sizes have the variances of the filter
+        if latent is not None and latent["filter"]:
+            scale = scale * fitter_return["variance"][otU] ** (
+                1 / latent["scale_power"]
+            )
         # For dbcnorm, lambda_bc is the "other" param when estimated
         effective_lambda_bc = (
             other_val
@@ -362,15 +280,6 @@ def cf(
             cf_value = (
                 # R: -meanFast(pointLiks, trim=trim) * obsInsample, trimming the lowest
                 -mean_fast(log_lik_array, trim=trim) * obs_insample
-            )
-
-        if recursive_model and occurrence_model:
-            cf_value += _entropy_adjustment(
-                distribution,
-                scale,
-                size if distribution == "dbinom" else other_val,
-                mu,
-                otU,
             )
 
     else:

@@ -1733,3 +1733,101 @@ def test_dbcnorm_predicts_with_the_estimated_lambda():
     model = ALM(distribution="dbcnorm").fit(X, np.exp(_Z))
     prediction = model.predict(X[:3], interval="prediction")
     assert np.all(np.isfinite(np.asarray(prediction.upper)))
+
+
+# ---------------------------------------------------------------------------
+# Latent sizes of the dynamic models with an occurrence model
+# ---------------------------------------------------------------------------
+
+_N_AR = 200
+_X_AR = _RNG.normal(size=_N_AR)
+_Z_AR = np.zeros(_N_AR)
+for _t in range(_N_AR):
+    _Z_AR[_t] = 15 + 0.4 * _X_AR[_t] + 0.7 * (_Z_AR[_t - 1] if _t > 0 else 50)
+    _Z_AR[_t] += _RNG.normal(0, 1)
+_Y_AR = (_RNG.random(_N_AR) < 0.6) * _Z_AR
+_XM_AR = np.column_stack([np.ones(_N_AR), _X_AR])
+
+
+def _alm_latent(c, a, z, observed, initial_mean):
+    from greybox._native_alm_latent import alm_latent
+
+    return alm_latent(
+        np.asarray(c, float), np.asarray(a, float), np.asarray(z, float),
+        np.asarray(observed, np.int32), np.asarray(initial_mean, float),
+        np.zeros(0), True, 0,
+    )
+
+
+def test_alm_latent_ar1_variances():
+    """After an observed value, the variances of AR(1) grow as 1 + a^2 + a^4..."""
+    a = 0.7
+    result = _alm_latent(np.zeros(5), [a], [1, 0, 0, 0, 0], [1, 0, 0, 0, 0], [0.0])
+    expected = [1, 1, 1 + a**2, 1 + a**2 + a**4, 1 + a**2 + a**4 + a**6]
+    assert np.allclose(result["variance"], expected)
+    assert np.allclose(result["mu"], [0, a, a**2, a**3, a**4])
+
+
+def test_alm_latent_is_the_gaussian_conditional():
+    """The filter gives the mean and variance of z_t given the observed values before it."""
+    rng = np.random.default_rng(3)
+    a, n = np.array([0.5, 0.3]), 8
+    c, z, m0 = rng.normal(size=n), rng.normal(size=n), np.array([1.0, -1.0])
+    observed = np.array([1, 0, 0, 1, 0, 1, 0, 0])
+    # z = L^{-1}(b + e), with the presample in b
+    L = np.eye(n) - a[0] * np.eye(n, k=-1) - a[1] * np.eye(n, k=-2)
+    b = c.copy()
+    b[0] += a @ m0
+    b[1] += a[1] * m0[0]
+    mean = np.linalg.solve(L, b)
+    covariance = np.linalg.solve(L, np.linalg.inv(L).T)
+    result = _alm_latent(c, a, z, observed, m0)
+    for t in range(n):
+        o = np.flatnonzero(observed[:t])
+        gain = np.linalg.solve(covariance[np.ix_(o, o)], covariance[o, t]) if len(o) else []
+        assert result["mu"][t] == pytest.approx(mean[t] + np.dot(gain, z[o] - mean[o]))
+        assert result["variance"][t] == pytest.approx(
+            covariance[t, t] - np.dot(gain, covariance[o, t])
+        )
+
+
+@pytest.mark.parametrize("distribution", ["dnorm", "dlnorm", "dgamma", "dlaplace"])
+@pytest.mark.parametrize("ar_order", [1, 2])
+def test_occurrence_ari_likelihood_matches_point_lik(distribution, ar_order):
+    """The zeros give only the occurrence likelihood, with no entropy of the sizes."""
+    occurrence = ALM(distribution="plogis").fit(_XM_AR, (_Y_AR != 0).astype(float))
+    model = ALM(distribution=distribution, occurrence=occurrence, orders=(ar_order, 0, 0))
+    model.fit(_XM_AR, _Y_AR)
+    assert np.isfinite(model.loglik)
+    assert np.sum(point_lik(model)) == pytest.approx(model.loglik, rel=1e-8)
+    # The lags at the zeros are the latent sizes, near the observed ones, not zeros
+    lags = model._X_train_[1:, -ar_order]
+    assert np.all(lags[_Y_AR[:-1] == 0] > 0.8 * np.min(lags[_Y_AR[:-1] != 0]))
+
+
+def test_ari_zeros_are_kept_without_occurrence():
+    """Without an occurrence model the zeros are observed values of the response."""
+    model = ALM(distribution="dnorm", orders=(1, 0, 0)).fit(_XM_AR, _Y_AR)
+    assert np.array_equal(model._X_train_[1:, -1], _Y_AR[:-1])
+
+
+def test_ari_prediction_intervals_widen():
+    """The prediction variance of AR(1) grows with the horizon."""
+    model = ALM(distribution="dnorm", orders=(1, 0, 0)).fit(_XM_AR, _Z_AR)
+    prediction = model.predict(np.ones((6, 2)), interval="prediction")
+    width = np.ravel(prediction.upper) - np.ravel(prediction.lower)
+    assert np.all(np.diff(width) > 0)
+
+
+def test_ari_forecast_after_zeros_uses_the_latent_sizes():
+    """After trailing zeros the forecast goes on from the latent sizes, not from zero."""
+    y = _Y_AR.copy()
+    y[-3:] = 0
+    occurrence = ALM(distribution="plogis").fit(_XM_AR, (y != 0).astype(float))
+    model = ALM(distribution="dnorm", occurrence=occurrence, orders=(1, 0, 0))
+    model.fit(_XM_AR, y)
+    prediction = model.predict(np.ones((2, 2)), interval="prediction")
+    assert np.all(np.ravel(prediction.mean) > 40)
+    # The first step is three steps after the last observed size
+    width = np.ravel(prediction.upper) - np.ravel(prediction.lower)
+    assert width[0] > 2 * 1.96 * model.sigma * 1.2

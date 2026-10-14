@@ -123,12 +123,14 @@ the parameters for that part should follow the parameters for location;
 \item \code{algorithm} - the algorithm to use in optimisation
 (\code{"NLOPT_LN_NELDERMEAD"} by default);
 \item \code{maxeval} - maximum number of evaluations to carry out. Default is 40 per
-estimated parameter. In case of LASSO / RIDGE the default is 80 per estimated parameter;
+estimated parameter. In case of LASSO / RIDGE and of the ARI models with an occurrence
+model the default is 200 per estimated parameter;
 \item \code{maxtime} - stop, when the optimisation time (in seconds) exceeds this;
 \item \code{xtol_rel} - the precision of the optimiser (the default is 1E-6);
 \item \code{xtol_abs} - the absolute precision of the optimiser (the default is 1E-8);
 \item \code{ftol_rel} - the stopping criterion in case of the relative change in the loss
-function (the default is 1E-4);
+function (the default is 1E-4, and 1E-8 for LASSO / RIDGE and the ARI models with an
+occurrence model);
 \item \code{ftol_abs} - the stopping criterion in case of the absolute change in the loss
 function (the default is 0 - not used);
 \item \code{print_level} - the level of output for the optimiser (0 by default).

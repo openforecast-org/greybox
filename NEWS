@@ -1,3 +1,22 @@
+greybox v2.0.11 (Release data: 2026-10-??)
+==============
+
+Changes:
+* alm() with ARI orders and an occurrence model treats the sizes at the zeros as latent: their lags go on with the recursion of the model, as the conditional means given the observed sizes, and the observed sizes update the latent ones before them. This is a Kalman filter on the last p values of the response, in a C++ header shared with the Python greybox (src/headers/almLatent.h). For dnorm, dlaplace, ds, dgnorm, dlogis, dalaplace, dlnorm, dllaplace, dls, dlgnorm and dbcnorm, the errors after the latent sizes take the variances of the filter; the other distributions take the recursion of the means.
+* The zeros of these models contribute only the likelihood of the occurrence: the differential entropy of the sizes at the zeros is removed from the loss, logLik() and pointLik(), and the scale is estimated on the non-zero observations.
+* predict() of the ARI models continues the recursion after the last observed sizes (so the forecasts after trailing zeros start from the latent sizes) and takes the variance of the filter over the horizon, so the prediction intervals of all ARI models widen with the horizon.
+* The ARI models with an occurrence model are estimated with ftol_rel=1e-8 and 200 evaluations per parameter by default, as LASSO / RIDGE: their likelihood is flat, and the old defaults stopped well before the optimum.
+* dlgnorm takes the lags of log(y), as the other distributions in logs.
+
+Bugfixes:
+* Without an occurrence model, the zeros of the response were replaced by the mean in the lags of the ARI models. They are now observed values.
+* The AR polynomial (object$other$polynomial) of the models with ar>1 was stored in the reversed order, so predict() applied the AR coefficients to the wrong lags.
+* logLik() of the ARI models included the penalty of the AR roots used in the estimation.
+* predict() of the ARI models transformed the lags of dlgnorm, and of dbcnorm with an occurrence model, differently from the fit.
+* vcov(), and so predict() with intervals, failed for the ARI models with an occurrence model when the Hessian was needed (e.g. dgamma, dllaplace, dls).
+* predict() of dlgnorm failed with intervals: it took the shape from the wrong element of the model.
+
+
 greybox v2.0.10 (Release data: 2026-10-??)
 ==============
 

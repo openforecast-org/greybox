@@ -102,6 +102,12 @@ sm.alm <- function(object, formula=NULL, data=NULL,
 # ADAM monograph, while their densities take the standard deviation, sqrt(scale).
 scaleNormalBased <- c("dnorm","dlnorm","dbcnorm","dlogitnorm","dfnorm","drectnorm");
 
+# The distributions additive in the space of the lags of the dynamic models of alm(): the errors
+# after the latent sizes of an occurrence model have the variances of the Kalman filter
+# (almLatentCpp()), and the scale of an error is scale*variance^(1/2), ^(1/4) for the S ones.
+ariFilterDistributions <- c("dnorm","dlaplace","ds","dgnorm","dlogis","dalaplace",
+                            "dlnorm","dllaplace","dls","dlgnorm","dbcnorm");
+
 scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu, y, residuals,
                    parameters=NULL, occurrence=NULL, other=NULL, recursive=FALSE, ...){
     # The function estimates the scale model
@@ -113,6 +119,8 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
 
     obsInsample <- length(y);
 
+    # The ARI polynomial of a dynamic location model
+    polynomial <- other$polynomial;
     # Extract the other value
     if(!is.null(other)){
         other <- switch(distribution,
@@ -210,12 +218,10 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
     }
 
     occurrenceModel <- FALSE;
-    obsZero <- 0;
     otU <- rep(TRUE,obsInsample);
     if(is.occurrence(occurrence)){
         occurrenceModel[] <- TRUE;
         otU[] <- actuals(occurrence)!=0;
-        obsZero[] <- sum(!otU);
     }
     # Deal with subset
     if(is.null(subset)){
@@ -230,6 +236,16 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
 
     if(any(residuals[otU]==0)){
         otU <- otU & residuals[subset]!=0;
+    }
+
+    # The errors after the latent sizes of a dynamic occurrence model have the variances of the
+    # Kalman filter, as in alm(): the variance, or its root (the fourth one for the S), of the scale
+    scaleFilter <- 1;
+    if(occurrenceModel && recursive && any(distribution==ariFilterDistributions)){
+        scaleFilter <- almLatentCpp(numeric(obsInsample), polynomial, numeric(obsInsample),
+                                    actuals(occurrence)!=0, numeric(length(polynomial)), numeric(0),
+                                    TRUE, 0L)$variance[otU]^
+            switch(distribution, "dnorm"=,"dlnorm"=,"dbcnorm"=1, "ds"=,"dls"=1/4, 1/2);
     }
 
     # Prepare the data
@@ -283,9 +299,8 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
 
     #### The function estimates parameters of scale model ####
     CFScale <- function(B){
-        scaleAll <- fitterScale(B, distribution);
         # The densities are evaluated on the non-zeroes, with their scales
-        scale <- scaleAll[otU];
+        scale <- fitterScale(B, distribution)[otU] * scaleFilter;
         CFValue <- -sum(switch(distribution,
                                "dnorm" = dnorm(y[otU], mean=mu[otU], sd=sqrt(scale), log=TRUE),
                                "dlaplace" = dlaplace(y[otU], mu=mu[otU], scale=scale, log=TRUE),
@@ -320,16 +335,6 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
                                # "plogis" = c(plogis(mu[otU][ot], location=0, scale=1, log.p=TRUE),
                                #              plogis(mu[otU][!ot], location=0, scale=1, lower.tail=FALSE, log.p=TRUE))
         ));
-
-        # The differential entropy of the zeros, when the location model is recursive, as in alm()
-        if(occurrenceModel && recursive){
-            CFValue[] <- CFValue + sum(entropyZero(distribution,
-                                                   switch(distribution,
-                                                          "dnorm"=,"dlnorm"=,"dbcnorm"=,"dlogitnorm"=,
-                                                          "dfnorm"=,"drectnorm"=sqrt(scaleAll[!otU]),
-                                                          scaleAll[!otU]),
-                                                   mu[!otU], other));
-        }
         return(CFValue);
     }
 

@@ -149,12 +149,14 @@
 #' \item \code{algorithm} - the algorithm to use in optimisation
 #' (\code{"NLOPT_LN_NELDERMEAD"} by default);
 #' \item \code{maxeval} - maximum number of evaluations to carry out. Default is 40 per
-#' estimated parameter. In case of LASSO / RIDGE the default is 80 per estimated parameter;
+#' estimated parameter. In case of LASSO / RIDGE and of the ARI models with an occurrence
+#' model the default is 200 per estimated parameter;
 #' \item \code{maxtime} - stop, when the optimisation time (in seconds) exceeds this;
 #' \item \code{xtol_rel} - the precision of the optimiser (the default is 1E-6);
 #' \item \code{xtol_abs} - the absolute precision of the optimiser (the default is 1E-8);
 #' \item \code{ftol_rel} - the stopping criterion in case of the relative change in the loss
-#' function (the default is 1E-4);
+#' function (the default is 1E-4, and 1E-8 for LASSO / RIDGE and the ARI models with an
+#' occurrence model);
 #' \item \code{ftol_abs} - the stopping criterion in case of the absolute change in the loss
 #' function (the default is 0 - not used);
 #' \item \code{print_level} - the level of output for the optimiser (0 by default).
@@ -475,12 +477,38 @@ alm <- function(formula, data, subset, na.action,
         # Suppress warnings for LASSO/RIDGE
         scale <- suppressWarnings(scalerInternal(B, distribution, y, matrixXreg, mu, other));
 
-        return(list(mu=mu,scale=scale,other=other,poly1=poly1));
+        return(list(mu=mu,scale=scale,other=other,poly1=poly1,B=B));
     }
 
     # Fitter for dynamic models
     fitterRecursive <- function(B, distribution, y, matrixXreg){
         fitterReturn <- fitter(B, distribution, y, matrixXreg);
+        # The sizes at the zeros of an occurrence model are latent: they go on with the recursion
+        # of the model, as the conditional means given the observed values (the Kalman filter for
+        # the distributions additive in the space of the lags, with the variances of the errors)
+        if(occurrenceModel){
+            BLocation <- fitterReturn$B;
+            if(distribution=="dbeta"){
+                BLocation <- BLocation[1:(length(BLocation)/2)];
+            }
+            ariIndex <- nVariablesExo+c(1:ariOrder);
+            response <- if(distribution=="dbcnorm") bcTransform(y, fitterReturn$other) else ariResponse;
+            # The sizes before the sample are not observed either: they start from the mean of
+            # the observed ones
+            latent <- almLatentCpp(matrixXreg[,-ariIndex,drop=FALSE] %*% BLocation[-ariIndex],
+                                   BLocation[ariIndex], response, otU,
+                                   rep(mean(response[otU]), ariOrder), numeric(0),
+                                   ariFilter, ariLink);
+            matrixXreg[,ariIndex] <- latent$lags;
+            fitterReturn <- fitter(B, distribution, y, matrixXreg);
+            fitterReturn$variance <- latent$variance;
+            if(ariFilter){
+                fitterReturn$scale <- scalerInternal(fitterReturn$B, distribution, y, matrixXreg,
+                                                     fitterReturn$mu, fitterReturn$other, latent$variance);
+            }
+            fitterReturn$matrixXreg <- matrixXreg;
+            return(fitterReturn);
+        }
         # Fill in the first ariOrder elements with fitted values
         for(i in 1:ariOrder){
             matrixXreg[ariZeroes[,i],nVariablesExo+i] <- switch(distribution,
@@ -489,10 +517,6 @@ alm <- function(formula, data, subset, na.action,
                                                                 "dpois" =,
                                                                 "dbeta" = log(fitterReturn$mu),
                                                                 fitterReturn$mu)[!otU][1:ariZeroesLengths[i]];
-            if(distribution=="dbcnorm"){
-                matrixXreg[,nVariablesExo+i][!ariZeroes[,i]] <- bcTransform(ariElementsOriginal[!ariZeroes[,i],i],
-                                                                            fitterReturn$other);
-            }
         }
         # matrixXreg <- fitterRecursion(matrixXreg, B, y, ariZeroes, nVariablesExo, distribution);
         fitterReturn <- fitter(B, distribution, y, matrixXreg);
@@ -501,27 +525,24 @@ alm <- function(formula, data, subset, na.action,
     }
 
     # Function for scale calculation
-    scalerInternal <- function(B, distribution, y, matrixXreg, mu, other){
-        # If this is ARIMA with occurrence, the likelihood is different
-        if(recursiveModel && occurrenceModel){
-            df <- obsInsample;
-        }
-        else{
-            df <- obsNonZero;
-        }
+    scalerInternal <- function(B, distribution, y, matrixXreg, mu, other, variance=1){
+        df <- obsNonZero;
+        # The errors after the latent sizes of an occurrence model, standardised by the variances
+        # of the filter
+        errorScale <- if(length(variance)>1) sqrt(variance[otU]) else 1;
         return(switch(distribution,
                       "dbeta" = exp(matrixXreg %*% B[-c(1:(length(B)/2))]),
-                      "dnorm" = sqrt(meanFast((y[otU]-mu[otU])^2, df, trim, side="both")),
-                      "dlaplace" = meanFast(abs(y[otU]-mu[otU]), df, trim, side="both"),
-                      "ds" = meanFast(sqrt(abs(y[otU]-mu[otU])), df*2, trim, side="both"),
-                      "dgnorm" = (other*meanFast(abs(y[otU]-mu[otU])^other, df, trim, side="both"))^{1/other},
-                      "dlogis" = sqrt(meanFast((y[otU]-mu[otU])^2, df, trim, side="both") * 3 / pi^2),
-                      "dalaplace" = meanFast((y[otU]-mu[otU]) * (other - (y[otU]<=mu[otU])*1), df, trim),
-                      "dlnorm" = sqrt(meanFast((log(y[otU])-mu[otU])^2, df, trim, side="both")),
-                      "dllaplace" = meanFast(abs(log(y[otU])-mu[otU]), df, trim, side="both"),
-                      "dls" = meanFast(sqrt(abs(log(y[otU])-mu[otU])), df*2, trim, side="both"),
-                      "dlgnorm" = (other*meanFast(abs(log(y[otU])-mu[otU])^other, df, trim, side="both"))^{1/other},
-                      "dbcnorm" = sqrt(meanFast((bcTransform(y[otU],other)-mu[otU])^2, df, trim, side="both")),
+                      "dnorm" = sqrt(meanFast(((y[otU]-mu[otU])/errorScale)^2, df, trim, side="both")),
+                      "dlaplace" = meanFast(abs(y[otU]-mu[otU])/errorScale, df, trim, side="both"),
+                      "ds" = meanFast(sqrt(abs(y[otU]-mu[otU])/errorScale), df*2, trim, side="both"),
+                      "dgnorm" = (other*meanFast((abs(y[otU]-mu[otU])/errorScale)^other, df, trim, side="both"))^{1/other},
+                      "dlogis" = sqrt(meanFast(((y[otU]-mu[otU])/errorScale)^2, df, trim, side="both") * 3 / pi^2),
+                      "dalaplace" = meanFast((y[otU]-mu[otU])/errorScale * (other - (y[otU]<=mu[otU])*1), df, trim),
+                      "dlnorm" = sqrt(meanFast(((log(y[otU])-mu[otU])/errorScale)^2, df, trim, side="both")),
+                      "dllaplace" = meanFast(abs(log(y[otU])-mu[otU])/errorScale, df, trim, side="both"),
+                      "dls" = meanFast(sqrt(abs(log(y[otU])-mu[otU])/errorScale), df*2, trim, side="both"),
+                      "dlgnorm" = (other*meanFast((abs(log(y[otU])-mu[otU])/errorScale)^other, df, trim, side="both"))^{1/other},
+                      "dbcnorm" = sqrt(meanFast(((bcTransform(y[otU],other)-mu[otU])/errorScale)^2, df, trim, side="both")),
                       "dinvgauss" = meanFast((y[otU]/mu[otU]-1)^2 / (y[otU]/mu[otU]), df, trim, side="both"),
                       "dgamma" = meanFast((y[otU]/mu[otU]-1)^2, df, trim, side="both"),
                       "dlogitnorm" = sqrt(meanFast((log(y[otU]/(1-y[otU]))-mu[otU])^2, df, trim, side="both")),
@@ -666,16 +687,6 @@ alm <- function(formula, data, subset, na.action,
         ));
     }
 
-    CFLogLikEntropy <- function(distribution, fitterReturn, obsZero){
-        # The scale is a vector for dbeta
-        scaleZero <- fitterReturn$scale;
-        if(length(scaleZero)>1){
-            scaleZero <- scaleZero[!otU];
-        }
-        other <- switch(distribution, "dbinom"=size, fitterReturn$other);
-        return(sum(entropyZero(distribution, scaleZero, fitterReturn$mu[!otU], other)));
-    }
-
     CF <- function(B, distribution, loss, y, matrixXreg, recursiveModel, denominator){
         if(recursiveModel){
             fitterReturn <- fitterRecursive(B, distribution, y, matrixXreg);
@@ -684,14 +695,15 @@ alm <- function(formula, data, subset, na.action,
             fitterReturn <- fitter(B, distribution, y, matrixXreg);
         }
 
+        # The sizes at the zeros of an occurrence model are not observed, so the zeros have only the
+        # likelihood of the occurrence. The errors after them have the variances of the filter
+        if(any(loss==c("likelihood","ROLE","QUALE")) && recursiveModel && occurrenceModel && ariFilter){
+            fitterReturn$scale <- fitterReturn$scale * fitterReturn$variance[otU]^(1/ariScalePower);
+        }
+
         if(loss=="likelihood"){
             # The original log-likelilhood
             CFValue <- -sum(CFLogLik(distribution, y, fitterReturn, otU, ot));
-
-            # The differential entropy for the models with the missing data
-            if(recursiveModel && occurrenceModel){
-                CFValue[] <- CFValue + CFLogLikEntropy(distribution, fitterReturn, obsZero);
-            }
         }
         else if(any(loss==c("ROLE","QUALE"))){
             # The original point log-likelilhoods
@@ -704,11 +716,6 @@ alm <- function(formula, data, subset, na.action,
 
             # Change scale to look like the standard likelihood
             CFValue[] <- CFValue*obsInsample;
-
-            # The differential entropy for the models with the missing data
-            if(recursiveModel && occurrenceModel){
-                CFValue[] <- CFValue + CFLogLikEntropy(distribution, fitterReturn, obsZero);
-            }
         }
         else{
             yFitted[] <- extractorFitted(distribution, fitterReturn$mu, fitterReturn$scale);
@@ -1148,6 +1155,12 @@ alm <- function(formula, data, subset, na.action,
 
     # Make recursive fitted for missing values in case of occurrence model.
     recursiveModel <- occurrenceModel && ariModel;
+    # The Kalman filter over the latent sizes for the distributions additive in the space of the
+    # lags, the recursion of the means for the others (through the exponent for the lags of the
+    # data with the log-link)
+    ariFilter <- any(distribution==ariFilterDistributions);
+    ariScalePower <- ifelseFast(any(distribution==c("ds","dls")), 4, 2);
+    ariLink <- ifelseFast(any(distribution==c("dinvgauss","dgamma")), 1L, 0L);
     # In case of plogis and pnorm, all the ARI values need to be refitted
     if(any(distribution==c("plogis","pnorm")) && ariModel){
         recursiveModel <- TRUE;
@@ -1264,7 +1277,6 @@ alm <- function(formula, data, subset, na.action,
         # otU is the vector of {0,1} for the occurrence model, not for the CDF!
         otU <- ot;
         obsNonZero <- sum(ot);
-        obsZero <- sum(!ot);
         # If this is Binomial mixture, the size is smaller (zeroes are removed)
         if(distribution=="dbinom"){
             size <- size-1;
@@ -1273,7 +1285,6 @@ alm <- function(formula, data, subset, na.action,
     else{
         otU <- rep(TRUE,obsInsample);
         obsNonZero <- obsInsample;
-        obsZero <- 0;
     }
 
     if(!fast){
@@ -1405,21 +1416,17 @@ alm <- function(formula, data, subset, na.action,
                 ariZeroesLengths <- apply(ariZeroes, 2, sum);
             }
             else{
-                ariElements <- xregExpander(y, lags=-c(1:ariOrder), gaps="auto")[,-1,drop=FALSE];
+                # The response is kept in the first column, transformed as its lags
+                ariElements <- xregExpander(y, lags=-c(1:ariOrder), gaps="auto");
             }
 
             # Get rid of "ts" class
             class(ariElements) <- "matrix";
             ariNames <- paste0(responseName,"Lag",c(1:ariOrder));
             ariTransformedNames <- ariNames;
-            colnames(ariElements) <- ariNames;
+            ariColumns <- ncol(ariElements)-ariOrder+c(1:ariOrder);
+            colnames(ariElements)[ariColumns] <- ariNames;
             variablesNamesAll <- c(variablesNames,ariNames);
-
-            # Non-zero sequences for the recursion mechanism of ar
-            if(occurrenceModel){
-                ariZeroes <- ariElements == 0;
-                ariZeroesLengths <- apply(ariZeroes, 2, sum);
-            }
 
             if(arOrder>0){
                 arNames <- paste0(responseName,"Lag",c(1:arOrder));
@@ -1431,35 +1438,43 @@ alm <- function(formula, data, subset, na.action,
 
             nVariables <- nVariables + arOrder;
             # Write down the values for the matrixXreg in the necessary transformations
-            if(any(distribution==c("dexp","dlnorm","dllaplace","dls","dgeom","dpois","dnbinom","dbinom"))){
+            if(any(distribution==c("dexp","dlnorm","dllaplace","dls","dlgnorm","dgeom","dpois","dnbinom","dbinom"))){
                 if(any(y[otU]==0)){
                     # Use Box-Cox if there are zeroes
                     ariElements[] <- bcTransform(ariElements,0.01);
                     ariTransformedNames <- paste0(ariNames,"Box-Cox");
-                    colnames(ariElements) <- ariTransformedNames;
                 }
                 else{
                     ariElements[ariElements<0] <- 0;
                     ariElements[] <- suppressWarnings(log(ariElements));
                     ariElements[is.infinite(ariElements)] <- 0;
                     ariTransformedNames <- paste0(ariNames,"Log");
-                    colnames(ariElements) <- ariTransformedNames;
                 }
             }
             else if(distribution=="dbcnorm"){
-                ariElementsOriginal <- ariElements;
                 ariElements[] <- bcTransform(ariElements,0.1);
                 ariTransformedNames <- paste0(ariNames,"Box-Cox");
-                colnames(ariElements) <- ariTransformedNames;
             }
             else if(distribution=="dchisq"){
                 ariElements[] <- sqrt(ariElements);
                 ariTransformedNames <- paste0(ariNames,"Sqrt");
-                colnames(ariElements) <- ariTransformedNames;
+            }
+            colnames(ariElements)[ariColumns] <- ariTransformedNames;
+
+            # The response in the space of the lags, for the recursion of the occurrence models
+            if(ncol(ariElements)>ariOrder){
+                ariResponse <- ariElements[,1];
+                ariElements <- ariElements[,ariColumns,drop=FALSE];
             }
 
-            # Fill in zeroes with the mean values
-            ariElements[ariElements==0] <- mean(ariElements[ariElements[,1]!=0,1]);
+            # The sizes at the zeros of an occurrence model and before the sample are not observed:
+            # their lags start from the mean of the observed ones and are replaced by the recursion
+            # of the model. Without the occurrence model, the zeros are observed values
+            if(occurrenceModel){
+                for(i in 1:ariOrder){
+                    ariElements[c(rep(TRUE,i), !otU)[1:obsInsample],i] <- mean(ariResponse[otU]);
+                }
+            }
 
             matrixXreg <- cbind(matrixXreg, ariElements);
             # dataWork <- cbind(dataWork, ariElements);
@@ -1793,8 +1808,16 @@ alm <- function(formula, data, subset, na.action,
         }
 
         #### Define what to do with the maxeval ####
+        # The latent sizes make the likelihood flat, so the recursive models need the accurate
+        # estimation, as LASSO / RIDGE
+        if(recursiveModel && is.null(ellipsis$ftol_rel)){
+            ftol_rel <- 1e-8;
+        }
         if(is.null(ellipsis$maxeval)){
-            if(any(distribution==c("dchisq","dgeom","dpois","dnbinom","dbinom","dbcnorm","plogis","pnorm")) || recursiveModel){
+            if(recursiveModel){
+                maxeval <- length(B) * 200;
+            }
+            else if(any(distribution==c("dchisq","dgeom","dpois","dnbinom","dbinom","dbcnorm","plogis","pnorm"))){
                 # maxeval <- 500;
                 maxeval <- length(B) * 40;
             }
@@ -1890,7 +1913,7 @@ alm <- function(formula, data, subset, na.action,
             # Some models save the first parameter for scale
             nVariablesForReal <- length(B);
             if(all(c(arOrder,iOrder)>0)){
-                poly1[-1] <- -B[nVariablesForReal-c(1:arOrder)+1];
+                poly1[-1] <- -B[nVariablesForReal-arOrder+c(1:arOrder)];
                 ellipsis$polynomial <- -polyprod(poly2,poly1)[-1];
                 ellipsis$arima <- c(arOrder,iOrder,0);
             }
@@ -1899,7 +1922,7 @@ alm <- function(formula, data, subset, na.action,
                 ellipsis$arima <- c(0,iOrder,0);
             }
             else{
-                ellipsis$polynomial <- B[nVariablesForReal-c(1:arOrder)+1];
+                ellipsis$polynomial <- B[nVariablesForReal-arOrder+c(1:arOrder)];
                 ellipsis$arima <- c(arOrder,0,0);
             }
             names(ellipsis$polynomial) <- ariNames;
@@ -1920,6 +1943,8 @@ alm <- function(formula, data, subset, na.action,
         }
         # The data are provided, so no need to do recursive fitting
         recursiveModel <- FALSE;
+        # The lags are already in the data, named as the parameters below
+        ariNames <- ariTransformedNames <- character(0);
         # If this was ARI, then don't count the AR parameters
         # if(ariModel){
         #     nVariablesExo <- nVariablesExo - ariOrder;
@@ -1928,6 +1953,10 @@ alm <- function(formula, data, subset, na.action,
         nVariables <- length(B);
         if(!is.null(names(B))){
             variablesNames <- names(B);
+            # The transformed lags of the data (e.g. "yLag1Log") are the AR parameters ("yLag1")
+            if(ariModel && ncol(matrixXreg)==nVariables){
+                colnames(matrixXreg) <- variablesNames;
+            }
         }
         else{
             names(B) <- variablesNames;
@@ -2238,6 +2267,11 @@ alm <- function(formula, data, subset, na.action,
     }
     else{
         logLik <- NA;
+    }
+    # The cost divides by the smallest root of a non-stationary AR polynomial, a penalty that is not
+    # a part of the likelihood
+    if(arOrder>0 && any(abs(polyroot(fitterReturn$poly1))<1)){
+        logLik <- logLik * min(abs(polyroot(fitterReturn$poly1)));
     }
 
     #### Scale model ####

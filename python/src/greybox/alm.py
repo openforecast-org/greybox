@@ -17,16 +17,31 @@ from scipy.special import gamma as _sp_gamma
 from . import distributions as dist
 from .cost_function import cf
 from .fitters import (
+    ARI_FILTER_DISTRIBUTIONS,
     VARIANCE_SCALE_DISTRIBUTIONS,
     extractor_fitted,
     extractor_residuals,
+    fitter_recursive,
     scale_sd,
     scaler_internal,
 )
 from .methods.summary import SummaryResult
+from .transforms import bc_transform, mean_fast
 from .transforms import bc_transform_inv as _bc_transform_inv
-from .transforms import mean_fast
 from .xreg import xreg_expander
+
+# The distributions whose lags of the response are in logs (Box-Cox with zeroes), as R
+_ARI_LOG_DISTRIBUTIONS = (
+    "dexp",
+    "dlnorm",
+    "dllaplace",
+    "dls",
+    "dlgnorm",
+    "dgeom",
+    "dpois",
+    "dnbinom",
+    "dbinom",
+)
 
 
 def _numerical_hessian(f, x0, h=None):
@@ -234,11 +249,13 @@ class ALM:
     nlopt_kargs : dict, optional
         Dictionary of nlopt parameters. Options:
         - "algorithm": str, default="NLOPT_LN_NELDERMEAD"
-        - "maxeval": int, default=40 per parameter
+        - "maxeval": int, default=40 per parameter (200 for LASSO / RIDGE and the
+          ARI models with an occurrence model)
         - "maxtime": float, default=600 seconds
         - "xtol_rel": float, default=1e-6
         - "xtol_abs": float, default=1e-8
-        - "ftol_rel": float, default=1e-4
+        - "ftol_rel": float, default=1e-4 (1e-8 for LASSO / RIDGE and the ARI
+          models with an occurrence model)
         - "ftol_abs": float, default=0
         - "print_level": int, default=0 (0=none, 3=full)
     verbose : int, default=0
@@ -493,10 +510,39 @@ class ALM:
                 self._response_name = "y"
 
             ar_lags = list(range(-1, -ari_order - 1, -1))
-            _log_scale_dists = ("dlnorm", "dllaplace", "dls", "dlgnorm")
-            y_for_ar = np.log(y) if self.distribution in _log_scale_dists else y
-            # [:, 1:] skips the original column prepended by xreg_expander
-            ar_terms = xreg_expander(y_for_ar, lags=ar_lags, gaps="auto")[:, 1:]
+            # The response in the first column, transformed with its lags as in R
+            ar_terms = np.asarray(
+                xreg_expander(y, lags=ar_lags, gaps="auto"), dtype=float
+            )
+            observed = (
+                y != 0
+                if isinstance(self.occurrence, ALM)
+                else np.ones(n_samples, dtype=bool)
+            )
+            if self.distribution in _ARI_LOG_DISTRIBUTIONS:
+                if np.any(y[observed] == 0):
+                    # Box-Cox if there are zeroes
+                    ar_terms = bc_transform(ar_terms, 0.01)
+                else:
+                    with np.errstate(divide="ignore"):
+                        ar_terms = np.log(np.maximum(ar_terms, 0))
+                    ar_terms[np.isinf(ar_terms)] = 0
+            elif self.distribution == "dbcnorm":
+                ar_terms = bc_transform(ar_terms, 0.1)
+            elif self.distribution == "dchisq":
+                ar_terms = np.sqrt(ar_terms)
+            self._ari_response = ar_terms[:, 0]
+            ar_terms = ar_terms[:, 1:]
+            # The sizes at the zeros of an occurrence model and before the sample are
+            # not observed: their lags start from the mean of the observed ones and are
+            # replaced by the recursion of the model. Without the occurrence model, the
+            # zeros are observed values
+            if isinstance(self.occurrence, ALM):
+                for i in range(ari_order):
+                    latent_rows = np.concatenate(
+                        [np.ones(i + 1, dtype=bool), ~observed]
+                    )[:n_samples]
+                    ar_terms[latent_rows, i] = np.mean(self._ari_response[observed])
 
             ar_term_names = [f"{response_name}Lag{i}" for i in range(1, ari_order + 1)]
 
@@ -596,8 +642,6 @@ class ALM:
 
         B_ols = None
         if self.distribution in ("plogis", "pnorm"):
-            from .transforms import bc_transform
-
             yr = bc_transform(y, 0.01)
             if i_order > 0:
                 yr = np.diff(yr, n=i_order)
@@ -651,8 +695,6 @@ class ALM:
                 yr = np.diff(yr, n=i_order)
             B_ols = _ols_init(X_init, yr)
         elif self.distribution == "dbcnorm":
-            from .transforms import bc_transform
-
             lam = self.lambda_bc if a_parameter_provided else 0.1
             yr = bc_transform(y, lam)
             if i_order > 0:
@@ -731,6 +773,23 @@ class ALM:
             obs_nonzero = n_samples
             obs_zero = 0
 
+        # The sizes at the zeros of a dynamic occurrence model are latent: they go on
+        # with the recursion of the model (the Kalman filter for the distributions
+        # additive in the space of the lags), as R's fitterRecursive
+        latent = None
+        latent_variance = None
+        if occurrence_is_model and ari_order > 0:
+            latent = {
+                "response": self._ari_response,
+                "observed": otU_full,
+                "n_exo": n_features_exog,
+                "ari_order": ari_order,
+                "filter": self.distribution in ARI_FILTER_DISTRIBUTIONS,
+                "link": 1 if self.distribution in ("dinvgauss", "dgamma") else 0,
+                "scale_power": 4 if self.distribution in ("ds", "dls") else 2,
+            }
+        self._latent = latent
+
         print_level = self.nlopt_kargs.get("print_level", 0)
         iteration_count = [0]
         last_cf_value = [None]
@@ -765,6 +824,7 @@ class ALM:
                 obs_zero=obs_zero,
                 obs_nonzero=obs_nonzero,
                 occurrence_model=occurrence_is_model,
+                latent=latent,
             )
 
             if print_level > 0:
@@ -804,16 +864,22 @@ class ALM:
 
         opt.set_xtol_rel(self.nlopt_kargs.get("xtol_rel", 1e-6))
         opt.set_xtol_abs(self.nlopt_kargs.get("xtol_abs", 1e-8))
-        opt.set_ftol_rel(self.nlopt_kargs.get("ftol_rel", 1e-4))
+        # LASSO / RIDGE and the recursive models, whose latent sizes make the likelihood
+        # flat, need the accurate estimation, as in R
+        accurate = latent is not None or self.loss in ("LASSO", "RIDGE")
+        opt.set_ftol_rel(self.nlopt_kargs.get("ftol_rel", 1e-8 if accurate else 1e-4))
         opt.set_ftol_abs(self.nlopt_kargs.get("ftol_abs", 0))
 
         maxeval = self.nlopt_kargs.get("maxeval")
 
         if maxeval is None:
-            if self.distribution in ("dnorm", "dlnorm", "dlogitnorm") and self.loss in (
-                "likelihood",
-                "MSE",
-            ):
+            if latent is not None:
+                maxeval = n_params * 200
+            elif self.distribution in (
+                "dnorm",
+                "dlnorm",
+                "dlogitnorm",
+            ) and self.loss in ("likelihood", "MSE"):
                 maxeval = 1
             else:
                 maxeval = n_params * 40
@@ -830,6 +896,15 @@ class ALM:
             self.n_iter_ = opt.get_numevals()
             self._result = opt.last_optimum_value()
             self.nlopt_result_ = opt.last_optimize_result()
+            # The recursive models restart from the solution, keeping the better one (R)
+            if latent is not None:
+                result_first = self._result
+                B_second = opt.optimize(B_opt)
+                if opt.last_optimum_value() < result_first:
+                    B_opt = B_second
+                    self._result = opt.last_optimum_value()
+                    self.nlopt_result_ = opt.last_optimize_result()
+                self.n_iter_ += opt.get_numevals()
         except Exception as e:  # noqa: BLE001 - report any optimiser failure, keep init
             if self.verbose > 0:
                 print(f"Optimization failed: {e}")
@@ -921,17 +996,38 @@ class ALM:
             "other": other_val,
         }
 
-        scale = scaler_internal(
-            B_opt,
-            self.distribution,
-            y,
-            X,
-            fitter_return["mu"],
-            other_val,
-            otU_full,
-            obs_nonzero,
-            self._trim_value(),
-        )
+        if latent is not None:
+            # The latent sizes at the zeros, with the lags of the recursion of the model
+            recursive_return = fitter_recursive(
+                B_opt,
+                self.distribution,
+                y,
+                X,
+                latent,
+                other=other_val,
+                a_parameter_provided=a_parameter_provided,
+                ar_order=ar_order,
+                i_order=i_order,
+                otU=otU_full,
+                trim=self._trim_value(),
+            )
+            X = recursive_return["matrix_xreg"]
+            fitter_return["mu"] = recursive_return["mu"]
+            scale = recursive_return["scale"]
+            if latent["filter"]:
+                latent_variance = recursive_return["variance"]
+        else:
+            scale = scaler_internal(
+                B_opt,
+                self.distribution,
+                y,
+                X,
+                fitter_return["mu"],
+                other_val,
+                otU_full,
+                obs_nonzero,
+                self._trim_value(),
+            )
         fitter_return["scale"] = scale
         self.other_ = other_val
 
@@ -988,6 +1084,8 @@ class ALM:
         if occurrence_is_model:
             self.fitted_values_ = self.fitted_values_ * occ_fitted
             self.occurrence_ = self.occurrence
+            # The sizes of the zeros are not observed: their errors are zero, as in R
+            self.residuals_ = np.where(otU_full, self.residuals_, 0.0)
 
         self._loss_value = objective_func(B_opt, np.zeros(n_params))
 
@@ -1052,6 +1150,7 @@ class ALM:
             otU_full,
             obs_nonzero,
             self._trim_value(),
+            variance=latent_variance,
         )
         # The scale of the Normal-based distributions is the variance (ADAM monograph)
         if self.distribution in VARIANCE_SCALE_DISTRIBUTIONS:
@@ -1651,15 +1750,12 @@ class ALM:
             "dgeom",
         )
 
+        ari_variance = 1.0
         if self._ari_order > 0:
             # AR(p) or ARI(p,d): user passes exogenous X only; lag columns are
             # added internally via in-sample reuse or recursive forecasting.
             ar_coefs = np.array(list(self.arima_polynomial_.values()))
             n_exog = self._n_features_exog
-            ari_order = self._ari_order
-            # The lambda of the fit, estimated or provided
-            lambda_bc_val = self.other_ if self.distribution == "dbcnorm" else 0.0
-
             if X.shape[1] != n_exog:
                 raise ValueError(
                     f"X has {X.shape[1]} features, expected {n_exog} "
@@ -1671,45 +1767,63 @@ class ALM:
                 X_lags = self._X_train_[:, n_exog:]
                 linear_pred = X @ B[:n_exog] + X_lags @ ar_coefs
             else:
-                # Out-of-sample: recursive forecasting
+                # Out-of-sample: the lags start from the state after the last
+                # observation (the filter over the latent sizes of an occurrence model,
+                # the last values otherwise), and the forecasts go on with the recursion
+                # of the model, with the variances of its errors over the horizon (the
+                # Kalman filter for the distributions additive in the space of the
+                # lags), as R
+                from ._native_alm_latent import alm_latent
+
                 h = len(X)
-                X_lags = np.zeros((h, ari_order))
-                y_train = self._y_train_
-
-                # Seed lag matrix from tail of training data (raw y-scale)
-                for j in range(1, ari_order + 1):  # j = lag number
-                    for t in range(min(h, j)):  # t = forecast horizon step
-                        X_lags[t, j - 1] = y_train[-(j - t)]
-
-                linear_pred = np.empty(h)
-                for i in range(h):
-                    linear_pred[i] = float(X[i] @ B[:n_exog]) + float(
-                        X_lags[i] @ ar_coefs
-                    )
-                    # Compute raw y-scale fitted value to feed into future lags
-                    lp = linear_pred[i]
-                    if (
-                        self.distribution in _log_link_distributions
-                        or self.distribution == "dbeta"
-                    ):
-                        mu_i = np.exp(lp)
-                    elif self.distribution == "dchisq":
-                        mu_i = 1e100 if lp < 0 else lp**2
-                    else:
-                        mu_i = lp
-                    fitted_i = float(
-                        extractor_fitted(
-                            self.distribution,
-                            np.array([mu_i]),
-                            scale_sd(self.distribution, self.scale)
-                            if self.scale is not None
-                            else 1.0,
-                            lambda_bc_val,
-                        )[0]
-                    )
-                    for j in range(1, ari_order + 1):
-                        if i + j < h:
-                            X_lags[i + j, j - 1] = fitted_i
+                y_train = np.asarray(self._y_train_, dtype=float)
+                occurrence_model = isinstance(self.occurrence, ALM)
+                observed = (
+                    y_train != 0
+                    if occurrence_model
+                    else np.ones(len(y_train), dtype=bool)
+                )
+                lags_in = self._X_train_[:, n_exog:]
+                response = (
+                    bc_transform(y_train, self.other_)
+                    if self.distribution == "dbcnorm" and occurrence_model
+                    else self._ari_response
+                )
+                mu_in = np.asarray(self.mu_, dtype=float)
+                if (
+                    self.distribution in _log_link_distributions
+                    or self.distribution == "dbeta"
+                ):
+                    location_in = np.log(mu_in)
+                elif self.distribution == "dchisq":
+                    location_in = np.sqrt(mu_in)
+                else:
+                    location_in = mu_in
+                ari_filter = self.distribution in ARI_FILTER_DISTRIBUTIONS
+                ari_link = 1 if self.distribution in ("dinvgauss", "dgamma") else 0
+                latent_in = alm_latent(
+                    location_in - lags_in @ ar_coefs,
+                    ar_coefs,
+                    response,
+                    observed.astype(int),
+                    lags_in[0],
+                    np.zeros(0),
+                    ari_filter,
+                    ari_link,
+                )
+                latent_out = alm_latent(
+                    X @ B[:n_exog],
+                    ar_coefs,
+                    np.zeros(h),
+                    np.zeros(h, dtype=int),
+                    latent_in["state_mean"],
+                    np.ravel(latent_in["state_covariance"], order="F"),
+                    ari_filter,
+                    ari_link,
+                )
+                X_lags = latent_out["lags"]
+                linear_pred = latent_out["mu"]
+                ari_variance = latent_out["variance"]
 
             X = np.hstack([X, X_lags])  # full X for variance; (h, n_exog + ari_order)
         else:
@@ -1743,7 +1857,10 @@ class ALM:
             # Compute confidence variance once; add sigma² for prediction.
             variances_conf = self._calculate_variance(X, "confidence")
             if interval == "prediction":
-                variances = variances_conf + self.sigma**2
+                variances = variances_conf + self.sigma**2 * ari_variance
+                # R takes the estimated scale of dlnorm in place of sigma²
+                if self.distribution == "dlnorm" and self.scale is not None:
+                    variances = variances - self.sigma**2 + self.scale
             else:
                 variances = variances_conf
 
@@ -1959,13 +2076,42 @@ class ALM:
         if self.distribution in ("plogis", "pnorm"):
             return float(self.scale) if self.scale is not None else np.nan
         resid = np.asarray(self.residuals_, dtype=float)
+        occurrence_model = isinstance(self.occurrence, ALM)
+        n_param = self.nparam + (self.occurrence.nparam if occurrence_model else 0)
         if self.distribution in ("dinvgauss", "dgamma", "dexp"):
-            resid = resid - 1
+            # R divides by all the observations here
+            return float(np.sqrt(np.sum((resid - 1) ** 2) / (len(resid) - n_param)))
         elif self.loss == "ROLE":
             return float(
                 np.sqrt(mean_fast(resid**2, trim=self._trim_value(), side="both"))
             )
-        return float(np.sqrt(np.sum(resid**2) / (len(resid) - self.nparam)))
+        # The errors after the latent sizes of a dynamic occurrence model, standardised
+        # by the variances of the Kalman filter, as R
+        latent = getattr(self, "_latent", None)
+        if latent is not None and latent["filter"]:
+            from ._native_alm_latent import alm_latent
+
+            polynomial = np.array(list(self.arima_polynomial_.values()), dtype=float)
+            resid = resid / np.sqrt(
+                alm_latent(
+                    np.zeros(len(resid)),
+                    polynomial,
+                    np.zeros(len(resid)),
+                    latent["observed"].astype(int),
+                    np.zeros(len(polynomial)),
+                    np.zeros(0),
+                    True,
+                    0,
+                )["variance"]
+            )
+        # With an occurrence model, R's sigma.alm() divides by the observed sizes less
+        # the parameters of both models
+        n_obs = (
+            int(np.sum(np.asarray(self._y_train_) != 0))
+            if occurrence_model
+            else len(resid)
+        )
+        return float(np.sqrt(np.sum(resid**2) / (n_obs - n_param)))
 
     @property
     def loglik(self) -> float | None:

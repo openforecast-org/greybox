@@ -8,6 +8,9 @@ from pybind11.setup_helpers import Pybind11Extension, build_ext
 # so native modules can `#include <carma>` without requiring users to
 # install it separately. The C++ files currently in `_native/` do not yet
 # depend on carma, but the include path is exposed for future use.
+# The C++ headers shared with the R package (src/headers/ of the repository)
+_SHARED_INCLUDE_DIR = os.path.join(os.path.dirname(__file__), "..", "src")
+
 _EXTERN_INCLUDE_DIRS = [
     os.path.join(os.path.dirname(__file__), "extern", "carma", "include"),
 ]
@@ -35,6 +38,13 @@ ext_modules = [
         "greybox._native_densities",
         sources=["src/greybox/_native/densities.cpp"],
         include_dirs=_EXTERN_INCLUDE_DIRS,
+        cxx_std=17,
+    ),
+    # The header is shared with R, in the src/headers of the repository
+    Pybind11Extension(
+        "greybox._native_alm_latent",
+        sources=["src/greybox/_native/alm_latent.cpp"],
+        include_dirs=_EXTERN_INCLUDE_DIRS + [_SHARED_INCLUDE_DIR],
         cxx_std=17,
     ),
 ]

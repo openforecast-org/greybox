@@ -5,6 +5,46 @@ Python port of the R `greybox` package. The port tracks the R package,
 the most recent release of which is greybox v2.0.9 (Release date: 2026-02-24).
 
 
+greybox for Python v1.0.10 (unreleased)
+==============
+
+Changes:
+* `ALM` with ARI orders and an occurrence model treats the sizes at the zeros
+  as latent, as R's greybox v2.0.11: their lags go on with the recursion of
+  the model, as the conditional means given the observed sizes, computed by
+  the Kalman filter of the C++ header shared with R (`src/headers/almLatent.h`,
+  bound as `_native_alm_latent`). The errors after the latent sizes take the
+  variances of the filter for dnorm, dlaplace, ds, dgnorm, dlogis, dalaplace,
+  dlnorm, dllaplace, dls, dlgnorm and dbcnorm.
+* The zeros of these models contribute only the likelihood of the occurrence:
+  the differential entropy of the sizes at the zeros is removed from the loss
+  and `point_lik()`, and the scale is estimated on the non-zero observations.
+* `predict()` of the ARI models continues the recursion after the last observed
+  sizes and takes the variance of the filter over the horizon, so the
+  prediction intervals widen with the horizon.
+* The ARI models with an occurrence model are estimated with `ftol_rel=1e-8`
+  and 200 evaluations per parameter, and LASSO / RIDGE with `ftol_rel=1e-8`, as
+  in R.
+* dlgnorm takes the lags of log(y), as the other distributions in logs.
+
+Bugfixes:
+* `ALM` with an occurrence model and ARI orders kept the lags at the zeros
+  fixed instead of running the recursion, and stopped the estimation after one
+  evaluation for dnorm and dlnorm. It now estimates as R, including the second
+  optimisation from the first solution.
+* Without an occurrence model, the zeros of the response are kept in the lags
+  as observed values.
+* The lags before the sample and at the zeros of an occurrence model start from
+  the mean of the observed sizes, as in R.
+* The residuals at the zeros of an occurrence model are zero, and the residuals
+  of dgamma, dinvgauss and dexp are y/mu, as in R.
+* `sigma` divides by the number of non-zero observations less the parameters of
+  both the size and the occurrence models (all the observations for dgamma,
+  dinvgauss and dexp), as R.
+* The prediction intervals of dlnorm take the estimated scale in place of
+  sigma², as R.
+
+
 greybox for Python v1.0.9 (unreleased)
 ==============
 

@@ -1248,3 +1248,49 @@ class TestRMCBvsR:
             assert_allclose(py.interval.to_numpy(), r_interval, atol=1e-6)
         else:
             assert_allclose(py.interval.to_numpy(), r_interval, rtol=1e-10)
+
+
+class TestOccurrenceARIvsR:
+    """Dynamic models with an occurrence model: the latent sizes, the filter and the
+    forecasts after them, as in R's alm()."""
+
+    @staticmethod
+    def _data():
+        rng = np.random.default_rng(11)
+        n = 200
+        x, z, previous = rng.normal(size=n), np.empty(n), 50.0
+        for t in range(n):
+            previous = z[t] = 15 + 0.4 * x[t] + 0.7 * previous + rng.normal()
+        return x, (rng.random(n) < 0.6) * z
+
+    @pytest.mark.parametrize("distribution", ["dnorm", "dlnorm", "dgamma"])
+    @pytest.mark.parametrize("ar_order", [1, 2])
+    def test_alm(self, distribution, ar_order):
+        from greybox.alm import ALM
+
+        x, y = self._data()
+        ro.globalenv["x"], ro.globalenv["y"] = to_r_array(x), to_r_array(y)
+        r = np.array(ro.r(f"""local({{
+            d <- data.frame(y=y, x=x)[1:196,]; db <- d; db$y <- (d$y!=0)*1
+            occ <- alm(y~x, db, distribution="plogis")
+            m <- suppressWarnings(alm(y~x, d, distribution="{distribution}",
+                                      occurrence=occ, orders=c({ar_order},0,0)))
+            p <- predict(m, data.frame(x=x[197:200]), interval="prediction",
+                         occurrence=rep(1,4))
+            c(coef(m), logLik(m), sigma(m), p$mean, p$upper)
+        }})"""))
+        X = np.column_stack([np.ones(196), x[:196]])
+        occurrence = ALM(distribution="plogis").fit(X, (y[:196] != 0).astype(float))
+        model = ALM(distribution=distribution, occurrence=occurrence,
+                    orders=(ar_order, 0, 0)).fit(X, y[:196])
+        prediction = model.predict(
+            np.column_stack([np.ones(4), x[196:]]), interval="prediction"
+        )
+        python = np.r_[
+            model.loglik, model.sigma,
+            np.ravel(prediction.mean), np.ravel(prediction.upper),
+        ]
+        assert_allclose(python, r[ar_order + 2:], rtol=1e-4)
+        # The likelihood is flat along the AR coefficients: both stop on ftol_rel within
+        # about 1e-4 of each other there, with the same likelihood and forecasts
+        assert_allclose(np.r_[model.intercept_, model.coef], r[:ar_order + 2], atol=1e-3)
