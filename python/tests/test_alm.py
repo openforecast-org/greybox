@@ -1826,8 +1826,17 @@ def test_ari_forecast_after_zeros_uses_the_latent_sizes():
     occurrence = ALM(distribution="plogis").fit(_XM_AR, (y != 0).astype(float))
     model = ALM(distribution="dnorm", occurrence=occurrence, orders=(1, 0, 0))
     model.fit(_XM_AR, y)
-    prediction = model.predict(np.ones((2, 2)), interval="prediction")
+    prediction = model.predict(
+        np.ones((2, 2)), interval="prediction", occurrence=np.ones(2)
+    )
     assert np.all(np.ravel(prediction.mean) > 40)
     # The first step is three steps after the last observed size
     width = np.ravel(prediction.upper) - np.ravel(prediction.lower)
     assert width[0] > 2 * 1.96 * model.sigma * 1.2
+
+
+def test_laplace_vcov_is_the_expected_information():
+    """The non-smooth Laplace likelihood takes the expected information, s^2 (X'X)^-1."""
+    X = np.column_stack([np.ones(150), _X1])
+    model = ALM(distribution="dlaplace").fit(X, _Z)
+    assert np.allclose(model.vcov(), model.scale**2 * np.linalg.inv(X.T @ X), rtol=1e-6)

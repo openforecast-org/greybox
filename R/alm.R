@@ -278,7 +278,7 @@
 #' summary(ourModel)
 #' plot(predict(ourModel,xreg[-c(1:80),],interval="p"))}
 #'
-#' @importFrom pracma hessian
+#' @importFrom pracma hessian jacobian
 #' @importFrom nloptr nloptr
 #' @importFrom stats model.frame sd terms model.matrix update.formula
 #' @importFrom stats dchisq dlnorm dnorm dlogis dpois dnbinom dt dbeta dgamma dexp dgeom dbinom
@@ -1978,9 +1978,29 @@ alm <- function(formula, data, subset, na.action,
     if(FI){
         # Only vcov is needed, no point in redoing the occurrenceModel
         # occurrenceModel <- FALSE;
-        FI <- hessian(CF, B, h=stepSize,
-                      distribution=distribution, loss=loss, y=y, matrixXreg=matrixXreg,
-                      recursiveModel=recursiveModel, denominator=denominator);
+        # The likelihood of the Laplace family is not smooth in the location, so its Hessian is
+        # unreliable: the information is the expected one, from the derivatives of the location
+        # (through the recursion of the latent sizes), as in quantile regression
+        if(loss=="likelihood" && any(distribution==c("dlaplace","dllaplace","dalaplace"))){
+            BIndex <- if(distribution=="dalaplace" && !aParameterProvided) -1 else seq_along(B);
+            locationJacobian <- jacobian(function(BLocation){
+                B[BIndex] <- BLocation;
+                return(switch(recursiveModel+1,
+                              fitter(B, distribution, y, matrixXreg),
+                              fitterRecursive(B, distribution, y, matrixXreg))$mu[otU]);
+            }, B[BIndex]);
+            # The variances of the scores: the scale with the filter after the latent sizes
+            scoreVariance <- 1 / (scale^2 * switch(recursiveModel+1, 1, fitterReturn$variance[otU]));
+            if(distribution=="dalaplace"){
+                scoreVariance[] <- scoreVariance * fitterReturn$other * (1-fitterReturn$other);
+            }
+            FI <- crossprod(locationJacobian * sqrt(scoreVariance));
+        }
+        else{
+            FI <- hessian(CF, B, h=stepSize,
+                          distribution=distribution, loss=loss, y=y, matrixXreg=matrixXreg,
+                          recursiveModel=recursiveModel, denominator=denominator);
+        }
 
         if(any(is.nan(FI))){
             warning("Something went wrong and we failed to produce the covariance matrix of the parameters.\n",

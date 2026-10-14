@@ -1284,7 +1284,8 @@ class TestOccurrenceARIvsR:
         model = ALM(distribution=distribution, occurrence=occurrence,
                     orders=orders).fit(X, y[:196])
         prediction = model.predict(
-            np.column_stack([np.ones(4), x[196:]]), interval="prediction"
+            np.column_stack([np.ones(4), x[196:]]), interval="prediction",
+            occurrence=np.ones(4),
         )
         python = np.r_[
             model.loglik, model.sigma,
@@ -1296,7 +1297,9 @@ class TestOccurrenceARIvsR:
         # about 1e-4 of each other there, with the same likelihood and forecasts
         assert_allclose(np.r_[model.intercept_, model.coef], r[:orders[0] + 2], atol=1e-3)
 
-    @pytest.mark.parametrize("distribution", ["dlogis", "dgamma"])
+    @pytest.mark.parametrize(
+        "distribution", ["dlogis", "dgamma", "dlaplace", "dnorm", "dlnorm"]
+    )
     @pytest.mark.parametrize("orders", [(1, 0, 0), (2, 0, 0), (1, 1, 0)])
     def test_vcov(self, distribution, orders):
         """The Hessian of the likelihood with the latent lags recomputed, as R's vcov()."""
@@ -1318,6 +1321,36 @@ class TestOccurrenceARIvsR:
         assert_allclose(np.sqrt(np.diag(model.vcov())), r, rtol=1e-2)
 
 
+    @pytest.mark.parametrize("distribution", ["dnorm", "dlnorm", "dgamma", "dlaplace"])
+    @pytest.mark.parametrize("interval", ["prediction", "confidence"])
+    def test_predict_with_occurrence(self, distribution, interval):
+        """The occurrence model scales the mean and moves the levels, as R's predict()."""
+        from greybox.alm import ALM
+
+        x, y = self._data()
+        ro.globalenv["x"], ro.globalenv["y"] = to_r_array(x), to_r_array(y)
+        r = np.array(ro.r(f"""local({{
+            d <- data.frame(y=y, x=x)[1:196,]; db <- d; db$y <- (d$y!=0)*1
+            occ <- alm(y~x, db, distribution="plogis")
+            m <- suppressWarnings(alm(y~x, d, distribution="{distribution}",
+                                      occurrence=occ, orders=c(1,0,0)))
+            p <- predict(m, data.frame(x=x[197:200]), interval="{interval}")
+            c(p$mean, p$lower, p$upper)
+        }})"""))
+        X = np.column_stack([np.ones(196), x[:196]])
+        occurrence = ALM(distribution="plogis").fit(X, (y[:196] != 0).astype(float))
+        model = ALM(distribution=distribution, occurrence=occurrence,
+                    orders=(1, 0, 0)).fit(X, y[:196])
+        prediction = model.predict(
+            np.column_stack([np.ones(4), x[196:]]), interval=interval
+        )
+        python = np.r_[
+            np.ravel(prediction.mean), np.ravel(prediction.lower),
+            np.ravel(prediction.upper),
+        ]
+        assert_allclose(python, r, rtol=1e-4)
+
+
 class TestXregExpanderSmoothvsR:
     """gaps="auto" extrapolates with smooth's ADAM, as R's xregExpander()."""
 
@@ -1334,6 +1367,20 @@ class TestXregExpanderSmoothvsR:
         ro.globalenv["y"] = to_r_array(y)
         r = np.array(ro.r("xregExpander(y, lags=c(-3,-1,2), gaps='auto')"))
         assert_allclose(xreg_expander(y, lags=[-3, -1, 2], gaps="auto"), r, rtol=1e-6)
+
+    @pytest.mark.parametrize("series", ["zeros", "binary"])
+    def test_occurrence(self, series):
+        """The zeros keep the occurrence of the leads in the lags, and the binary
+        variables take the occurrence model, as R."""
+        pytest.importorskip("smooth")
+        from greybox.xreg import xreg_expander
+
+        y = self._data()[:60]
+        if series == "binary":
+            y = (y != 0).astype(float)
+        ro.globalenv["y"] = to_r_array(y)
+        r = np.array(ro.r("xregExpander(y, lags=c(-2,-1,2), gaps='auto')"))
+        assert_allclose(xreg_expander(y, lags=[-2, -1, 2], gaps="auto"), r, rtol=1e-6)
 
     @pytest.mark.parametrize("distribution", ["dnorm", "dgamma", "dlaplace"])
     @pytest.mark.parametrize("orders", [(1, 0, 0), (2, 0, 0), (1, 1, 0)])
@@ -1361,3 +1408,27 @@ class TestXregExpanderSmoothvsR:
             model.loglik, np.ravel(prediction.mean), np.ravel(prediction.upper)
         ]
         assert_allclose(python, r, rtol=1e-4)
+
+
+class TestLaplaceVcovvsR:
+    """The expected information of the Laplace family, as R's vcov.alm()."""
+
+    @pytest.mark.parametrize(
+        "distribution, kwargs, r_kwargs",
+        [("dlaplace", {}, ""), ("dalaplace", {"alpha": 0.3}, ", alpha=0.3"),
+         ("dllaplace", {}, "")],
+    )
+    def test_vcov(self, distribution, kwargs, r_kwargs):
+        from pathlib import Path
+
+        import pandas as pd
+
+        from greybox.alm import ALM
+        from greybox.formula import formula
+
+        mtcars = pd.read_csv(Path(__file__).parent / "mtcars.csv")
+        y, X = formula("mpg ~ wt + hp", mtcars)
+        r = np.array(ro.r(f"""sqrt(diag(vcov(alm(mpg~wt+hp, mtcars,
+                               distribution="{distribution}"{r_kwargs}))))"""))
+        model = ALM(distribution=distribution, **kwargs).fit(X, y)
+        assert_allclose(np.sqrt(np.diag(model.vcov())), r, rtol=1e-4)

@@ -65,6 +65,11 @@ xregExpander <- function(xreg, lags=c(-frequency(xreg):frequency(xreg)),
     if(!requireNamespace("smooth", quietly = TRUE)){
         message("In order to fully enjoy the power of xregExpander, please install smooth package.");
     }
+    else{
+        # The occurrence model of the binary variables: om(), as the Python greybox, or the older
+        # oes() of the versions of smooth without it
+        occurrenceModel <- if(exists("om", envir=asNamespace("smooth"))) smooth::om else smooth::oes;
+    }
 
     # Form proper lags
     lags <- abs(lags[lags<0]);
@@ -145,7 +150,7 @@ xregExpander <- function(xreg, lags=c(-frequency(xreg):frequency(xreg)),
                     }
                     else{
                         if(all((xregData==0) | (xregData==1))){
-                            xregModel <- suppressWarnings(smooth::oes(xregData, model="MNN", h=maxLead, occurrence="i"));
+                            xregModel <- suppressWarnings(occurrenceModel(xregData, model="MNN", h=maxLead, occurrence="i"));
                         }
                         else{
                             if(packageVersion("smooth")>="3.0.0"){
@@ -175,7 +180,7 @@ xregExpander <- function(xreg, lags=c(-frequency(xreg):frequency(xreg)),
                         if(leadsLength!=0){
                             # If this is a binary variable, use iss function.
                             if(all((xregData==0) | (xregData==1))){
-                                xregModel <- suppressWarnings(smooth::oes(rev(xregData), model=smooth::modelType(xregModel), occurrence="i",
+                                xregModel <- suppressWarnings(occurrenceModel(rev(xregData), model=smooth::modelType(xregModel), occurrence="i",
                                                                           persistence=xregModel$persistence, h=maxLag));
                             }
                             else{
@@ -199,7 +204,7 @@ xregExpander <- function(xreg, lags=c(-frequency(xreg):frequency(xreg)),
                         else{
                             # If this is a binary variable, use iss function.
                             if(all((xregData==0) | (xregData==1))){
-                                xregModel <- suppressWarnings(smooth::oes(rev(xregData), model="MNN", h=maxLag, occurrence="i"));
+                                xregModel <- suppressWarnings(occurrenceModel(rev(xregData), model="MNN", h=maxLag, occurrence="i"));
                             }
                             else{
                                 if(packageVersion("smooth")>="3.0.0"){

@@ -281,6 +281,7 @@ importFrom(graphics,
 importFrom(methods,setMethod)
 importFrom(nloptr,nloptr)
 importFrom(pracma,hessian)
+importFrom(pracma,jacobian)
 importFrom(statmod,
   dinvgauss,
   qinvgauss

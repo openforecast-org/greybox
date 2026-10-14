@@ -2,7 +2,7 @@ greybox for Python
 ==============
 
 Python port of the R `greybox` package. The port tracks the R package,
-the most recent release of which is greybox v2.0.9 (Release date: 2026-02-24).
+the most recent release of which is greybox v2.0.9 (Release date: 2026-10-01).
 
 
 greybox for Python v1.0.10 (unreleased)
@@ -33,6 +33,18 @@ Changes:
   they match R's.
 * `xreg_expander()` keeps the lags and leads in the given order, as R: it sorted
   them and dropped the duplicates.
+* `xreg_expander()` extrapolates the binary variables with smooth's `OM` (MNN with
+  the inverse odds ratio), as R's `xregExpander()` with `om()`, and passes the
+  fitted occurrence model of the leads on to the lags, as R.
+* `ALM.predict()` takes `occurrence`, as R's `predict.alm()`: the probabilities
+  (or the values) of the occurrence, which scale the mean and the bounds. By
+  default a fitted occurrence model is predicted on `X`: its probabilities scale
+  the mean and move the levels of the prediction intervals to those of the
+  sizes, as R. It returned the forecasts of the sizes; `occurrence=np.ones(h)`
+  gives them.
+* `vcov()` of dlaplace, dllaplace and dalaplace takes the expected information
+  from the derivatives of the location, as R: their Hessian was wrong by orders
+  of magnitude.
 * dlgnorm takes the lags of log(y), as the other distributions in logs.
 * dgamma and dinvgauss take the lags of log(y) in the ARI models, as dexp and as
   R: with the lags of y, the I(d) models could not be estimated.
@@ -59,6 +71,9 @@ Bugfixes:
   dinvgauss and dexp), as R.
 * The prediction intervals of dlnorm take the estimated scale in place of
   sigma², as R.
+* `vcov()` of the ARI models with an occurrence model takes the Hessian through
+  the latent lags for all the distributions, as R: dnorm and dlnorm took the
+  analytical form, which ignored them.
 * `vcov()` of the models with an occurrence model took the likelihood of all the
   observations, the zeros included, and held the lags of the ARI models fixed.
   It now takes the likelihood of the sizes and rebuilds the latent lags, as R.
@@ -71,7 +86,7 @@ Bugfixes:
   could diverge, as dgeom did in `aid()` for an obsolete product.
 
 
-greybox for Python v1.0.9 (unreleased)
+greybox for Python v1.0.9 (2026-10-14)
 ==============
 
 Changes:
@@ -106,7 +121,7 @@ Bugfixes:
   `ALM` with these distributions that way.
 
 
-greybox for Python v1.0.8
+greybox for Python v1.0.8 (2026-10-02)
 ==============
 
 Changes:

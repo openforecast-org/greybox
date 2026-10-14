@@ -4,6 +4,7 @@ This module provides functions for transforming and expanding exogenous
 variables for use in regression models.
 """
 
+import importlib
 import re
 from typing import Any, Literal
 
@@ -187,8 +188,8 @@ def xreg_expander(
         - "zero": substitute them by zeroes
         - "naive": use the last / first actual value
         - "extrapolate": forecast the leads and backcast the lags with smooth's
-          ``ADAM`` if smooth is installed (the naive values otherwise, and for the
-          binary variables), as R
+          ``ADAM`` (``OM`` for the binary variables) if smooth is installed, and
+          take the naive values otherwise, as R
         - "auto": "extrapolate", or "naive" for series longer than 10000
 
     Returns
@@ -236,12 +237,10 @@ def xreg_expander(
     # the first / last values for the long series
     if gaps == "auto" and n_obs > 10000:
         gaps = "naive"
-    smooth_adam: Any = None
+    smooth: Any = None
     if gaps in ("auto", "extrapolate"):
         try:
-            import smooth
-
-            smooth_adam = smooth.ADAM
+            smooth = importlib.import_module("smooth")
         except ImportError:
             pass
 
@@ -253,27 +252,37 @@ def xreg_expander(
             head[:], tail[:] = 0.0, 0.0
         elif gaps != "NAs":
             head[:], tail[:] = x[0], x[-1]
+        if smooth is not None:
             # ADAM forecasts the leads and backcasts the lags on the reversed series,
-            # with the model of the leads if there are any, as R. The binary variables
-            # keep the naive values: R takes oes() for them, which has no Python port
-            if smooth_adam is not None and not np.all(np.isin(x, (0.0, 1.0))):
-                lead_model = None
-                if max_lead > 0:
-                    lead_model = smooth_adam(occurrence="auto").fit(x)
-                    tail = np.asarray(lead_model.predict(h=max_lead).mean, dtype=float)
-                if max_lag > 0:
-                    lag_kwargs = {"occurrence": "auto"}
-                    if lead_model is not None:
+            # with the model of the leads if there are any, as R; the binary variables
+            # take the occurrence model OM, MNN with the inverse odds ratio
+            binary = bool(np.all(np.isin(x, (0.0, 1.0))))
+            if binary:
+                model_class = smooth.OM
+                kwargs: dict[str, Any] = {
+                    "model": "MNN",
+                    "occurrence": "inverse-odds-ratio",
+                }
+            else:
+                model_class = smooth.ADAM
+                kwargs = {"occurrence": "auto"}
+            lead_model = None
+            if max_lead > 0:
+                lead_model = model_class(**kwargs).fit(x)
+                tail = np.asarray(lead_model.predict(h=max_lead).mean, dtype=float)
+            if max_lag > 0:
+                if lead_model is not None:
+                    kwargs = {
+                        "model": lead_model.model_type,
+                        "persistence": lead_model.persistence_vector,
+                    }
+                    if binary:
+                        kwargs["occurrence"] = "inverse-odds-ratio"
+                    else:
                         om = lead_model.om_model
-                        lag_kwargs = {
-                            "model": lead_model.model_type,
-                            "persistence": lead_model.persistence_vector,
-                            "occurrence": "none" if om is None else om.occurrence,
-                        }
-                    lag_model = smooth_adam(**lag_kwargs).fit(x[::-1])
-                    head = np.asarray(lag_model.predict(h=max_lag).mean, dtype=float)[
-                        ::-1
-                    ]
+                        kwargs["occurrence"] = "none" if om is None else om
+                lag_model = model_class(**kwargs).fit(x[::-1])
+                head = np.asarray(lag_model.predict(h=max_lag).mean, dtype=float)[::-1]
         extended = np.concatenate([head, x, tail])
         for lag_idx, lag in enumerate(lags):
             lag_mat[:, c_idx * n_lags + lag_idx] = extended[

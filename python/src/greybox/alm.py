@@ -11,6 +11,7 @@ from typing import ClassVar, Literal
 import nlopt
 import numpy as np
 import pandas as pd
+from numpy.typing import ArrayLike
 from scipy import stats
 from scipy.special import comb
 from scipy.special import gamma as _sp_gamma
@@ -1271,9 +1272,10 @@ class ALM:
         loss = self.loss
 
         # Path 1: Analytical for normal-like distributions with likelihood/MSE, without
-        # the I part, which R takes through the Hessian
+        # the I part and the latent lags of an occurrence model, which depend on the
+        # parameters: R takes those through the Hessian
         normal_like = ("dnorm", "dlnorm", "dbcnorm", "dlogitnorm")
-        analytical = self._i_order == 0
+        analytical = self._i_order == 0 and getattr(self, "_latent", None) is None
         if analytical and (
             (distribution in normal_like and loss == "likelihood") or loss == "MSE"
         ):
@@ -1345,7 +1347,7 @@ class ALM:
         otU = np.asarray(y) != 0 if occurrence_model else None
         latent = getattr(self, "_latent", None)
 
-        def cf_wrapper(B):
+        def full_B(B):
             if (
                 self.distribution
                 in (
@@ -1361,13 +1363,14 @@ class ALM:
                 )
                 and not a_parameter_provided
             ):
-                B_full = np.concatenate([[other_val], B])
-            elif self.distribution == "dbeta":
-                B_full = np.concatenate([B, self._B_opt_[n_vars:]])
-            else:
-                B_full = B
+                return np.concatenate([[other_val], B])
+            if self.distribution == "dbeta":
+                return np.concatenate([B, self._B_opt_[n_vars:]])
+            return B
+
+        def cf_wrapper(B):
             return cf(
-                B_full,
+                full_B(B),
                 self.distribution,
                 self.loss,
                 y,
@@ -1385,12 +1388,64 @@ class ALM:
                 latent=latent,
             )
 
-        FI = _numerical_hessian(cf_wrapper, B_reg)
+        if self.loss == "likelihood" and self.distribution in (
+            "dlaplace",
+            "dllaplace",
+            "dalaplace",
+        ):
+            # The likelihood of the Laplace family is not smooth in the location, so its
+            # Hessian is unreliable: the information is the expected one, from the
+            # derivatives of the location (through the recursion of the latent sizes),
+            # by pracma's central differences, as R
+            from .fitters import fitter, fitter_recursive
 
-        # Check for broken variables (all-zero or NaN rows)
-        broken = np.all(FI == 0, axis=1) | np.any(np.isnan(FI), axis=1)
-        if np.any(broken):
-            FI = _numerical_hessian(cf_wrapper, B_reg, h=np.finfo(float).eps ** (1 / 6))
+            fitter_kwargs = {
+                "other": other_val,
+                "a_parameter_provided": a_parameter_provided,
+                "ar_order": self._ar_order,
+                "i_order": self._i_order,
+                "loss": self.loss,
+                "otU": otU,
+                "trim": self._trim_value(),
+            }
+
+            def location(B):
+                if latent is not None:
+                    return fitter_recursive(
+                        full_B(B), self.distribution, y, X, latent, **fitter_kwargs
+                    )
+                return fitter(full_B(B), self.distribution, y, X, **fitter_kwargs)
+
+            observed = otU if otU is not None else np.ones(len(y), dtype=bool)
+            step = np.finfo(float).eps ** (1 / 3)
+            jacobian = np.column_stack(
+                [
+                    (
+                        location(B_reg + step * e)["mu"]
+                        - location(B_reg - step * e)["mu"]
+                    )[observed]
+                    / (2 * step)
+                    for e in np.eye(len(B_reg))
+                ]
+            )
+            # The variances of the scores: the scale with the filter after the latent
+            # sizes
+            variance = (
+                location(B_reg)["variance"][observed] if latent is not None else 1.0
+            )
+            weights = np.ones(int(np.sum(observed))) / (self.scale**2 * variance)
+            if self.distribution == "dalaplace":
+                weights = weights * other_val * (1 - other_val)
+            FI = jacobian.T @ (jacobian * weights[:, None])
+        else:
+            FI = _numerical_hessian(cf_wrapper, B_reg)
+
+            # Check for broken variables (all-zero or NaN rows)
+            broken = np.all(FI == 0, axis=1) | np.any(np.isnan(FI), axis=1)
+            if np.any(broken):
+                FI = _numerical_hessian(
+                    cf_wrapper, B_reg, h=np.finfo(float).eps ** (1 / 6)
+                )
 
         try:
             L = np.linalg.cholesky(FI)
@@ -1432,7 +1487,9 @@ class ALM:
             return variances + (self.sigma**2)
         return variances
 
-    def _calculate_quantiles(self, linear_pred, variances, interval, level, side):
+    def _calculate_quantiles(
+        self, linear_pred, variances, interval, level, side, normal_dnorm=False
+    ):
         """Calculate lower and upper quantiles for prediction intervals.
 
         Accepts the raw linear predictor (before back-transformation) and
@@ -1459,6 +1516,9 @@ class ALM:
             Confidence level(s).
         side : str
             Side of interval: "both", "upper", or "lower".
+        normal_dnorm : bool
+            dnorm takes the Normal quantiles instead of Student's, as R with an
+            occurrence model.
 
         Returns
         -------
@@ -1514,7 +1574,10 @@ class ALM:
             lp_u = linear_pred + tu * se
 
             # ── Group A: symmetric, LP == response ──────────────────────────
-            if d in ("dnorm", "dt"):
+            if d == "dnorm" and normal_dnorm:
+                lower[:, i] = stats.norm.ppf(ll, loc=linear_pred, scale=se)
+                upper[:, i] = stats.norm.ppf(lu, loc=linear_pred, scale=se)
+            elif d in ("dnorm", "dt"):
                 lower[:, i] = lp_l
                 upper[:, i] = lp_u
 
@@ -1778,6 +1841,7 @@ class ALM:
         interval: Literal["none", "confidence", "prediction"] = "none",
         level: float | list[float] = 0.95,
         side: Literal["both", "upper", "lower"] = "both",
+        occurrence: ArrayLike | None = None,
     ) -> PredictionResult:
         """Predict using the fitted model.
 
@@ -1798,6 +1862,11 @@ class ALM:
             - "both": Return both lower and upper bounds
             - "upper": Return only upper bounds
             - "lower": Return only lower bounds
+        occurrence : array-like, optional
+            The future probabilities of occurrence (or its values), which scale the
+            mean and the bounds, as R's ``predict.alm(occurrence=)``. By default, a
+            fitted occurrence model is predicted on ``X``: its probabilities scale the
+            mean and move the levels of the prediction intervals to those of the sizes.
 
         Returns
         -------
@@ -1822,6 +1891,13 @@ class ALM:
         X = np.asarray(X, dtype=float)
         if X.ndim == 1:
             X = X.reshape(1, -1)
+
+        # The fitted occurrence model gives the probabilities, unless they are provided
+        probability = None
+        if occurrence is None and isinstance(self.occurrence, ALM):
+            probability = np.ravel(
+                np.asarray(self.occurrence.predict(X).mean, dtype=float)
+            )
 
         if self._coef is not None and len(self._coef) > 0:
             B = np.concatenate([[self.intercept_], self._coef])
@@ -1970,8 +2046,38 @@ class ALM:
                     1 - dist.pnorm(0, loc=linear_pred, scale=se_conf)
                 ) + se_conf * dist.dnorm(0, loc=linear_pred, scale=se_conf)
 
+            # R: the levels of the sizes, given the probability of a zero
+            levels = level if isinstance(level, list) else [level]
+            if probability is not None and interval == "prediction":
+                levels = [
+                    np.maximum((lev - (1 - probability)) / probability, 0)
+                    for lev in levels
+                ]
             lower, upper = self._calculate_quantiles(
-                linear_pred, variances, interval, level, side
+                linear_pred,
+                variances,
+                interval,
+                levels,
+                side,
+                normal_dnorm=probability is not None,
+            )
+
+        # The occurrence scales the mean, and the bounds of the confidence interval or
+        # all of them when it is provided, as R
+        factor = None
+        if probability is not None:
+            mean = mean * probability
+            if interval == "confidence":
+                factor = probability
+        elif occurrence is not None:
+            factor = np.ravel(np.asarray(occurrence, dtype=float))
+            mean = mean * factor
+        if factor is not None:
+            lower, upper = (
+                None
+                if bound is None
+                else bound * factor.reshape(-1, *[1] * (bound.ndim - 1))
+                for bound in (lower, upper)
             )
 
         return PredictionResult(

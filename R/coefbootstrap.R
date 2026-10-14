@@ -339,7 +339,8 @@ coefbootstrap.alm <- function(object, nsim=1000, size=floor(0.75*nobs(object)),
     # Deal with ari components. Remove the columns with lagged variables
     arimaModel <- !is.null(object$other$polynomial);
     if(arimaModel){
-        newCall$data <- newCall$data[,!(colnames(newCall$data) %in% names(object$other$polynomial))];
+        # The lags are the last columns of the data (under their transformed names)
+        newCall$data <- object$data[,1:(ncol(object$data)-length(object$other$polynomial)),drop=FALSE];
     }
 
     # If this is ARIMA, and the size wasn't specified, make it changeable

@@ -8,6 +8,8 @@ Changes:
 * The ARI models are estimated with ftol_rel=1e-8 and 200 evaluations per parameter by default, as LASSO / RIDGE: their likelihood is flat in the AR parameters (more so with an occurrence model), and the old defaults stopped well before the optimum.
 * dlgnorm takes the lags of log(y), as the other distributions in logs.
 * dgamma and dinvgauss take the lags of log(y) in the ARI models, as dexp: with the lags of y, the I(d) models forced a unit coefficient on y in the log of the mean and could not be estimated (e.g. logLik of -5767 instead of -185 for an ARI(1,1)). This changes the estimates of their AR models too.
+* vcov() of dlaplace, dllaplace and dalaplace takes the expected information, the outer product of the derivatives of the location (through the recursion of the latent sizes) over the variances of the scores, as in quantile regression: the Hessian of their likelihood, which is not smooth in the location, gave standard errors that were wrong by orders of magnitude.
+* xregExpander() extrapolates the binary variables with om() when smooth has it (oes() otherwise), as the Python greybox.
 * alm() refuses zeros in the response of dlnorm, dllaplace, dls and dlgnorm without an occurrence model, as it does for dgamma and dinvgauss: their density is zero there, and the model was fitted to a log-likelihood of -Inf.
 
 Bugfixes:
@@ -17,7 +19,8 @@ Bugfixes:
 * predict() of the ARI models transformed the lags of dlgnorm, and of dbcnorm with an occurrence model, differently from the fit.
 * vcov(), and so predict() with intervals, failed for the ARI models with an occurrence model when the Hessian was needed (e.g. dgamma, dllaplace, dls).
 * predict() of dlgnorm failed with intervals: it took the shape from the wrong element of the model.
-* vcov() of the ARI models with an occurrence model took the Hessian with the latent lags fixed. It now rebuilds them for each value of the parameters.
+* vcov() of the ARI models with an occurrence model took the Hessian with the latent lags fixed. It now rebuilds them for each value of the parameters, and the distributions with the analytical covariance (dnorm, dlnorm, ...) take the Hessian too, as their formula ignored the latent lags.
+* coefbootstrap() of the ARI models failed: the lags were looked up in the call instead of the data.
 * The intervals of the ARI models with I(d) multiplied the variances of the AR parameters by the levels of the lags instead of their differences, which made them several times too wide, and predict() without newdata failed for them.
 
 

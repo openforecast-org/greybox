@@ -822,8 +822,12 @@ vcov.alm <- function(object, bootstrap=FALSE, ...){
             arOrders <- iOrders <- maOrders <- 0;
         }
 
+        # The latent lags of the dynamic models with an occurrence model depend on the parameters,
+        # which the analytical values ignore
+        latentLags <- is.occurrence(object$occurrence) && !is.null(object$other$polynomial);
+
         # Analytical values for vcov
-        if(iOrders==0 && maOrders==0 &&
+        if(iOrders==0 && maOrders==0 && !latentLags &&
            ((any(object$distribution==c("dnorm","dlnorm","dbcnorm","dlogitnorm")) & object$loss=="likelihood") ||
             object$loss=="MSE")){
             matrixXreg <- object$data;
@@ -862,7 +866,7 @@ vcov.alm <- function(object, bootstrap=FALSE, ...){
             rownames(vcov) <- colnames(vcov) <- variablesNames;
         }
         # Analytical values in case of Poisson
-        else if(iOrders==0 && maOrders==0 && object$distribution=="dpois"){
+        else if(iOrders==0 && maOrders==0 && !latentLags && object$distribution=="dpois"){
             matrixXreg <- object$data;
             if(interceptIsNeeded){
                 matrixXreg[,1] <- 1;
