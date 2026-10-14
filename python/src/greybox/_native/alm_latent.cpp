@@ -22,12 +22,12 @@ std::vector<T> to_vector(const A &values) {
 }
 
 py::dict alm_latent(const Array &c, const Array &a, const Array &z, const Flags &observed,
-                    const Array &initial_mean, const Array &initial_covariance, bool filter,
-                    int link) {
+                    const Array &initial_mean, const Array &initial_covariance,
+                    bool filter) {
     const auto result = greybox::almLatent(
         to_vector<double>(c), to_vector<double>(a), to_vector<double>(z),
         to_vector<int>(observed), to_vector<double>(initial_mean),
-        to_vector<double>(initial_covariance), filter, link);
+        to_vector<double>(initial_covariance), filter);
     const auto n = static_cast<py::ssize_t>(c.size());
     const auto p = static_cast<py::ssize_t>(a.size());
 
@@ -53,5 +53,5 @@ PYBIND11_MODULE(_native_alm_latent, m) {
     m.doc() = "The latent values of the dynamic models of ALM (R's almLatentCpp)";
     m.def("alm_latent", &alm_latent, py::arg("c"), py::arg("a"), py::arg("z"),
           py::arg("observed"), py::arg("initial_mean"), py::arg("initial_covariance"),
-          py::arg("filter"), py::arg("link"));
+          py::arg("filter"));
 }

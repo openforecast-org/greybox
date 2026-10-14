@@ -1,4 +1,5 @@
 import os
+import shutil
 
 from setuptools import setup
 from pybind11.setup_helpers import Pybind11Extension, build_ext
@@ -8,8 +9,16 @@ from pybind11.setup_helpers import Pybind11Extension, build_ext
 # so native modules can `#include <carma>` without requiring users to
 # install it separately. The C++ files currently in `_native/` do not yet
 # depend on carma, but the include path is exposed for future use.
-# The C++ headers shared with the R package (src/headers/ of the repository)
-_SHARED_INCLUDE_DIR = os.path.join(os.path.dirname(__file__), "..", "src")
+# The C++ headers shared with the R package live in src/headers/ of the repository.
+# Building from the repository copies them next to the bindings, so that the sdist,
+# which holds python/ only, carries them (MANIFEST.in takes _native/*.h).
+_SHARED_HEADERS = os.path.join(os.path.dirname(__file__), "..", "src", "headers")
+if os.path.isdir(_SHARED_HEADERS):
+    shutil.copytree(
+        _SHARED_HEADERS,
+        os.path.join(os.path.dirname(__file__), "src", "greybox", "_native", "headers"),
+        dirs_exist_ok=True,
+    )
 
 _EXTERN_INCLUDE_DIRS = [
     os.path.join(os.path.dirname(__file__), "extern", "carma", "include"),
@@ -40,11 +49,11 @@ ext_modules = [
         include_dirs=_EXTERN_INCLUDE_DIRS,
         cxx_std=17,
     ),
-    # The header is shared with R, in the src/headers of the repository
+    # The header is shared with R, copied to _native/headers/ above
     Pybind11Extension(
         "greybox._native_alm_latent",
         sources=["src/greybox/_native/alm_latent.cpp"],
-        include_dirs=_EXTERN_INCLUDE_DIRS + [_SHARED_INCLUDE_DIR],
+        include_dirs=_EXTERN_INCLUDE_DIRS,
         cxx_std=17,
     ),
 ]

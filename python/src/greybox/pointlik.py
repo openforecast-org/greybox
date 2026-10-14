@@ -9,7 +9,7 @@ from scipy import stats
 
 from . import distributions as dist
 from .alm import ALM
-from .fitters import scale_sd
+from .fitters import alm_latent_variance, scale_sd
 
 
 def point_lik_cumulative(model: ALM) -> np.ndarray:
@@ -106,19 +106,8 @@ def point_lik(
     # of the Kalman filter, which depend on the polynomial and the zeros only (R)
     latent = getattr(model, "_latent", None)
     if latent is not None and latent["filter"]:
-        from ._native_alm_latent import alm_latent
-
-        polynomial = np.array(list(model.arima_polynomial_.values()), dtype=float)
-        variance = alm_latent(
-            np.zeros(len(y_all)),
-            polynomial,
-            np.zeros(len(y_all)),
-            otU.astype(int),
-            np.zeros(len(polynomial)),
-            np.zeros(0),
-            True,
-            0,
-        )["variance"]
+        polynomial = list(model.arima_polynomial_.values())
+        variance = alm_latent_variance(polynomial, otU)
         scale = scale * variance[otU] ** (1 / latent["scale_power"])
 
     def log_y_density(density):

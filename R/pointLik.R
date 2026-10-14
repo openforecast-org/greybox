@@ -74,10 +74,7 @@ pointLik.alm <- function(object, log=TRUE, ...){
     # The errors after the latent sizes of a dynamic occurrence model have the variances of the
     # Kalman filter, which depend on the polynomial and the zeros only
     if(occurrenceModel && recursiveModel && any(distribution==ariFilterDistributions)){
-        ariOrder <- length(object$other$polynomial);
-        variance <- almLatentCpp(numeric(nobs(object)), object$other$polynomial, numeric(nobs(object)),
-                                 otU, numeric(ariOrder), numeric(0), TRUE, 0L)$variance;
-        scale <- scale * variance[otU]^(1/ifelse(any(distribution==c("ds","dls")), 4, 2));
+        scale <- scale * almLatentVariance(object$other$polynomial, otU)[otU]^(1/ifelse(any(distribution==c("ds","dls")), 4, 2));
     }
 
     likValues <- vector("numeric",nobs(object));

@@ -4,8 +4,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).parent.parent
 
 
@@ -50,7 +48,6 @@ def test_flake8():
 
 def test_mypy():
     """Test that mypy passes."""
-    pytest.skip("mypy has pre-existing type errors")
     result = subprocess.run(
         [sys.executable, "-m", "mypy", "src/greybox/", "--ignore-missing-imports"],
         capture_output=True,

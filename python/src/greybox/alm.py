@@ -12,6 +12,7 @@ import nlopt
 import numpy as np
 import pandas as pd
 from scipy import stats
+from scipy.special import comb
 from scipy.special import gamma as _sp_gamma
 
 from . import distributions as dist
@@ -19,6 +20,7 @@ from .cost_function import cf
 from .fitters import (
     ARI_FILTER_DISTRIBUTIONS,
     VARIANCE_SCALE_DISTRIBUTIONS,
+    alm_latent_variance,
     extractor_fitted,
     extractor_residuals,
     fitter_recursive,
@@ -33,6 +35,8 @@ from .xreg import xreg_expander
 # The distributions whose lags of the response are in logs (Box-Cox with zeroes), as R
 _ARI_LOG_DISTRIBUTIONS = (
     "dexp",
+    "dinvgauss",
+    "dgamma",
     "dlnorm",
     "dllaplace",
     "dls",
@@ -41,6 +45,33 @@ _ARI_LOG_DISTRIBUTIONS = (
     "dpois",
     "dnbinom",
     "dbinom",
+)
+
+
+# The responses of the distributions, as R's alm() checks them
+_NON_NEGATIVE_DISTRIBUTIONS = (
+    "dexp",
+    "dlnorm",
+    "dllaplace",
+    "dls",
+    "dbcnorm",
+    "dchisq",
+    "dfnorm",
+    "drectnorm",
+    "dgeom",
+    "dpois",
+    "dnbinom",
+    "dbinom",
+    "dinvgauss",
+    "dgamma",
+)
+_POSITIVE_DISTRIBUTIONS = (
+    "dinvgauss",
+    "dgamma",
+    "dlnorm",
+    "dllaplace",
+    "dls",
+    "dlgnorm",
 )
 
 
@@ -476,6 +507,7 @@ class ALM:
 
         X = np.asarray(X, dtype=float)
         y = np.asarray(y, dtype=float)
+        self._check_response(y)
 
         if X.ndim == 1:
             X = X.reshape(-1, 1)
@@ -618,10 +650,19 @@ class ALM:
         # For ARI(d>0) the AR lag columns in X are the *level* lags. Differencing
         # them yields the correct regressors for the AR polynomial of the
         # differenced model, matching R's alm() initialisation.
+        # With I(d), the differences are taken on the observed sizes of an occurrence
+        # model, as R
+        y_init = y
         if i_order > 0:
-            exog_init = X[i_order:, :n_features_exog]  # drop first i_order rows
+            observed_init = (
+                y != 0 if isinstance(self.occurrence, ALM) else np.ones(len(y), bool)
+            )
+            y_init = y[observed_init]
+            exog_init = X[observed_init][i_order:, :n_features_exog]
             if ar_order > 0:
-                ar_lag_cols = X[:, n_features_exog : n_features_exog + ar_order]
+                ar_lag_cols = X[observed_init][
+                    :, n_features_exog : n_features_exog + ar_order
+                ]
                 ar_lag_diff = np.diff(
                     ar_lag_cols, n=i_order, axis=0
                 )  # (n-i_order, ar_order)
@@ -642,7 +683,7 @@ class ALM:
 
         B_ols = None
         if self.distribution in ("plogis", "pnorm"):
-            yr = bc_transform(y, 0.01)
+            yr = bc_transform(y_init, 0.01)
             if i_order > 0:
                 yr = np.diff(yr, n=i_order)
             B_ols = _ols_init(X_init, yr)
@@ -656,7 +697,7 @@ class ALM:
         elif self.distribution == "dpois":
             if i_order > 0:
                 # ARI: log-link OLS (matches R's I(d) branch)
-                yr = np.log(np.maximum(y, 1e-10))
+                yr = np.log(np.maximum(y_init, 1e-10))
                 yr = np.diff(yr, n=i_order)
                 B_ols = _ols_init(X_init, yr)
             else:
@@ -676,34 +717,40 @@ class ALM:
             *log_link_distributions,
         ):
             if i_order > 0:
-                yr = np.log(np.maximum(y, 1e-10))
-                yr = np.diff(yr, n=i_order)
+                yr = np.diff(np.log(y_init), n=i_order)
                 B_ols = _ols_init(X_init, yr)
             else:
-                mask = y > 0
-                if mask.any():
-                    B_ols = _ols_init(X_init[mask], np.log(y[mask]))
+                # R: the log of the observed sizes, shifted by one if there are zeros
+                # (any zero of the data for dgeom)
+                mask = (
+                    y != 0
+                    if isinstance(self.occurrence, ALM)
+                    else np.ones(len(y), bool)
+                )
+                zeros = y if self.distribution == "dgeom" else y[mask]
+                shift = 1.0 if np.any(zeros == 0) else 0.0
+                B_ols = _ols_init(X_init[mask], np.log(y[mask] + shift))
         elif self.distribution in ("dlogitnorm", "dbeta"):
-            y_clip = np.clip(y, 1e-10, 1 - 1e-10)
+            y_clip = np.clip(y_init, 1e-10, 1 - 1e-10)
             yr = np.log(y_clip / (1 - y_clip))
             if i_order > 0:
                 yr = np.diff(yr, n=i_order)
             B_ols = _ols_init(X_init, yr)
         elif self.distribution == "dchisq":
-            yr = np.sqrt(y)
+            yr = np.sqrt(y_init)
             if i_order > 0:
                 yr = np.diff(yr, n=i_order)
             B_ols = _ols_init(X_init, yr)
         elif self.distribution == "dbcnorm":
             lam = self.lambda_bc if a_parameter_provided else 0.1
-            yr = bc_transform(y, lam)
+            yr = bc_transform(y_init, lam)
             if i_order > 0:
                 yr = np.diff(yr, n=i_order)
             B_ols = _ols_init(X_init, yr)
         else:
             # default: dnorm, dt, dlaplace, dalaplace, ds, dfnorm, drectnorm,
             # dgnorm, dgeom, ...
-            yr = y
+            yr = y_init
             if i_order > 0:
                 yr = np.diff(yr, n=i_order)
             # If occurrence is a fitted ALM (hurdle model), the size model
@@ -785,7 +832,6 @@ class ALM:
                 "n_exo": n_features_exog,
                 "ari_order": ari_order,
                 "filter": self.distribution in ARI_FILTER_DISTRIBUTIONS,
-                "link": 1 if self.distribution in ("dinvgauss", "dgamma") else 0,
                 "scale_power": 4 if self.distribution in ("ds", "dls") else 2,
             }
         self._latent = latent
@@ -1173,6 +1219,38 @@ class ALM:
 
         return self
 
+    def _check_response(self, y: np.ndarray) -> None:
+        """Reject the responses the distribution cannot take, as R's alm()."""
+        distribution = self.distribution
+        if distribution in _NON_NEGATIVE_DISTRIBUTIONS and np.any(y < 0):
+            raise ValueError(
+                "Negative values are not allowed in the response variable for the "
+                f"distribution '{distribution}'"
+            )
+        # The density of these is zero at zero (the log ones take log(y)), so the zeros
+        # need an occurrence model
+        if (
+            distribution in _POSITIVE_DISTRIBUTIONS
+            and np.any(y == 0)
+            and not isinstance(self.occurrence, ALM)
+        ):
+            raise ValueError(
+                "Zero values are not allowed in the response variable for the "
+                f"distribution '{distribution}'"
+            )
+        if distribution in ("dpois", "dnbinom", "dbinom", "dgeom") and np.any(
+            y != np.trunc(y)
+        ):
+            raise ValueError(
+                f"Count data is needed for the distribution '{distribution}', but you "
+                "have fractional numbers. Maybe you should try some other distribution?"
+            )
+        if distribution in ("dbeta", "dlogitnorm") and np.any((y > 1) | (y < 0)):
+            raise ValueError(
+                "The response variable should lie between 0 and 1 in "
+                f'distribution="{distribution}"'
+            )
+
     def vcov(self) -> np.ndarray:
         """Calculate variance-covariance matrix of parameter estimates.
 
@@ -1194,9 +1272,13 @@ class ALM:
         distribution = self.distribution
         loss = self.loss
 
-        # Path 1: Analytical for normal-like distributions with likelihood/MSE
+        # Path 1: Analytical for normal-like distributions with likelihood/MSE, without
+        # the I part, which R takes through the Hessian
         normal_like = ("dnorm", "dlnorm", "dbcnorm", "dlogitnorm")
-        if (distribution in normal_like and loss == "likelihood") or loss == "MSE":
+        analytical = self._i_order == 0
+        if analytical and (
+            (distribution in normal_like and loss == "likelihood") or loss == "MSE"
+        ):
             XtX = X.T @ X
             try:
                 L = np.linalg.cholesky(XtX)
@@ -1206,7 +1288,7 @@ class ALM:
             return self.sigma**2 * XtX_inv
 
         # Path 2: Analytical for Poisson with likelihood
-        if distribution == "dpois" and loss == "likelihood":
+        if analytical and distribution == "dpois" and loss == "likelihood":
             mu = self.fitted
             FI = np.zeros((n_vars, n_vars))
             for i in range(len(mu)):
@@ -1259,6 +1341,11 @@ class ALM:
             if self.distribution == "dbcnorm" and a_parameter_provided
             else 0.0
         )
+        # The likelihood of the sizes of an occurrence model, with the latent lags of
+        # the dynamic models recomputed for each parameter, as R's vcov() refits it
+        occurrence_model = isinstance(self.occurrence, ALM)
+        otU = np.asarray(y) != 0 if occurrence_model else None
+        latent = getattr(self, "_latent", None)
 
         def cf_wrapper(B):
             if (
@@ -1287,14 +1374,17 @@ class ALM:
                 self.loss,
                 y,
                 X,
-                ar_order=0,
-                i_order=0,
+                ar_order=self._ar_order,
+                i_order=self._i_order,
                 lambda_val=lambda_val,
                 other=other_val,
                 a_parameter_provided=a_parameter_provided,
                 trim=self._trim_value(),
                 lambda_bc=lambda_bc_val,
                 size=self.size_ if self.distribution == "dbinom" else 1.0,
+                otU=otU,
+                occurrence_model=occurrence_model,
+                latent=latent,
             )
 
         FI = _numerical_hessian(cf_wrapper, B_reg)
@@ -1306,7 +1396,7 @@ class ALM:
 
         try:
             L = np.linalg.cholesky(FI)
-            vcov = np.linalg.solve(L.T, np.linalg.solve(L, np.eye(n_vars)))
+            vcov = np.linalg.solve(L.T, np.linalg.solve(L, np.eye(len(B_reg))))
         except np.linalg.LinAlgError:
             try:
                 vcov = np.linalg.inv(FI)
@@ -1800,7 +1890,6 @@ class ALM:
                 else:
                     location_in = mu_in
                 ari_filter = self.distribution in ARI_FILTER_DISTRIBUTIONS
-                ari_link = 1 if self.distribution in ("dinvgauss", "dgamma") else 0
                 latent_in = alm_latent(
                     location_in - lags_in @ ar_coefs,
                     ar_coefs,
@@ -1809,7 +1898,6 @@ class ALM:
                     lags_in[0],
                     np.zeros(0),
                     ari_filter,
-                    ari_link,
                 )
                 latent_out = alm_latent(
                     X @ B[:n_exog],
@@ -1819,13 +1907,20 @@ class ALM:
                     latent_in["state_mean"],
                     np.ravel(latent_in["state_covariance"], order="F"),
                     ari_filter,
-                    ari_link,
                 )
                 X_lags = latent_out["lags"]
                 linear_pred = latent_out["mu"]
                 ari_variance = latent_out["variance"]
 
-            X = np.hstack([X, X_lags])  # full X for variance; (h, n_exog + ari_order)
+            # The derivatives of the location by the AR parameters are the lags
+            # differenced by the I part, as R
+            i_order = self._i_order
+            derivatives = np.zeros((self._ari_order, self._ar_order))
+            for j in range(self._ar_order):
+                derivatives[j : j + i_order + 1, j] = (-1.0) ** np.arange(
+                    i_order + 1
+                ) * comb(i_order, np.arange(i_order + 1))
+            X = np.hstack([X, X_lags @ derivatives])
         else:
             if X.shape[1] != self._n_features:
                 raise ValueError(
@@ -1967,7 +2062,8 @@ class ALM:
         Returns
         -------
         nparam : int
-            Number of parameters in the model (including intercept and scale).
+            Number of parameters in the model (including intercept and scale), and in
+            its occurrence model, as R's nparam().
         """
         if self._X_train_ is None:
             raise ValueError("Model not fitted. Call fit() first.")
@@ -1981,6 +2077,8 @@ class ALM:
             "pnorm",
         ):
             n_params += 1
+        if isinstance(self.occurrence, ALM):
+            n_params += self.occurrence.nparam
         return n_params
 
     @property
@@ -2077,7 +2175,7 @@ class ALM:
             return float(self.scale) if self.scale is not None else np.nan
         resid = np.asarray(self.residuals_, dtype=float)
         occurrence_model = isinstance(self.occurrence, ALM)
-        n_param = self.nparam + (self.occurrence.nparam if occurrence_model else 0)
+        n_param = self.nparam
         if self.distribution in ("dinvgauss", "dgamma", "dexp"):
             # R divides by all the observations here
             return float(np.sqrt(np.sum((resid - 1) ** 2) / (len(resid) - n_param)))
@@ -2089,21 +2187,8 @@ class ALM:
         # by the variances of the Kalman filter, as R
         latent = getattr(self, "_latent", None)
         if latent is not None and latent["filter"]:
-            from ._native_alm_latent import alm_latent
-
-            polynomial = np.array(list(self.arima_polynomial_.values()), dtype=float)
-            resid = resid / np.sqrt(
-                alm_latent(
-                    np.zeros(len(resid)),
-                    polynomial,
-                    np.zeros(len(resid)),
-                    latent["observed"].astype(int),
-                    np.zeros(len(polynomial)),
-                    np.zeros(0),
-                    True,
-                    0,
-                )["variance"]
-            )
+            polynomial = list(self.arima_polynomial_.values())
+            resid = resid / np.sqrt(alm_latent_variance(polynomial, latent["observed"]))
         # With an occurrence model, R's sigma.alm() divides by the observed sizes less
         # the parameters of both models
         n_obs = (

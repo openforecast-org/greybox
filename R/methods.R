@@ -662,12 +662,8 @@ sigma.alm <- function(object, ...){
         # variances of the Kalman filter
         if(is.occurrence(object$occurrence) && !is.null(object$other$polynomial) &&
            any(object$distribution==ariFilterDistributions)){
-            observed <- actuals(object)!=0;
             object$residuals <- object$residuals /
-                sqrt(almLatentCpp(numeric(length(observed)), object$other$polynomial,
-                                  numeric(length(observed)), observed,
-                                  numeric(length(object$other$polynomial)), numeric(0),
-                                  TRUE, 0L)$variance);
+                sqrt(almLatentVariance(object$other$polynomial, actuals(object)!=0));
         }
         return(sigma.greybox(object, ...));
     }
@@ -952,6 +948,14 @@ vcov.alm <- function(object, bootstrap=FALSE, ...){
             newCall$FI <- TRUE;
             # newCall$occurrence <- NULL;
             newCall$occurrence <- object$occurrence;
+            # The lags of the dynamic models with an occurrence model are latent and depend on the
+            # parameters: the model is rebuilt from the data without them and evaluated at the estimates
+            if(is.occurrence(object$occurrence) && !is.null(object$other$polynomial)){
+                newCall$data <- object$data[,1:(ncol(object$data)-length(object$other$polynomial)),drop=FALSE];
+                newCall$parameters <- NULL;
+                newCall$B <- coef(object);
+                newCall$maxeval <- 1;
+            }
             # Include bloody ellipsis
             newCall <- as.call(c(as.list(newCall),substitute(ellipsis)));
             # Make sure that print_level is zero, not to print redundant things out
@@ -3994,6 +3998,12 @@ predict_almari <- function(object, newdata=NULL, interval=c("none", "confidence"
     ariOrder <- length(object$other$polynomial);
     ariParameters <- object$other$polynomial;
     ariNames <- names(ariParameters);
+    # The derivatives of the location by the AR parameters are the lags differenced by the I part
+    iOrder <- ariOrder - arOrder;
+    ariDerivatives <- matrix(0, ariOrder, arOrder);
+    for(j in seq_len(arOrder)){
+        ariDerivatives[j+0:iOrder,j] <- (-1)^(0:iOrder) * choose(iOrder, 0:iOrder);
+    }
 
     parameters <- coef.greybox(object);
     # Split the parameters into normal and polynomial (for ARI)
@@ -4026,6 +4036,9 @@ predict_almari <- function(object, newdata=NULL, interval=c("none", "confidence"
         if(interceptIsNeeded){
             matrixOfxreg <- cbind(1,matrixOfxreg);
         }
+        ariIndex <- ncol(matrixOfxreg)-ariOrder+c(1:ariOrder);
+        matrixOfxreg <- cbind(matrixOfxreg[,-ariIndex,drop=FALSE],
+                              matrixOfxreg[,ariIndex,drop=FALSE] %*% ariDerivatives);
     }
     else{
         newdataProvided <- TRUE;
@@ -4125,7 +4138,8 @@ predict_almari <- function(object, newdata=NULL, interval=c("none", "confidence"
             observed <- if(occurrenceModel) yAll!=0 else rep(TRUE, length(yAll));
             lagsIn <- as.matrix(object$data[,ncol(object$data)-ariOrder+c(1:ariOrder),drop=FALSE]);
             # The response in the space of the lags, as in alm()
-            if(any(distribution==c("dexp","dlnorm","dllaplace","dls","dlgnorm","dgeom","dpois","dnbinom","dbinom"))){
+            if(any(distribution==c("dexp","dinvgauss","dgamma","dlnorm","dllaplace","dls","dlgnorm",
+                                   "dgeom","dpois","dnbinom","dbinom"))){
                 responseIn <- if(any(yAll[observed]==0)) (yAll^0.01-1)/0.01 else suppressWarnings(log(yAll));
             }
             else if(distribution=="dbcnorm"){
@@ -4145,15 +4159,14 @@ predict_almari <- function(object, newdata=NULL, interval=c("none", "confidence"
                                  "dchisq"=sqrt(object$mu),
                                  object$mu);
             ariFilter <- any(distribution==ariFilterDistributions);
-            ariLink <- if(any(distribution==c("dinvgauss","dgamma"))) 1L else 0L;
             latentIn <- almLatentCpp(locationIn - lagsIn %*% ariParameters, ariParameters, responseIn,
-                                     observed, lagsIn[1,], numeric(0), ariFilter, ariLink);
+                                     observed, lagsIn[1,], numeric(0), ariFilter);
             latentOut <- almLatentCpp(matrixOfxreg %*% parameters[1:nonariParametersNumber], ariParameters,
                                       numeric(h), rep(FALSE, h), latentIn$stateMean,
-                                      latentIn$stateCovariance, ariFilter, ariLink);
+                                      latentIn$stateCovariance, ariFilter);
             ourForecast <- latentOut$mu;
             ariVariance <- latentOut$variance;
-            matrixOfxreg <- cbind(matrixOfxreg, latentOut$lags)[,1:(nonariParametersNumber+arOrder),drop=FALSE];
+            matrixOfxreg <- cbind(matrixOfxreg, latentOut$lags %*% ariDerivatives);
         }
     }
     else{

@@ -498,7 +498,7 @@ alm <- function(formula, data, subset, na.action,
             latent <- almLatentCpp(matrixXreg[,-ariIndex,drop=FALSE] %*% BLocation[-ariIndex],
                                    BLocation[ariIndex], response, otU,
                                    rep(mean(response[otU]), ariOrder), numeric(0),
-                                   ariFilter, ariLink);
+                                   ariFilter);
             matrixXreg[,ariIndex] <- latent$lags;
             fitterReturn <- fitter(B, distribution, y, matrixXreg);
             fitterReturn$variance <- latent$variance;
@@ -1156,11 +1156,9 @@ alm <- function(formula, data, subset, na.action,
     # Make recursive fitted for missing values in case of occurrence model.
     recursiveModel <- occurrenceModel && ariModel;
     # The Kalman filter over the latent sizes for the distributions additive in the space of the
-    # lags, the recursion of the means for the others (through the exponent for the lags of the
-    # data with the log-link)
+    # lags, the recursion of the means for the others
     ariFilter <- any(distribution==ariFilterDistributions);
     ariScalePower <- ifelseFast(any(distribution==c("ds","dls")), 4, 2);
-    ariLink <- ifelseFast(any(distribution==c("dinvgauss","dgamma")), 1L, 0L);
     # In case of plogis and pnorm, all the ARI values need to be refitted
     if(any(distribution==c("plogis","pnorm")) && ariModel){
         recursiveModel <- TRUE;
@@ -1224,7 +1222,9 @@ alm <- function(formula, data, subset, na.action,
              call.=FALSE);
     }
 
-    if(any(distribution==c("dinvgauss","dgamma")) && any(y==0) && !occurrenceModel){
+    # The density of these is zero at zero (the log ones take log(y)), so the zeros need an occurrence model
+    if(any(distribution==c("dinvgauss","dgamma","dlnorm","dllaplace","dls","dlgnorm")) &&
+       any(y==0) && !occurrenceModel){
         stop(paste0("Zero values are not allowed in the response variable for the distribution '",distribution,"'"),
              call.=FALSE);
     }
@@ -1438,7 +1438,8 @@ alm <- function(formula, data, subset, na.action,
 
             nVariables <- nVariables + arOrder;
             # Write down the values for the matrixXreg in the necessary transformations
-            if(any(distribution==c("dexp","dlnorm","dllaplace","dls","dlgnorm","dgeom","dpois","dnbinom","dbinom"))){
+            if(any(distribution==c("dexp","dinvgauss","dgamma","dlnorm","dllaplace","dls","dlgnorm",
+                                   "dgeom","dpois","dnbinom","dbinom"))){
                 if(any(y[otU]==0)){
                     # Use Box-Cox if there are zeroes
                     ariElements[] <- bcTransform(ariElements,0.01);

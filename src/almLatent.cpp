@@ -6,14 +6,14 @@ using namespace Rcpp;
 // [[Rcpp::export]]
 List almLatentCpp(NumericVector const &c, NumericVector const &a, NumericVector const &z,
                   LogicalVector const &observed, NumericVector const &initialMean,
-                  NumericVector const &initialCovariance, bool filter, int link){
+                  NumericVector const &initialCovariance, bool filter){
     const int n = c.size();
     const int p = a.size();
     greybox::AlmLatentResult result =
         greybox::almLatent(as<std::vector<double>>(c), as<std::vector<double>>(a),
                            as<std::vector<double>>(z), as<std::vector<int>>(observed),
                            as<std::vector<double>>(initialMean),
-                           as<std::vector<double>>(initialCovariance), filter, link);
+                           as<std::vector<double>>(initialCovariance), filter);
 
     NumericMatrix lags(n, p);
     std::copy(result.lags.begin(), result.lags.end(), lags.begin());

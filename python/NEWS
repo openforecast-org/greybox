@@ -26,6 +26,14 @@ Changes:
   and 200 evaluations per parameter, and LASSO / RIDGE with `ftol_rel=1e-8`, as
   in R.
 * dlgnorm takes the lags of log(y), as the other distributions in logs.
+* dgamma and dinvgauss take the lags of log(y) in the ARI models, as dexp and as
+  R: with the lags of y, the I(d) models could not be estimated.
+* `ALM` refuses the responses R's `alm()` refuses: negative values for the
+  distributions of non-negative data, zeros for dinvgauss, dgamma, dlnorm,
+  dllaplace, dls and dlgnorm without an occurrence model, fractional values for
+  the count distributions, and values outside [0, 1] for dbeta and dlogitnorm.
+* `nparam` counts the parameters of the occurrence model, as R's `nparam()`.
+* The sdist carries the C++ headers shared with R, so it builds on its own.
 
 Bugfixes:
 * `ALM` with an occurrence model and ARI orders kept the lags at the zeros
@@ -43,6 +51,16 @@ Bugfixes:
   dinvgauss and dexp), as R.
 * The prediction intervals of dlnorm take the estimated scale in place of
   sigma², as R.
+* `vcov()` of the models with an occurrence model took the likelihood of all the
+  observations, the zeros included, and held the lags of the ARI models fixed.
+  It now takes the likelihood of the sizes and rebuilds the latent lags, as R.
+* `vcov()` of the ARI models with I(d) failed through the Hessian, and took the
+  analytical form, which R does not, for dnorm-like distributions; their
+  intervals used the levels of the lags instead of their differences.
+* The starting values of the ARI models with I(d) and an occurrence model were
+  taken over the zeros too, and those of the distributions in logs over the
+  non-zero values only (R takes log(y+1) when there are zeros): the estimation
+  could diverge, as dgeom did in `aid()` for an obsolete product.
 
 
 greybox for Python v1.0.9 (unreleased)

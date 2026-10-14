@@ -6,6 +6,7 @@ fitterRecursive, and the cost function (cf).
 """
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 from . import distributions as dist
 from .cost_function import cf  # noqa: F401 - re-exported for backwards compatibility
@@ -520,6 +521,26 @@ def fitter(
     }
 
 
+def alm_latent_variance(polynomial: ArrayLike, observed: ArrayLike) -> np.ndarray:
+    """The variances of the errors after the latent sizes of a dynamic occurrence model,
+    relative to the scale: the Kalman filter of ``alm_latent``, which depends on the AR
+    polynomial and on the observed sizes only (R's ``almLatentVariance``)."""
+    from ._native_alm_latent import alm_latent
+
+    polynomial = np.asarray(polynomial, dtype=float)
+    observed = np.asarray(observed).astype(int)
+    n = len(observed)
+    return alm_latent(
+        np.zeros(n),
+        polynomial,
+        np.zeros(n),
+        observed,
+        np.zeros(len(polynomial)),
+        np.zeros(0),
+        True,
+    )["variance"]
+
+
 def fitter_recursive(
     B: np.ndarray,
     distribution: str,
@@ -598,7 +619,6 @@ def fitter_recursive(
         np.full(latent["ari_order"], np.mean(response[observed])),
         np.zeros(0),
         latent["filter"],
-        latent["link"],
     )
     matrix_xreg = matrix_xreg.copy()
     matrix_xreg[:, ari_index] = result["lags"]

@@ -108,6 +108,14 @@ scaleNormalBased <- c("dnorm","dlnorm","dbcnorm","dlogitnorm","dfnorm","drectnor
 ariFilterDistributions <- c("dnorm","dlaplace","ds","dgnorm","dlogis","dalaplace",
                             "dlnorm","dllaplace","dls","dlgnorm","dbcnorm");
 
+# The variances of those errors relative to the scale, which depend on the AR polynomial and on
+# the observed sizes only
+almLatentVariance <- function(polynomial, observed){
+    obs <- length(observed);
+    return(almLatentCpp(numeric(obs), polynomial, numeric(obs), observed,
+                        numeric(length(polynomial)), numeric(0), TRUE)$variance);
+}
+
 scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu, y, residuals,
                    parameters=NULL, occurrence=NULL, other=NULL, recursive=FALSE, ...){
     # The function estimates the scale model
@@ -242,9 +250,7 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
     # Kalman filter, as in alm(): the variance, or its root (the fourth one for the S), of the scale
     scaleFilter <- 1;
     if(occurrenceModel && recursive && any(distribution==ariFilterDistributions)){
-        scaleFilter <- almLatentCpp(numeric(obsInsample), polynomial, numeric(obsInsample),
-                                    actuals(occurrence)!=0, numeric(length(polynomial)), numeric(0),
-                                    TRUE, 0L)$variance[otU]^
+        scaleFilter <- almLatentVariance(polynomial, actuals(occurrence)!=0)[otU]^
             switch(distribution, "dnorm"=,"dlnorm"=,"dbcnorm"=1, "ds"=,"dls"=1/4, 1/2);
     }
 

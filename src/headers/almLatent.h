@@ -10,14 +10,12 @@
 // values are known exactly, the latent ones have the variances and covariances of the
 // recursion, and the observations update the means of the latent values before them.
 // Without the filter, the latent values are the recursion of the means, in the space of
-// the lags: c_t + a'm_t, or its exponent where the lags are of the data and the model of
-// its logarithm (link=1).
+// the lags: c_t + a'm_t.
 
 #ifndef GREYBOX_ALM_LATENT_H
 #define GREYBOX_ALM_LATENT_H
 
 #include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <vector>
 
@@ -35,17 +33,13 @@ struct AlmLatentResult {
     std::vector<double> stateCovariance;
 };
 
-inline double almLatentLink(double value, int link) {
-    return link == 1 ? std::exp(value) : value;
-}
-
 // c (n), a (p), z (n, used where observed), observed (n), initialMean (p), and
 // initialCovariance (p x p, by columns), or empty for zeros
 inline AlmLatentResult almLatent(const std::vector<double> &c, const std::vector<double> &a,
                                  const std::vector<double> &z, const std::vector<int> &observed,
                                  const std::vector<double> &initialMean,
                                  const std::vector<double> &initialCovariance,
-                                 bool filter, int link) {
+                                 bool filter) {
     const std::size_t n = c.size();
     const std::size_t p = a.size();
     AlmLatentResult result;
@@ -104,7 +98,7 @@ inline AlmLatentResult almLatent(const std::vector<double> &c, const std::vector
             }
         }
         else {
-            mNew[0] = filter ? location : almLatentLink(location, link);
+            mNew[0] = location;
             for (std::size_t i = 1; i < p; ++i) {
                 mNew[i] = m[i - 1];
             }

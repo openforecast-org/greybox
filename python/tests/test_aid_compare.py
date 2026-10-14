@@ -202,15 +202,6 @@ class TestAidVsR:
         py_r, _ = self._round_trip(y)
         assert py_r.new is True
 
-    @pytest.mark.xfail(
-        reason=(
-            "Python's ALM dgeom optimizer diverges on intervals with a "
-            "single very large tail value (20+ trailing zeros). R's nloptr "
-            "stays stable. This is a pre-existing Python ALM convergence "
-            "limitation, not an aid()-level bug."
-        ),
-        strict=False,
-    )
     def test_obsolete_product(self):
         ro.r("set.seed(11); y <- c(rpois(80, 5), rep(0, 20))")
         y = np.array(ro.r("y"))

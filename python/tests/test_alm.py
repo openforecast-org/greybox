@@ -326,7 +326,7 @@ class TestALMProperties:
     def test_alm_nparam_without_scale(self, mtcars_data):
         """Test ALM nparam for distributions without scale."""
         data = mtcars_data
-        y, X = formula("mpg ~ wt", data)
+        y, X = formula("carb ~ wt", data)
 
         model = ALM(distribution="dpois", loss="likelihood")
         model.fit(X, y)
@@ -1755,7 +1755,7 @@ def _alm_latent(c, a, z, observed, initial_mean):
     return alm_latent(
         np.asarray(c, float), np.asarray(a, float), np.asarray(z, float),
         np.asarray(observed, np.int32), np.asarray(initial_mean, float),
-        np.zeros(0), True, 0,
+        np.zeros(0), True,
     )
 
 

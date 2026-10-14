@@ -31,9 +31,13 @@ src/greybox.egg-info/SOURCES.txt
 src/greybox.egg-info/dependency_links.txt
 src/greybox.egg-info/requires.txt
 src/greybox.egg-info/top_level.txt
+src/greybox/_native/alm_latent.cpp
+src/greybox/_native/densities.cpp
 src/greybox/_native/dgamma.cpp
 src/greybox/_native/lowess.cpp
+src/greybox/_native/nmath.h
 src/greybox/_native/supsmu.cpp
+src/greybox/_native/headers/almLatent.h
 src/greybox/distributions/__init__.py
 src/greybox/distributions/alaplace.py
 src/greybox/distributions/bcnorm.py
@@ -65,6 +69,7 @@ tests/test_aid.py
 tests/test_aid_compare.py
 tests/test_alm.py
 tests/test_alm_distributions_compare.py
+tests/test_densities.py
 tests/test_diagnostics_compare.py
 tests/test_distributions.py
 tests/test_dynamic_stuff.py
