@@ -113,7 +113,7 @@ graphmaker <- function(actuals, forecast, fitted=NULL, lower=NULL, upper=NULL,
     ellipsis$col <- paletteBasic[1];
 
     legendCall <- list(x="bottom");
-    if(length(level>1)){
+    if(length(level)>1){
         legendCall$legend <- c("Series","Fitted values",pointForecastLabel,
                                paste0(paste0(level*100,collapse=", "),"% prediction intervals"),"Forecast origin");
     }
@@ -121,7 +121,7 @@ graphmaker <- function(actuals, forecast, fitted=NULL, lower=NULL, upper=NULL,
         legendCall$legend <- c("Series","Fitted values",pointForecastLabel,
                                paste0(level*100,"% prediction interval"),"Forecast origin");
     }
-    legendCall$col <- paletteBasic;
+    legendCall$col <- paletteBasic[c(1,3,4,5,2)];
     legendCall$lwd <- c(1,2,2,3,2);
     legendCall$lty <- c(1,2,1,2,1);
     legendCall$ncol <- 3
@@ -150,13 +150,21 @@ graphmaker <- function(actuals, forecast, fitted=NULL, lower=NULL, upper=NULL,
                                na.rm=TRUE);
     }
 
-    # If the start time of forecast is the same as the start time of the actuals, change ts of forecast
-    if(time(forecast)[1]==time(actuals)[1]){
+    # The time step of the data, used for the forecast and its origin
+    if(is.ts(actuals)){
+        timeStep <- deltat(actuals);
+    }
+    else{
+        timeStep <- mean(diff(time(actuals)));
+    }
+
+    # If the forecast has no time of its own (a vector) or starts with the actuals, it follows them
+    if(!is.ts(forecast) && !inherits(forecast, "zoo") || time(forecast)[1]==time(actuals)[1]){
         if(is.ts(actuals)){
-            forecast <- ts(forecast, start=time(actuals)[length(actuals)]+deltat(actuals), frequency=frequency(actuals));
+            forecast <- ts(forecast, start=time(actuals)[length(actuals)]+timeStep, frequency=frequency(actuals));
         }
         else{
-            forecast <- zoo(forecast, order.by=time(actuals)[length(actuals)]+round(mean(diff(time(actuals))),0)*c(1:h));
+            forecast <- zoo(forecast, order.by=time(actuals)[length(actuals)]+timeStep*c(1:h));
         }
         if(intervals){
             if(is.ts(actuals)){
@@ -210,6 +218,13 @@ graphmaker <- function(actuals, forecast, fitted=NULL, lower=NULL, upper=NULL,
         legendElements[4] <- FALSE;
         legendCall$ncol <- 2;
     }
+    else if(h!=1 && is.matrix(lower) && is.matrix(upper)){
+        legendCall$lwd[4] <- 2;
+    }
+
+    if(all(is.na(fitted))){
+        legendElements[2] <- FALSE;
+    }
 
     if(legend){
         legendCall$legend <- legendCall$legend[legendElements];
@@ -240,7 +255,7 @@ graphmaker <- function(actuals, forecast, fitted=NULL, lower=NULL, upper=NULL,
     do.call(plot, ellipsis);
 
     if(vline){
-        abline(v=time(forecast)[1]-deltat(forecast),col=paletteBasic[2],lwd=2);
+        abline(v=time(forecast)[1]-timeStep,col=paletteBasic[2],lwd=2);
     }
 
     if(intervals){
@@ -332,7 +347,7 @@ graphmaker <- function(actuals, forecast, fitted=NULL, lower=NULL, upper=NULL,
                 }
             }
             else{
-                points(upper,col=paletteBasic[4],lwd=3,pch=4);
+                points(upper,col=paletteBasic[5],lwd=3,pch=4);
             }
             points(forecast,col=paletteBasic[4],lwd=2,pch=4);
         }
@@ -348,9 +363,6 @@ graphmaker <- function(actuals, forecast, fitted=NULL, lower=NULL, upper=NULL,
 
     if(any(!is.na(fitted))){
         lines(fitted, col=paletteBasic[3], lwd=2, lty=2);
-    }
-    else{
-        legendElements[2] <- FALSE;
     }
 
 }

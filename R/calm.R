@@ -52,6 +52,8 @@
 #' \item importance - importance of the parameters,
 #' \item combination - the table, indicating which variables were used in every
 #' model construction and what were the weights for each model,
+#' \item xlevels - the levels of the factors in the data, used by \code{predict()} for the
+#' new data, as in \link[stats]{lm},
 #' \item timeElapsed - the time elapsed for the estimation of the model.
 #' }
 #'
@@ -289,7 +291,7 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
         if(!silent){
             cat("Selecting the best model...\n");
         }
-        ourModel <- stepwise(data, ic=ic, distribution=distribution);
+        ourModel <- stepwise(data, ic=ic, distribution=distribution, ...);
         # If the selected model does not contain variables
         if(length(coef(ourModel))==1){
             return(ourModel);
@@ -303,10 +305,15 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
     else{
         listToCall$data <- cbind(y,as.data.frame(data[rowsSelected,-1,drop=FALSE]));
     }
+    # The levels of the factors, for the new data of predict(), as alm()
+    xlevels <- NULL;
+    if(is.data.frame(data)){
+        xlevels <- .getXlevels(terms(cl$formula, data=data), model.frame(cl$formula, data));
+    }
     rm(data);
 
     # Other stuff for the things like alpha of ALaplace
-    other <- vector("list",1);
+    other <- list();
 
     # Set alpha for the dalaplace. If not provided do alpha=0.5
     if(distribution=="dalaplace"){
@@ -436,6 +443,7 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
             ourModel <- calm(listToCall$data, ic=ic,
                                    bruteforce=TRUE, silent=silent, distribution=distribution, parallel=parallel, ...);
             ourModel$call <- cl;
+            ourModel$xlevels <- xlevels;
             return(ourModel);
         }
         # If we have too many variables, use "stress" analysis
@@ -461,7 +469,7 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
             }
 
             # Fill in the first part with sequential inclusion
-            for(i in 1:(nVariables - nVariablesInModel)){
+            for(i in seq_len(nVariables - nVariablesInModel)){
                 variablesCombinations[i+1,which(variablesCombinations[i+1,]==0)[i]] <- 1;
             }
 
@@ -480,19 +488,22 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
             # Vector of log-likelihoods
             logLiks <- rep(NA,nCombinations);
 
-            # Starting estimating the models with writing down the best one
+            # Starting estimating the models with the best one, refitted the same way as the others
+            listToCall$formula <- as.formula(paste0(responseName,"~",paste0(exoNames[variablesCombinations[1,]==1],collapse="+")));
+            ourModel <- do.call(lmCall,listToCall);
             ICs[1] <- IC(ourModel);
-            bufferCoef <- coef(ourModel)[variablesNames];
-            parameters[1,c(1,variablesCombinations[1,])==1] <- bufferCoef[!is.na(bufferCoef)];
-            bufferCoef <- vcov(ourModel)[variablesNames,variablesNames];
-            vcovValues[1,c(1,variablesCombinations[1,])==1,c(1,variablesCombinations[1,])==1] <- bufferCoef[!is.na(bufferCoef)];
+            parameters[1,c(1,variablesCombinations[1,])==1] <- coef(ourModel);
+            vcovValues[1,c(1,variablesCombinations[1,])==1,c(1,variablesCombinations[1,])==1] <- vcov(ourModel);
             logLiks[1] <- logLik(ourModel);
         }
     }
 
     if(any(distribution==c("dt","dchisq","dnbinom","dalaplace","dgnorm","dlgnorm","dbcnorm"))){
+        # The name of the parameter in the other list of alm
+        otherName <- switch(distribution, "dt"=, "dchisq"="nu", "dnbinom"="size", "dalaplace"="alpha",
+                            "dgnorm"=, "dlgnorm"="shape", "dbcnorm"="lambdaBC");
         otherParameters <- rep(NA, nCombinations);
-        otherParameters[1] <- ourModel$other[[1]];
+        otherParameters[1] <- ourModel$other[[otherName]];
     }
 
     # Go for the loop of lm models
@@ -510,7 +521,7 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
             logLiks <- logLik(ourModel);
 
             if(any(distribution==c("dt","dchisq","dnbinom","dalaplace","dgnorm","dlgnorm","dbcnorm"))){
-                otherParameters <- ourModel$other[[1]];
+                otherParameters <- ourModel$other[[otherName]];
             }
             else{
                 otherParameters <- NULL;
@@ -552,7 +563,7 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
             logLiks[i] <- logLik(ourModel);
 
             if(any(distribution==c("dt","dchisq","dnbinom","dalaplace","dgnorm","dlgnorm","dbcnorm"))){
-                otherParameters[i] <- ourModel$other[[1]];
+                otherParameters[i] <- ourModel$other[[otherName]];
             }
         }
     }
@@ -569,6 +580,11 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
     # If we awfully overfitted the data with some of models, discard them.
     if(any(!modelsGood)){
         ICWeights[!modelsGood] <- 0;
+    }
+
+    # The combined other parameter (shape, lambdaBC etc)
+    if(any(distribution==c("dt","dchisq","dnbinom","dalaplace","dgnorm","dlgnorm","dbcnorm"))){
+        otherCombined <- other[[otherName]] <- c(ICWeights %*% otherParameters);
     }
 
     # Calculate weighted parameters
@@ -608,10 +624,12 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
                  "dchisq" = (as.matrix(ourDataExo) %*% parametersCombined)^2,
                  "dinvgauss" =,
                  "dgamma" =,
+                 "dexp" =,
                  "dpois" =,
                  "dnbinom" = exp(as.matrix(ourDataExo) %*% parametersCombined),
                  "dnorm" =,
                  "dfnorm" =,
+                 "drectnorm" =,
                  "dbcnorm"=,
                  "dlogitnorm"=,
                  "dlaplace" =,
@@ -630,23 +648,25 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
 
     scale <- switch(distribution,
                     "dnorm" = mean((y-mu)^2),
-                    "dfnorm" = mean((y-mu)^2),
-                    "dbcnorm" = mean((bcTransform(y,other)-mu)^2),
+                    "dfnorm" =,
+                    "drectnorm" = mean((y-mu)^2),
+                    "dbcnorm" = mean((bcTransform(y,otherCombined)-mu)^2),
                     "dlogitnorm" = mean((log(y/(1-y))-mu)^2),
                     "dlaplace" = mean(abs(y-mu)),
                     "ds" = mean(sqrt(abs(y-mu))) / 2,
-                    "dgnorm" = (otherParameters*mean(abs(y-mu)^otherParameters))^{1/otherParameters},
+                    "dgnorm" = (otherCombined*mean(abs(y-mu)^otherCombined))^{1/otherCombined},
                     "dlogis" = sqrt(mean((y-mu)^2) * 3 / pi^2),
                     "dt" = max(2,2/(1-(mean((y-mu)^2))^{-1})),
                     "dalaplace" = mean((y-mu) * (alpha - (y<=mu)*1)),
                     "dlnorm" = mean((log(y)-mu)^2),
                     "dllaplace" = mean(abs(log(y)-mu)),
                     "dls" = mean(sqrt(abs(log(y)-mu))) / 2,
-                    "dlgnorm" = (otherParameters*mean(abs(log(y)-mu)^otherParameters))^{1/otherParameters},
-                    "dchisq" = ICWeights %*% otherParameters,
+                    "dlgnorm" = (otherCombined*mean(abs(log(y)-mu)^otherCombined))^{1/otherCombined},
+                    "dchisq" = otherCombined,
                     "dinvgauss" = mean((y/mu-1)^2 / (y/mu)),
                     "dgamma" = mean((y/mu-1)^2),
-                    "dnbinom" = ICWeights %*% otherParameters,
+                    "dexp" = 1,
+                    "dnbinom" = otherCombined,
                     "dpois" = mu,
                     "pnorm" = sqrt(mean(qnorm((y - pnorm(mu, 0, 1) + 1) / 2, 0, 1)^2)),
                     "plogis" = sqrt(mean(log((1 + y * (1 + exp(mu))) / (1 + exp(mu) * (2 - y) - y))^2)) # Here we use the proxy from Svetunkov et al. (2018)
@@ -654,6 +674,7 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
 
     yFitted <- switch(distribution,
                       "dfnorm" = sqrt(2/pi)*sqrt(scale)*exp(-mu^2/(2*scale))+mu*(1-2*pnorm(-mu/sqrt(scale))),
+                      "drectnorm" = mu*(1-pnorm(0, mu, sqrt(scale))) + sqrt(scale)*dnorm(0, mu, sqrt(scale)),
                       "dnorm" =,
                       "dlaplace" =,
                       "ds" =,
@@ -663,11 +684,12 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
                       "dt" =,
                       "dinvgauss" =,
                       "dgamma" =,
+                      "dexp" =,
                       "dpois" =,
                       "dnbinom" = mu,
                       "dlogitnorm" = exp(mu)/(1+exp(mu)),
-                      "dbcnorm" = bcTransformInv(mu,other),
-                      "dchisq" = mu + df,
+                      "dbcnorm" = bcTransformInv(mu,otherCombined),
+                      "dchisq" = mu + otherCombined,
                       "dlnorm" =,
                       "dllaplace" =,
                       "dls" =,
@@ -678,6 +700,7 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
 
     errors <- switch(distribution,
                      "dfnorm" =,
+                     "drectnorm" =,
                      "dnorm" =,
                      "dlaplace" =,
                      "ds" =,
@@ -688,12 +711,15 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
                      "dpois" =,
                      "dnbinom" = y - mu,
                      "dinvgauss" =,
-                     "dgamma" = y / mu,
+                     "dgamma" =,
+                     "dexp" = y / mu,
                      "dchisq" = sqrt(y) - sqrt(mu),
                      "dlnorm" =,
                      "dllaplace" =,
                      "dls" =,
                      "dlgnorm" = log(y) - mu,
+                     "dbcnorm" = bcTransform(y,otherCombined) - mu,
+                     "dlogitnorm" = log(y/(1-y)) - mu,
                      "pnorm" = qnorm((y - pnorm(mu, 0, 1) + 1) / 2, 0, 1),
                      "plogis" = log((1 + y * (1 + exp(mu))) / (1 + exp(mu) * (2 - y) - y)) # Here we use the proxy from Svetunkov et al. (2018)
     );
@@ -743,6 +769,7 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
                                  ICType=ic, df.residual=df, df=sum(importance)+1, importance=importance,
                                  call=cl, rank=nVariables+1, data=listToCall$data, mu=mu, scale=scale,
                                  combination=variablesCombinations, other=other, loss=loss,
+                                 xlevels=xlevels,
                                  timeElapsed=Sys.time()-startTime),
                             class=c("calm","alm","greybox"));
 

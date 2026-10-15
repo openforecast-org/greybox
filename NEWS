@@ -1,3 +1,63 @@
+greybox v2.0.11 (Release data: 2026-10-??)
+==============
+
+Changes:
+* alm() with ARI orders and an occurrence model treats the sizes at the zeros as latent: their lags go on with the recursion of the model, as the conditional means given the observed sizes, and the observed sizes update the latent ones before them. This is a Kalman filter on the last p values of the response, in a C++ header shared with the Python greybox (src/headers/almLatent.h). For dnorm, dlaplace, ds, dgnorm, dlogis, dalaplace, dlnorm, dllaplace, dls, dlgnorm and dbcnorm, the errors after the latent sizes take the variances of the filter; the other distributions take the recursion of the means.
+* The zeros of these models contribute only the likelihood of the occurrence: the differential entropy of the sizes at the zeros is removed from the loss, logLik() and pointLik(), and the scale is estimated on the non-zero observations.
+* predict() of the ARI models continues the recursion after the last observed sizes (so the forecasts after trailing zeros start from the latent sizes) and takes the variance of the filter over the horizon, so the prediction intervals of all ARI models widen with the horizon.
+* The ARI models are estimated with ftol_rel=1e-8 and 200 evaluations per parameter by default, as LASSO / RIDGE: their likelihood is flat in the AR parameters (more so with an occurrence model), and the old defaults stopped well before the optimum.
+* dlgnorm takes the lags of log(y), as the other distributions in logs.
+* dgamma and dinvgauss take the lags of log(y) in the ARI models, as dexp: with the lags of y, the I(d) models forced a unit coefficient on y in the log of the mean and could not be estimated (e.g. logLik of -5767 instead of -185 for an ARI(1,1)). This changes the estimates of their AR models too.
+* vcov() of dlaplace, dllaplace and dalaplace takes the expected information, the outer product of the derivatives of the location (through the recursion of the latent sizes) over the variances of the scores, as in quantile regression: the Hessian of their likelihood, which is not smooth in the location, gave standard errors that were wrong by orders of magnitude.
+* xregExpander() extrapolates the binary variables with om() when smooth has it (oes() otherwise), as the Python greybox.
+* alm() refuses zeros in the response of dlnorm, dllaplace, dls and dlgnorm without an occurrence model, as it does for dgamma and dinvgauss: their density is zero there, and the model was fitted to a log-likelihood of -Inf.
+* predict.alm() with provided occurrence values scales the mean and the bounds of the confidence interval only: the prediction interval stays the one of the sizes, around their forecasts, as in adam() from smooth. The predictions of the occurrence model are documented in $occurrence.
+* The AR terms of plogis / pnorm are built from om() when smooth has it (oes() otherwise), as xregExpander() does, so the Python greybox, which has om(), gives the same models.
+* predict() of dfnorm and drectnorm corrects the mean with the scale of the model, as the fitted values do, for every type of interval: it took the variances of the interval (and did not correct it at all with interval="none", with a warning).
+* The starting values of dpois take the Newton step from the log of the mean, as intended: with only an intercept, the optimiser stayed at zero (logLik -93.3 instead of -58.2 on mtcars$carb).
+* The log-densities of dalaplace(), dfnorm(), drectnorm(), dbcnorm() and dlogitnorm() are computed analytically, so they do not underflow to -Inf in the tails. qfnorm() finds its root with uniroot() instead of optim() on a squared error, which was loose (qfnorm(0.99, 0.5, 1.3) had pfnorm() of 0.98902). plaplace() and ps() keep the precision of their far tails, and qgnorm() takes the upper tail from 2*min(p, 1-p).
+* calm() stores the combined extra parameter of the distribution (shape, alpha, lambdaBC, nu or size) in $other, so that predict() works for dgnorm, dlgnorm, dalaplace, dbcnorm and dchisq.
+* temporaldummy() counts the hours and minutes of the year, quarter, month, week and day from one, per timestamp, in the time zone of the series.
+* greybox imports Rcpp: its compiled polyprod() (used by alm() with i>1) failed with "function 'enterRNGScope' not provided by package 'Rcpp'" when no other package had loaded Rcpp.
+* The scale model (sm(), alm(scale=)) is estimated with Nelder-Mead and tighter tolerances (xtol_rel 1e-8, ftol_rel 1e-10, maxeval 200 per parameter) instead of SBPLX with 1e-6 and 40: SBPLX stopped up to 7 units of the log-likelihood below its maximum (dlnorm -274.47 instead of -267.26), and its result moved with the last bit of the start.
+
+Bugfixes:
+* Without an occurrence model, the zeros of the response were replaced by the mean in the lags of the ARI models. They are now observed values.
+* The AR polynomial (object$other$polynomial) of the models with ar>1 was stored in the reversed order, so predict() applied the AR coefficients to the wrong lags.
+* logLik() of the ARI models included the penalty of the AR roots used in the estimation.
+* predict() of the ARI models transformed the lags of dlgnorm, and of dbcnorm with an occurrence model, differently from the fit.
+* vcov(), and so predict() with intervals, failed for the ARI models with an occurrence model when the Hessian was needed (e.g. dgamma, dllaplace, dls).
+* predict() of dlgnorm failed with intervals: it took the shape from the wrong element of the model.
+* vcov() of the ARI models with an occurrence model took the Hessian with the latent lags fixed. It now rebuilds them for each value of the parameters, and the distributions with the analytical covariance (dnorm, dlnorm, ...) take the Hessian too, as their formula ignored the latent lags.
+* coefbootstrap() of the ARI models failed: the lags were looked up in the call instead of the data.
+* The intervals of the ARI models with I(d) multiplied the variances of the AR parameters by the levels of the lags instead of their differences, which made them several times too wide, and predict() without newdata failed for them.
+* sigma(), vcov() and the prediction intervals of alm() on data with zeros and no occurrence model divided by the number of non-zero observations: actuals(all=FALSE) dropped the zeros even without an occurrence model.
+* LASSO compared the response in logs (dlnorm, dllaplace, dls, dlgnorm), logits (dlogitnorm) or Box-Cox (dbcnorm) with the fitted values in the original scale; it also rebuilt its regressors dividing by their standard deviations instead of multiplying, and inverted the logit with exp(y)/(1-exp(y)).
+* alm() with dfnorm or drectnorm and a provided sigma (and so vcov() of these models) failed: the starting value of sigma was added to the parameters anyway.
+* The starting values of the AR parameters of ARI models with i>1 were recycled column-wise, so that both of the first rows took the first mean.
+* predict() of dbeta failed (with and without newdata), and so did vcov(): the names of its parameters were looked up as variables, and the Fisher information was compared with FALSE.
+* pointLik() of dbeta took its mean and variance as its shapes, so that it did not sum to logLik().
+* predict() of dgeom left the mean as its log; the bounds of the confidence interval of dbinom were the exponents of those of the location instead of the probabilities times the size.
+* predict() of dllaplace failed with interval="none".
+* hatvalues() added a second intercept to the regressors of the models without one, and set the hat value to -99999 where it meant 1-1e-5. rstandard() and rstudent() of the count distributions with an occurrence model misaligned the cumulative probabilities with the observations.
+* coefbootstrap() with method="dsr" failed for the models without an intercept, and kept the lags of the original data next to the bootstrapped response for the ARI models.
+* qgnorm() with log.p=TRUE and lower.tail=FALSE returned NaN; dfnorm(log=TRUE) returned 0 for negative values; pbcnorm() and plogitnorm() stopped on NaN, and plogitnorm() shifted its values after a negative one; qbcnorm() with lambda>0 returned positive values for negative bases raised to even powers; pgnorm() stopped on a vector of shapes; qalaplace() stopped on NaN.
+* xregExpander() and xregTransformer() stopped on named vectors.
+* association(x, y, method=...) stopped for any method but "auto"; pcor() stopped with missing values; determination(bruteforce=TRUE) returned NA with missing values; cramer() and mcor() swapped "complete.obs" and "na.or.complete" with too few observations; mcor() stopped with missing values in a matrix x; is.rmc() tested the wrong class, so it was always FALSE.
+* stepwise() checked the variability of the wrong column; calm() took the information criterion of the first model in stress mode from a model counted differently, returned a vector of scales for dgnorm / dlgnorm, failed in predict() for dbcnorm, dexp and drectnorm, and did not pass its ellipsis to stepwise().
+* stick() stopped when the missing values left the trend with a single level.
+* temporaldummy(): a quarter of the default periods was 120 days; a ts starting mid-cycle got the first dummy on its first row; September was one day short in the day of quarter; a single observed value, the extension for h>0 (applied twice), the hours and minutes of POSIXt series and the minute of the week all failed or were wrong.
+* graphmaker() drew the legend in colours different from the lines, kept "Fitted values" in it without fitted values, called a single level "intervals", drew the bounds of a single forecast in two colours, and missed the origin of a single forecast on vectors; tableplot() wrote black on black and stopped on one-column data; spread() put the levels on the frequency axis of a categorical histogram.
+* sm() ignored its parameters argument, and its $other had a duplicated element that made it NULL, so that predict() of the dgnorm scale models (and the prediction intervals of dgnorm models with a scale model) failed. implant() counted the replaced scale and the parameters of the occurrence model twice and left out the log-likelihood of the occurrence, so it differed from alm(scale=); alm() with an occurrence and a scale model counted the occurrence parameters twice too.
+* With a scale model: vcov() of dlaplace failed; predict() of dgnorm took the variance as the scale, those of dgamma, dinvgauss, dfnorm and drectnorm took the in-sample scales for the new data, and predict() of the scale model left the bounds in logs; vcov.scale() returned the Fisher information instead of its inverse in its fallback; rstandard() misaligned the scales with an occurrence model.
+* extractSigma() of dlaplace and dalaplace had wrong formulas.
+* predict() of alm(), stepwise() and calm() failed with "subscript out of bounds" for new data with fewer or reordered levels of a factor, and predicted an unseen level as the base one. The models now keep the levels of the factors in $xlevels, which predict() passes to model.frame(), as lm() does: an unseen level is an error.
+* stepwise() warned "no non-missing arguments to max" when all the variables were selected.
+* graphmaker() drew a forecast given as a plain vector at times 1, 2, ..., h when the actuals were a ts that did not start at 1. Such a forecast now follows the actuals, as for the other inputs. The documentation of plot.greybox() described plot 12 with quantiles of the F distribution instead of the lines of 4/n, 4/(n-k) and 1.
+* pointLik() of plogis / pnorm put the non-zero observations first, and log=FALSE mixed densities with log-probabilities (and was ignored for plogis / pnorm).
+* plot.greybox(): the zeros of an occurrence model were dropped after the logs in plots 4, 5, 13 and 14, so that the infinite logs of dgamma, dinvgauss and dexp broke the LOWESS line; plot 7 took the limits from the sizes instead of the occurrence; plots 8 and 9 drew the points twice with an occurrence model and a solid line in the legend for the dashed one; the legend of plot 12 named F-distribution lines instead of 4/n, 4/(n-k) and 1. plot.predict.greybox() named the 2.5% bound as the level of the interval, drew infinite bounds at zero, and did not turn the actuals of plogis / pnorm into 0/1 without holdout actuals.
+
+
 greybox v2.0.10 (Release data: 2026-10-??)
 ==============
 

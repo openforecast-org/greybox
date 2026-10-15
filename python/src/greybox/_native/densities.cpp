@@ -1,6 +1,8 @@
-// The densities and log-densities of the Laplace, S and Generalised Normal
-// distributions as R's greybox computes them, the log-densities of their
-// log-variants as R's alm() computes them, and R's gamma function.
+// The log-density of the Beta and the densities and log-densities of the logistic
+// distributions as R's nmath computes them, those of the Laplace, S and Generalised
+// Normal distributions as R's greybox computes them, the log-densities of their
+// log-variants as R's alm() computes them, R's gamma function, and the noncentral t
+// and chi-squared distributions as R's nmath computes them (nmath.h).
 //
 // Everything is in R's order of operations and through libm, as R evaluates
 // log(), exp() and ^: NumPy's vectorised kernels round differently in the last
@@ -13,10 +15,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cfloat>
 #include <cmath>
 #include <cstddef>
 #include <stdexcept>
 #include <tuple>
+#include <utility>
 
 #include "nmath.h"
 
@@ -40,6 +44,55 @@ inline double ds_log_one(double q, double mu, double scale) {
 inline double dgnorm_log_one(double q, double mu, double scale, double shape) {
     return std::log(shape) - std::log(2 * scale) - greybox_nmath::lgammafn(1 / shape) -
            greybox_nmath::r_pow(std::fabs(q - mu) / scale, shape);
+}
+
+// R's nmath dlogis(): x = |q-location|/scale, -(x + log(scale*(1+exp(-x))^2))
+inline double dlogis_log_one(double q, double location, double scale) {
+    double x = std::fabs((q - location) / scale);
+    double f = 1.0 + std::exp(-x);
+    return -(x + std::log(scale * f * f));
+}
+
+inline double dlogis_one(double q, double location, double scale) {
+    double x = std::fabs((q - location) / scale);
+    double e = std::exp(-x);
+    double f = 1.0 + e;
+    return e / (scale * f * f);
+}
+
+// R's nmath dbinom_raw(log=TRUE) and dbeta(), of R 4.3.3; bd0() and lbeta() are in
+// nmath.h
+inline double dbinom_raw_log(double x, double n, double p, double q) {
+    if (p == 0) return x == 0 ? 0.0 : -INFINITY;
+    if (q == 0) return x == n ? 0.0 : -INFINITY;
+    if (x == 0) {
+        if (n == 0) return 0.0;
+        return p < 0.1 ? -greybox_nmath::bd0(n, n * q) - n * p : n * std::log(q);
+    }
+    if (x == n) return q < 0.1 ? -greybox_nmath::bd0(n, n * p) - n * q : n * std::log(p);
+    if (x < 0 || x > n) return -INFINITY;
+    double lc = greybox_nmath::stirlerr(n) - greybox_nmath::stirlerr(x) -
+                greybox_nmath::stirlerr(n - x) - greybox_nmath::bd0(x, n * p) -
+                greybox_nmath::bd0(n - x, n * q);
+    double lf = 1.837877066409345483560659472811 + std::log(x) + std::log1p(-x / n);
+    return lc - 0.5 * lf;
+}
+
+inline double dbeta_log_one(double x, double a, double b) {
+    if (std::isnan(x) || std::isnan(a) || std::isnan(b)) return x + a + b;
+    if (a < 0 || b < 0) return NAN;
+    if (x < 0 || x > 1) return -INFINITY;
+    if (a == 0 || b == 0 || !std::isfinite(a) || !std::isfinite(b)) {
+        if (a == 0 && b == 0) return (x == 0 || x == 1) ? INFINITY : -INFINITY;
+        if (a == 0 || a / b == 0) return x == 0 ? INFINITY : -INFINITY;
+        if (b == 0 || b / a == 0) return x == 1 ? INFINITY : -INFINITY;
+        return x == 0.5 ? INFINITY : -INFINITY;
+    }
+    if (x == 0) return a > 1 ? -INFINITY : (a < 1 ? INFINITY : std::log(b));
+    if (x == 1) return b > 1 ? -INFINITY : (b < 1 ? INFINITY : std::log(a));
+    if (a <= 2 || b <= 2) return (a - 1) * std::log(x) + (b - 1) * std::log1p(-x) -
+                                   greybox_nmath::lbeta(a, b);
+    return std::log(a + b - 1) + dbinom_raw_log(a - 1, a + b - 2, x, 1 - x);
 }
 
 // 1/(2*scale)*exp(-abs(mu-q)/scale)
@@ -110,7 +163,8 @@ py::array_t<double> elementwise(F f, const std::array<Array, N>& args) {
 
 PYBIND11_MODULE(_native_densities, m) {
     m.doc() = "Densities and log-densities of the Laplace, S and Generalised Normal "
-              "distributions and their log-variants, and the gamma function, as in R.";
+              "distributions and their log-variants, the gamma function and the "
+              "noncentral t and chi-squared distributions, as in R.";
     m.def(
         "dlaplace_log",
         [](Array q, Array mu, Array scale) {
@@ -129,6 +183,24 @@ PYBIND11_MODULE(_native_densities, m) {
             return elementwise<4>(dgnorm_log_one, {q, mu, scale, shape});
         },
         py::arg("q"), py::arg("mu"), py::arg("scale"), py::arg("shape"));
+    m.def(
+        "dlogis_log",
+        [](Array q, Array location, Array scale) {
+            return elementwise<3>(dlogis_log_one, {q, location, scale});
+        },
+        py::arg("q"), py::arg("location"), py::arg("scale"));
+    m.def(
+        "dlogis",
+        [](Array q, Array location, Array scale) {
+            return elementwise<3>(dlogis_one, {q, location, scale});
+        },
+        py::arg("q"), py::arg("location"), py::arg("scale"));
+    m.def(
+        "dbeta_log",
+        [](Array x, Array shape1, Array shape2) {
+            return elementwise<3>(dbeta_log_one, {x, shape1, shape2});
+        },
+        py::arg("x"), py::arg("shape1"), py::arg("shape2"));
     m.def(
         "dlaplace",
         [](Array q, Array mu, Array scale) {
@@ -171,4 +243,37 @@ PYBIND11_MODULE(_native_densities, m) {
             return elementwise<1>([](double v) { return greybox_nmath::gammafn(v); }, {x});
         },
         py::arg("x"), "R's gamma function.");
+    // R's noncentral t and chi-squared, elementwise over (x, df, ncp)
+    using Density = double (*)(double, double, double, int);
+    using Probability = double (*)(double, double, double, int, int);
+    const std::pair<const char*, Density> densities[] = {{"dnt", greybox_nmath::dnt},
+                                                         {"dnchisq", greybox_nmath::dnchisq}};
+    const std::pair<const char*, Probability> probabilities[] = {
+        {"pnt", greybox_nmath::pnt},
+        {"qnt", greybox_nmath::qnt},
+        {"pnchisq", greybox_nmath::pnchisq},
+        {"qnchisq", greybox_nmath::qnchisq}};
+    for (const auto& [name, density] : densities) {
+        m.def(
+            name,
+            [density](Array x, Array df, Array ncp, bool give_log) {
+                return elementwise<3>(
+                    [&](double v, double d, double n) { return density(v, d, n, give_log); },
+                    {x, df, ncp});
+            },
+            py::arg("x"), py::arg("df"), py::arg("ncp"), py::arg("give_log"));
+    }
+    for (const auto& [name, function] : probabilities) {
+        m.def(
+            name,
+            [function](Array x, Array df, Array ncp, bool lower_tail, bool log_p) {
+                return elementwise<3>(
+                    [&](double v, double d, double n) {
+                        return function(v, d, n, lower_tail, log_p);
+                    },
+                    {x, df, ncp});
+            },
+            py::arg("x"), py::arg("df"), py::arg("ncp"), py::arg("lower_tail"),
+            py::arg("log_p"));
+    }
 }

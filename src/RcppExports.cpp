@@ -10,6 +10,23 @@ Rcpp::Rostream<true>&  Rcpp::Rcout = Rcpp::Rcpp_cout_get();
 Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
+// almLatentCpp
+List almLatentCpp(NumericVector const& c, NumericVector const& a, NumericVector const& z, LogicalVector const& observed, NumericVector const& initialMean, NumericVector const& initialCovariance, bool filter);
+RcppExport SEXP _greybox_almLatentCpp(SEXP cSEXP, SEXP aSEXP, SEXP zSEXP, SEXP observedSEXP, SEXP initialMeanSEXP, SEXP initialCovarianceSEXP, SEXP filterSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector const& >::type c(cSEXP);
+    Rcpp::traits::input_parameter< NumericVector const& >::type a(aSEXP);
+    Rcpp::traits::input_parameter< NumericVector const& >::type z(zSEXP);
+    Rcpp::traits::input_parameter< LogicalVector const& >::type observed(observedSEXP);
+    Rcpp::traits::input_parameter< NumericVector const& >::type initialMean(initialMeanSEXP);
+    Rcpp::traits::input_parameter< NumericVector const& >::type initialCovariance(initialCovarianceSEXP);
+    Rcpp::traits::input_parameter< bool >::type filter(filterSEXP);
+    rcpp_result_gen = Rcpp::wrap(almLatentCpp(c, a, z, observed, initialMean, initialCovariance, filter));
+    return rcpp_result_gen;
+END_RCPP
+}
 // polyprod
 RcppExport SEXP polyprod(SEXP x, SEXP y);
 RcppExport SEXP _greybox_polyprod(SEXP xSEXP, SEXP ySEXP) {
@@ -24,6 +41,7 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
+    {"_greybox_almLatentCpp", (DL_FUNC) &_greybox_almLatentCpp, 7},
     {"_greybox_polyprod", (DL_FUNC) &_greybox_polyprod, 2},
     {NULL, NULL, 0}
 };

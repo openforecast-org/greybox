@@ -5,120 +5,183 @@ generation for the distribution that becomes normal after the Logit
 transformation.
 """
 
+import warnings
+
 import numpy as np
-from scipy import stats
+
+from .helper import pnorm, qnorm
 
 
-def dlogitnorm(q, loc=0, scale=1, log=False):
+def dlogitnorm(q, mu=0, sigma=1, log=False, *, loc=None, scale=None):
     """Logit-Normal distribution density.
 
-    f(y) = 1/(sqrt(2*pi)*scale*y*(1-y)) * exp(-(logit(y) - loc)^2 / (2*scale^2))
+    f(y) = 1/(sqrt(2*pi)*sigma*y*(1-y)) * exp(-(logit(y) - mu)^2 / (2*sigma^2))
 
     Parameters
     ----------
     q : array_like
         Quantiles (must be in (0, 1)).
-    loc : float
+    mu : float
         Location parameter (on logit scale).
-    scale : float
+    sigma : float
         Scale parameter.
     log : bool
         If True, return log-density.
+    loc : float, optional
+        Deprecated alias of ``mu``, kept for one release.
+    scale : float, optional
+        Deprecated alias of ``sigma``, kept for one release.
 
     Returns
     -------
     array
         Density values.
     """
-    q = np.clip(q, 1e-10, 1 - 1e-10)
-    logit_q = np.log(q / (1 - q))
-    density = (
-        1
-        / (scale * np.sqrt(2 * np.pi) * q * (1 - q))
-        * np.exp(-((logit_q - loc) ** 2) / (2 * scale**2))
-    )
-    density = np.maximum(density, 1e-300)
-    if log:
-        return np.log(density)
-    return density
+    if loc is not None:
+        warnings.warn(
+            "'loc' is deprecated, use 'mu' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        mu = loc
+    if scale is not None:
+        warnings.warn(
+            "'scale' is deprecated, use 'sigma' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        sigma = scale
+    q = np.asarray(q, dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        logit_q = np.log(q / (1 - q))
+        # The log analytically, as the log of the density underflows in the tails
+        if log:
+            density = -np.log(sigma * np.sqrt(2 * np.pi) * q * (1 - q)) - (
+                logit_q - mu
+            ) ** 2 / (2 * sigma**2)
+        else:
+            density = (
+                1
+                / (sigma * np.sqrt(2 * np.pi) * q * (1 - q))
+                * np.exp(-((logit_q - mu) ** 2) / (2 * sigma**2))
+            )
+    return density[()]
 
 
-def plogitnorm(q, loc=0, scale=1):
+def plogitnorm(q, mu=0, sigma=1, *, loc=None, scale=None):
     """Logit-Normal distribution CDF.
 
     Parameters
     ----------
     q : array_like
         Quantiles.
-    loc : float
+    mu : float
         Location parameter.
-    scale : float
+    sigma : float
         Scale parameter.
+    loc : float, optional
+        Deprecated alias of ``mu``, kept for one release.
+    scale : float, optional
+        Deprecated alias of ``sigma``, kept for one release.
 
     Returns
     -------
     array
         CDF values.
     """
-    q = np.asarray(q)
-    result = np.zeros_like(q, dtype=float)
-
-    mask_negative = q < 0
-    mask_between = (q >= 0) & (q <= 1)
-    mask_above = q > 1
-
-    result[mask_negative] = 0
-    result[mask_above] = 1
-
-    if np.any(mask_between):
-        q_between = q[mask_between]
-        result[mask_between] = stats.norm.cdf(
-            np.log(q_between / (1 - q_between)), loc=loc, scale=scale
+    if loc is not None:
+        warnings.warn(
+            "'loc' is deprecated, use 'mu' instead",
+            DeprecationWarning,
+            stacklevel=2,
         )
+        mu = loc
+    if scale is not None:
+        warnings.warn(
+            "'scale' is deprecated, use 'sigma' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        sigma = scale
+    q = np.asarray(q, dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        result = pnorm(np.log(q / (1 - q)), mu, sigma)
+    result = np.where(q < 0, 0.0, result)
+    return np.where(q >= 1, 1.0, result)[()]
 
-    return result
 
-
-def qlogitnorm(p, loc=0, scale=1):
+def qlogitnorm(p, mu=0, sigma=1, *, loc=None, scale=None):
     """Logit-Normal distribution quantile function.
 
     Parameters
     ----------
     p : array_like
         Probabilities.
-    loc : float
+    mu : float
         Location parameter.
-    scale : float
+    sigma : float
         Scale parameter.
+    loc : float, optional
+        Deprecated alias of ``mu``, kept for one release.
+    scale : float, optional
+        Deprecated alias of ``sigma``, kept for one release.
 
     Returns
     -------
     array
         Quantile values.
     """
-    p = np.asarray(p)
-    result = np.exp(stats.norm.ppf(p, loc=loc, scale=scale)) / (
-        1 + np.exp(stats.norm.ppf(p, loc=loc, scale=scale))
-    )
-    result = np.where(np.isnan(result), 0, result)
-    return result
+    if loc is not None:
+        warnings.warn(
+            "'loc' is deprecated, use 'mu' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        mu = loc
+    if scale is not None:
+        warnings.warn(
+            "'scale' is deprecated, use 'sigma' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        sigma = scale
+    result = 1 / (1 + np.exp(-qnorm(p, mu, sigma)))
+    return np.where(np.isnan(result), 0, result)[()]
 
 
-def rlogitnorm(n, loc=0, scale=1):
+def rlogitnorm(n=1, mu=0, sigma=1, *, loc=None, scale=None):
     """Logit-Normal distribution random number generation.
 
     Parameters
     ----------
     n : int
         Number of observations.
-    loc : float
+    mu : float
         Location parameter.
-    scale : float
+    sigma : float
         Scale parameter.
+    loc : float, optional
+        Deprecated alias of ``mu``, kept for one release.
+    scale : float, optional
+        Deprecated alias of ``sigma``, kept for one release.
 
     Returns
     -------
     array
         Random values.
     """
-    return qlogitnorm(np.random.uniform(0, 1, n), loc, scale)
+    if loc is not None:
+        warnings.warn(
+            "'loc' is deprecated, use 'mu' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        mu = loc
+    if scale is not None:
+        warnings.warn(
+            "'scale' is deprecated, use 'sigma' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        sigma = scale
+    return qlogitnorm(np.random.uniform(0, 1, n), mu, sigma)

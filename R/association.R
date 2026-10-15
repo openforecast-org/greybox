@@ -166,7 +166,8 @@ association <- function(x, y=NULL, use=c("na.or.complete","complete.obs","everyt
     else if(method=="cramer"){
         numericDataX[] <- FALSE;
         if(!is.null(y)){
-            numericData <- c(numericDataX, rep(FALSE, nVariablesY));
+            numericDataY <- rep(FALSE, nVariablesY);
+            numericData <- c(numericDataX, numericDataY);
         }
         else{
             numericData <- numericDataX;
@@ -189,7 +190,8 @@ association <- function(x, y=NULL, use=c("na.or.complete","complete.obs","everyt
         }
         numericDataX[] <- TRUE;
         if(!is.null(y)){
-            numericData <- c(numericDataX, rep(TRUE, nVariablesY));
+            numericDataY <- rep(TRUE, nVariablesY);
+            numericData <- c(numericDataX, numericDataY);
         }
         else{
             numericData <- numericDataX;

@@ -339,7 +339,8 @@ coefbootstrap.alm <- function(object, nsim=1000, size=floor(0.75*nobs(object)),
     # Deal with ari components. Remove the columns with lagged variables
     arimaModel <- !is.null(object$other$polynomial);
     if(arimaModel){
-        newCall$data <- newCall$data[,!(colnames(newCall$data) %in% names(object$other$polynomial))];
+        # The lags are the last columns of the data (under their transformed names)
+        newCall$data <- object$data[,1:(ncol(object$data)-length(object$other$polynomial)),drop=FALSE];
     }
 
     # If this is ARIMA, and the size wasn't specified, make it changeable
@@ -419,10 +420,10 @@ coefbootstrap.alm <- function(object, nsim=1000, size=floor(0.75*nobs(object)),
     else{
         # Set all redundant variables to NA
         replace <- prob <- size <- NA;
-        # Create a new dataset
-        newData <- replicate(nsim, object$data, simplify=FALSE);
-        newCall$data <- object$data;
-        newCall$formula <- as.formula(paste0(colnames(object$data)[1],"~."));
+        # Create a new dataset, without the lags of the response, which alm() rebuilds from the
+        # bootstrapped one. The formula is the one defined above, with or without the intercept
+        newCall$data <- object$data[,1:(ncol(object$data)-length(object$other$polynomial)),drop=FALSE];
+        newData <- replicate(nsim, newCall$data, simplify=FALSE);
         # Bootstrap the data
         # dataBoot <- suppressWarnings(apply(newCall$data, 2, dsrboot,
         #                                    nsim=nsim, intermittent=FALSE));
@@ -439,7 +440,7 @@ coefbootstrap.alm <- function(object, nsim=1000, size=floor(0.75*nobs(object)),
             for(i in 1:nsim){
                 newCall$data[] <- newData[[i]];
                 testModel <- suppressWarnings(eval(newCall));
-                coefBootstrap[i,names(coef(testModel))] <- coef(testModel);
+                coefBootstrap[i,variablesNamesMade %in% names(coef(testModel))] <- coef(testModel);
             }
         }
         else{
@@ -453,7 +454,7 @@ coefbootstrap.alm <- function(object, nsim=1000, size=floor(0.75*nobs(object)),
             })
             # Prepare the matrix with parameters
             for(i in 1:nsim){
-                coefBootstrap[i,names(coefBootstrapParallel[[i]])] <- coefBootstrapParallel[[i]];
+                coefBootstrap[i,variablesNamesMade %in% names(coefBootstrapParallel[[i]])] <- coefBootstrapParallel[[i]];
             }
         }
     }

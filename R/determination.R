@@ -82,7 +82,13 @@ determination <- function(xreg, bruteforce=TRUE, ...){
             }
         }
         else{
-            corMatrix <- cor(xreg, ...);
+            # Use the complete observations, unless the user asked otherwise
+            if(is.null(list(...)$use)){
+                corMatrix <- cor(xreg, use="na.or.complete", ...);
+            }
+            else{
+                corMatrix <- cor(xreg, ...);
+            }
             for(i in 1:nVariables){
                 vectorCorrelationsMultiple[i] <- tryCatch(corMatrix[i,-i,drop=FALSE] %*%
                                                               chol2inv(chol(corMatrix[-i,-i,drop=FALSE])) %*%

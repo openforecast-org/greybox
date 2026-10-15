@@ -60,6 +60,8 @@ the combined model,
 \item importance - importance of the parameters,
 \item combination - the table, indicating which variables were used in every
 model construction and what were the weights for each model,
+\item xlevels - the levels of the factors in the data, used by \code{predict()} for the
+new data, as in \link[stats]{lm},
 \item timeElapsed - the time elapsed for the estimation of the model.
 }
 }

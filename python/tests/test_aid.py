@@ -82,9 +82,7 @@ class TestAidResultAttributes:
         ]
 
     def test_dict_style_backcompat_type(self, stockout_result):
-        assert (
-            stockout_result.type["type1"] == stockout_result.type.type1
-        )
+        assert stockout_result.type["type1"] == stockout_result.type.type1
         assert "type1" in stockout_result.type
         assert list(stockout_result.type.keys()) == [
             "type1",
@@ -134,8 +132,7 @@ class TestAidPlot:
         n_vlines = sum(
             1
             for line in ax.lines
-            if len(line.get_xdata()) == 2
-            and line.get_xdata()[0] == line.get_xdata()[1]
+            if len(line.get_xdata()) == 2 and line.get_xdata()[0] == line.get_xdata()[1]
         )
         assert n_vlines == 2
         plt.close(ax.figure)
@@ -201,3 +198,17 @@ class TestAidCatPlot:
         n_total = int(totals[0].split("(")[1].rstrip(")"))
         assert n_total == len(cat_result.results)
         plt.close(ax.figure)
+
+    def test_categories_keep_names(self, cat_result):
+        assert list(cat_result.categories.index) == ["a", "b", "c"]
+
+    def test_list_input(self, cat_result):
+        rng = np.random.default_rng(1)
+        series = [
+            rng.poisson(1, 80).astype(float),
+            rng.poisson(5, 80).astype(float),
+            rng.normal(10, 2, 80),
+        ]
+        result = aid_cat(series)
+        assert list(result.categories.index) == [0, 1, 2]
+        assert list(result.categories) == list(cat_result.categories)

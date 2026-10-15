@@ -6,9 +6,9 @@ This module provides functions for outlier detection and model diagnostics.
 from typing import Literal
 
 import numpy as np
-from scipy import stats
+import pandas as pd
 
-from .fitters import scale_sd
+from . import distributions as dist
 
 
 class OutlierResult:
@@ -16,12 +16,13 @@ class OutlierResult:
 
     Attributes
     ----------
-    outliers : np.ndarray or None
-        Matrix with dummy variables, flagging outliers.
+    outliers : pd.DataFrame or None
+        Matrix with dummy variables, flagging outliers, with the columns
+        ``outlier1``, ``outlier2``, ... as in R.
     statistic : np.ndarray
         The value of the statistic for the normalized variable.
     id : np.ndarray
-        The ids of the outliers (which observations have them).
+        The ids of the outliers (which observations have them), from zero.
     level : float
         The confidence level used in the process.
     type : str
@@ -32,7 +33,7 @@ class OutlierResult:
 
     def __init__(
         self,
-        outliers: np.ndarray | None,
+        outliers: pd.DataFrame | None,
         statistic: np.ndarray,
         id: np.ndarray,
         level: float,
@@ -58,7 +59,10 @@ def outlier_dummy(
     Only point outliers are considered (no level shifts).
 
     The detection is done based on the type of distribution used and
-    confidence level specified by user.
+    confidence level specified by user, as R's ``outlierdummy()``: the
+    standardised or studentised residuals of the model are compared with the
+    quantiles of the standardised distribution (the standard Normal ones for
+    the count distributions, whose residuals are transformed into it).
 
     Parameters
     ----------
@@ -74,6 +78,7 @@ def outlier_dummy(
     -------
     OutlierResult
         Object containing:
+
         - outliers: matrix with dummy variables flagging outliers
         - statistic: value of the statistic for the normalised variable
         - id: ids of the outliers
@@ -90,71 +95,51 @@ def outlier_dummy(
     >>> _ = model.fit(X, y)
     >>> result = outlier_dummy(model)
     """
-    if not hasattr(model, "residuals") or model.residuals is None:
-        raise ValueError("Model must be a fitted ALM model")
+    if type not in ("rstandard", "rstudent"):
+        raise ValueError("type should be either 'rstandard' or 'rstudent'")
+    errors = model.rstandard() if type == "rstandard" else model.rstudent()
 
-    residuals = model.residuals
-    nobs = len(residuals)
+    p = np.array([(1 - level) / 2, (1 + level) / 2])
+    # The scale of R's extractScale(): 1 for a scale model
+    nobs, nparam, other = model.nobs, model.nparam, model.other_
+    scale = model.extract_scale()
     distribution = model.distribution
-
-    scale = scale_sd(distribution, model.scale)
-    df_residual = model.df_residual_
-
-    if type == "rstandard":
-        leverage = _calculate_leverage(model)
-        errors = residuals / np.sqrt(scale**2 * (1 - leverage))
-    else:
-        h = _calculate_leverage(model)
-        n = nobs
-        k = model.nparam
-        se = scale**2 * (1 - h) * (n - k - 1) / (n - k - 2)
-        errors = residuals / np.sqrt(se)
-
     if distribution in ("dlaplace", "dllaplace"):
-        statistic = stats.laplace.ppf(
-            np.array([(1 - level) / 2, (1 + level) / 2]), loc=0, scale=1
-        )
+        statistic = dist.qlaplace(p, 0, 1)
+    elif distribution == "dalaplace":
+        statistic = dist.qalaplace(p, 0, 1, other)
     elif distribution == "dlogis":
-        statistic = stats.logistic.ppf(
-            np.array([(1 - level) / 2, (1 + level) / 2]), loc=0, scale=1
-        )
+        statistic = dist.qlogis(p, 0, 1)
     elif distribution == "dt":
-        statistic = stats.t.ppf(
-            np.array([(1 - level) / 2, (1 + level) / 2]), df=df_residual
-        )
+        statistic = dist.qt(p, nobs - nparam)
     elif distribution in ("dgnorm", "dlgnorm"):
-        shape = model.other_ if model.other_ is not None else 2.0
-        quantile = [(1 - level) / 2, (1 + level) / 2]
-        statistic = stats.gennorm.ppf(quantile, loc=0, scale=1, beta=shape)
+        statistic = dist.qgnorm(p, 0, 1, other)
     elif distribution in ("ds", "dls"):
-        statistic = stats.norm.ppf(
-            np.array([(1 - level) / 2, (1 + level) / 2]), loc=0, scale=1
-        )
+        statistic = dist.qs(p, 0, 1)
+    elif distribution == "dinvgauss":
+        # The scale is debiased, taking n-k into account
+        statistic = dist.qinvgauss(p, mean=1, dispersion=scale * nobs / (nobs - nparam))
     elif distribution == "dgamma":
-        statistic = stats.gamma.ppf(
-            np.array([(1 - level) / 2, (1 + level) / 2]),
-            a=1 / scale,
-            scale=scale,
-        )
+        statistic = dist.qgamma(p, shape=1 / scale, scale=scale)
     elif distribution == "dexp":
-        statistic = stats.expon.ppf(
-            np.array([(1 - level) / 2, (1 + level) / 2]), scale=1
-        )
+        statistic = dist.qexp(p, rate=1)
+    elif distribution == "dfnorm":
+        statistic = dist.qfnorm(p, 0, 1)
+    elif distribution == "drectnorm":
+        statistic = dist.qrectnorm(p, 0, 1)
     else:
-        statistic = stats.norm.ppf(
-            np.array([(1 - level) / 2, (1 + level) / 2]), loc=0, scale=1
+        # Including the count distributions, transformed into the standard Normal
+        statistic = dist.qnorm(p, 0, 1)
+    statistic = np.asarray(statistic, dtype=float)
+
+    outlier_ids = np.flatnonzero((errors > statistic[1]) | (errors < statistic[0]))
+    outliers = None
+    if len(outlier_ids) > 0:
+        dummies = np.zeros((nobs, len(outlier_ids)))
+        dummies[outlier_ids, np.arange(len(outlier_ids))] = 1
+        outliers = pd.DataFrame(
+            dummies, columns=[f"outlier{i}" for i in range(1, len(outlier_ids) + 1)]
         )
-
-    is_outlier = (errors > statistic[1]) | (errors < statistic[0])
-    outlier_ids = np.where(is_outlier)[0]
-    n_outliers = len(outlier_ids)
-
-    if n_outliers > 0:
-        outliers = np.zeros((nobs, n_outliers))
-        for i, oid in enumerate(outlier_ids):
-            outliers[oid, i] = 1
-    else:
-        outliers = None
 
     return OutlierResult(
         outliers=outliers,
@@ -164,20 +149,3 @@ def outlier_dummy(
         type=type,
         errors=errors,
     )
-
-
-def _calculate_leverage(model) -> np.ndarray:
-    """Calculate leverage (hat values) for each observation."""
-    if model._X_train_ is None:
-        raise ValueError("Model not fitted")
-
-    X = model._X_train_
-    XtX = X.T @ X
-    XtX += np.eye(XtX.shape[0]) * 1e-10
-    try:
-        XtX_inv = np.linalg.inv(XtX)
-    except np.linalg.LinAlgError:
-        XtX_inv = np.linalg.pinv(XtX)
-
-    leverage = np.diag(X @ XtX_inv @ X.T)
-    return leverage

@@ -2,10 +2,10 @@
 Chi-Squared
 ===========
 
-.. autofunction:: greybox.distributions.dchi2
+.. autofunction:: greybox.distributions.dchisq
 
-.. autofunction:: greybox.distributions.pchi2
+.. autofunction:: greybox.distributions.pchisq
 
-.. autofunction:: greybox.distributions.qchi2
+.. autofunction:: greybox.distributions.qchisq
 
-.. autofunction:: greybox.distributions.rchi2
+.. autofunction:: greybox.distributions.rchisq

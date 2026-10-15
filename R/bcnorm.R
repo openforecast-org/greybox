@@ -79,20 +79,20 @@
 #' @aliases BCNormal dbcnorm
 #' @export dbcnorm
 dbcnorm <- function(q, mu=0, sigma=1, lambda=0, log=FALSE){
+    # The logs are taken analytically: the log of the density underflows in the tails
     if(lambda==0){
-        bcnormReturn <- dlnorm(x=q, meanlog=mu, sdlog=sigma, log=FALSE);
+        bcnormReturn <- dlnorm(x=q, meanlog=mu, sdlog=sigma, log=log);
     }
     else if(lambda==1){
-        bcnormReturn <- dnorm(x=q, mean=mu+1, sd=sigma, log=FALSE);
+        bcnormReturn <- dnorm(x=q, mean=mu+1, sd=sigma, log=log);
+    }
+    else if(log){
+        bcnormReturn <- suppressWarnings((lambda-1)*log(q) + dnorm((q^lambda-1)/lambda, mu, sigma, log=TRUE));
+        bcnormReturn[q<=0] <- -Inf;
     }
     else{
-        bcnormReturn <- suppressWarnings(q^(lambda-1) * 1/(sqrt(2*pi)*sigma) * exp(-((q^lambda-1)/lambda - mu)^2/ (2*sigma^2)));
+        bcnormReturn <- suppressWarnings(q^(lambda-1) * dnorm((q^lambda-1)/lambda, mu, sigma));
         bcnormReturn[q<=0] <- 0;
-    }
-
-    # Return logs if needed
-    if(log){
-        bcnormReturn[] <- log(bcnormReturn);
     }
 
     return(bcnormReturn);
@@ -106,8 +106,8 @@ pbcnorm <- function(q, mu=0, sigma=1, lambda=0){
         bcnormReturn <- plnorm(q=q, meanlog=mu, sdlog=sigma);
     }
     else{
-        bcnormReturn <- vector("numeric", length(q));
-        bcnormReturn[q>=0] <- pnorm(q=(q[q>=0]^lambda-1)/lambda, mean=mu, sd=sigma);
+        # q=0 maps onto -1/lambda
+        bcnormReturn <- suppressWarnings(pnorm(q=(q^lambda-1)/lambda, mean=mu, sd=sigma));
         bcnormReturn[q<0] <- 0;
     }
     return(bcnormReturn);
@@ -125,10 +125,12 @@ qbcnorm <- function(p, mu=0, sigma=1, lambda=0){
         # underlying Normal can place mass below that boundary which
         # corresponds to (formally) negative y.  Naive
         # (qnorm(p)*lambda+1)^(1/lambda) becomes NaN for such p when
-        # 1/lambda is non-integer; the standard convention here is
-        # to map that mass to y=0 (the natural lower BC support edge).
-        bcnormReturn <- (qnorm(p=p, mean=mu, sd=sigma)*lambda+1)^(1/lambda);
-        bcnormReturn[is.nan(bcnormReturn)] <- 0;
+        # 1/lambda is non-integer (and positive for an even 1/lambda);
+        # the standard convention here is to map that mass to y=0 (the
+        # natural lower BC support edge).
+        bcnormBase <- qnorm(p=p, mean=mu, sd=sigma)*lambda+1;
+        bcnormReturn <- bcnormBase^(1/lambda);
+        bcnormReturn[is.nan(bcnormReturn) | bcnormBase<0] <- 0;
     }
     else{
         # lambda < 0: BC inverse support is x < -1/lambda (upper-bounded).
@@ -146,12 +148,13 @@ qbcnorm <- function(p, mu=0, sigma=1, lambda=0){
         # valid BC inverse support, i.e. invert
         #   F_trunc(y) = pbcnorm(y, mu, sigma, lambda) / P_valid
         # which IS a proper CDF.  The renormalized quantile is finite
-        # for every p in (0, 1) and approaches +infinity only as
-        # p -> 1.  See Granger & Newbold (1976), Pankratz & Dudley
-        # (1987), Guerrero (1993) for the standard truncated-
-        # distribution treatment of BC at lambda < 0.
+        # for every p in (0, 1) and is +infinity at p = 1.  See Granger
+        # & Newbold (1976), Pankratz & Dudley (1987), Guerrero (1993)
+        # for the standard truncated-distribution treatment of BC at
+        # lambda < 0.
         P_valid <- pnorm(-1/lambda, mean=mu, sd=sigma);
         bcnormReturn <- (qnorm(p=p*P_valid, mean=mu, sd=sigma)*lambda+1)^(1/lambda);
+        bcnormReturn[p==1] <- Inf;
     }
     return(bcnormReturn);
 }

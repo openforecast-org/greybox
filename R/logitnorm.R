@@ -66,14 +66,13 @@
 #' @aliases LogitNormal dlogitnorm
 #' @export dlogitnorm
 dlogitnorm <- function(q, mu=0, sigma=1, log=FALSE){
+    # The log is taken analytically: the log of the density underflows in the tails
+    if(log){
+        return(-log(sigma*sqrt(2*pi)*q*(1-q))-(log(q/(1-q))-mu)^2/(2*sigma^2));
+    }
     logitnormReturn <- 1 / (sigma*sqrt(2*pi)*q*(1-q))*exp(-(log(q/(1-q))-mu)^2/(2*sigma^2));
     # logitnormReturn[q<=0] <- -Inf;
     # logitnormReturn[q>=1] <- Inf;
-
-    # Return logs if needed
-    if(log){
-        logitnormReturn[] <- log(logitnormReturn);
-    }
 
     return(logitnormReturn);
 }
@@ -82,8 +81,7 @@ dlogitnorm <- function(q, mu=0, sigma=1, log=FALSE){
 #' @export plogitnorm
 #' @aliases plogitnorm
 plogitnorm <- function(q, mu=0, sigma=1){
-    logitnormReturn <- vector("numeric", length(q));
-    logitnormReturn[q>=0] <- pnorm(q=log(q/(1-q)), mean=mu, sd=sigma);
+    logitnormReturn <- suppressWarnings(pnorm(q=log(q/(1-q)), mean=mu, sd=sigma));
     logitnormReturn[q<0] <- 0;
     logitnormReturn[q>=1] <- 1;
     return(logitnormReturn);
@@ -94,7 +92,7 @@ plogitnorm <- function(q, mu=0, sigma=1){
 #' @aliases qlogitnorm
 qlogitnorm <- function(p, mu=0, sigma=1){
     logitnormReturn <- qnorm(p=p, mean=mu, sd=sigma);
-    logitnormReturn[] <- exp(logitnormReturn)/(1+exp(logitnormReturn));
+    logitnormReturn[] <- 1/(1+exp(-logitnormReturn));
     logitnormReturn[is.nan(logitnormReturn)] <- 0;
     return(logitnormReturn);
 }

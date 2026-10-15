@@ -37,6 +37,8 @@ __pycache__/
 dist/
 python/dist/
 python/build/
+# The C++ headers shared with R, copied by python/setup.py for the sdist
+python/src/greybox/_native/headers/
 
 # Compiled extensions. CI builds these for every wheel, and `pip install -e .`
 # builds them for a local checkout, so a committed copy is never read -- it only

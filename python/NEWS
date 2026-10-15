@@ -2,10 +2,222 @@ greybox for Python
 ==============
 
 Python port of the R `greybox` package. The port tracks the R package,
-the most recent release of which is greybox v2.0.9 (Release date: 2026-02-24).
+the most recent release of which is greybox v2.0.9 (Release date: 2026-10-01).
 
 
-greybox for Python v1.0.9 (unreleased)
+greybox for Python v1.0.10 (unreleased)
+==============
+
+Changes:
+* `ALM` with ARI orders and an occurrence model treats the sizes at the zeros
+  as latent, as R's greybox v2.0.11: their lags go on with the recursion of
+  the model, as the conditional means given the observed sizes, computed by
+  the Kalman filter of the C++ header shared with R (`src/headers/almLatent.h`,
+  bound as `_native_alm_latent`). The errors after the latent sizes take the
+  variances of the filter for dnorm, dlaplace, ds, dgnorm, dlogis, dalaplace,
+  dlnorm, dllaplace, dls, dlgnorm and dbcnorm.
+* The zeros of these models contribute only the likelihood of the occurrence:
+  the differential entropy of the sizes at the zeros is removed from the loss
+  and `point_lik()`, and the scale is estimated on the non-zero observations.
+* `predict()` of the ARI models continues the recursion after the last observed
+  sizes and takes the variance of the filter over the horizon, so the
+  prediction intervals widen with the horizon.
+* The ARI models are estimated with `ftol_rel=1e-8` and 200 evaluations per
+  parameter, and LASSO / RIDGE with `ftol_rel=1e-8`, as in R.
+* `xreg_expander(gaps="auto")` and `gaps="extrapolate"` extrapolate with smooth's
+  `ADAM` when smooth is installed, as R's `xregExpander()`: the leads are
+  forecast, and the lags backcast on the reversed series. They take the first /
+  last values otherwise, for the binary variables (R takes `oes()`, which has no
+  Python port) and, with "auto", for the series longer than 10000. The lags
+  before the sample of the ARI models without an occurrence model follow, so
+  they match R's.
+* `xreg_expander()` keeps the lags and leads in the given order, as R: it sorted
+  them and dropped the duplicates.
+* `xreg_expander()` extrapolates the binary variables with smooth's `OM` (MNN with
+  the inverse odds ratio), as R's `xregExpander()` with `om()`, and passes the
+  fitted occurrence model of the leads on to the lags, as R.
+* `ALM.predict()` takes `occurrence`, as R's `predict.alm()`: the probabilities
+  (or the values) of the occurrence, which scale the mean and the bounds. By
+  default a fitted occurrence model is predicted on `X`: its probabilities scale
+  the mean and move the levels of the prediction intervals to those of the
+  sizes, as R. It returned the forecasts of the sizes; `occurrence=np.ones(h)`
+  gives them.
+* `vcov()` of dlaplace, dllaplace and dalaplace takes the expected information
+  from the derivatives of the location, as R: their Hessian was wrong by orders
+  of magnitude.
+* dlgnorm takes the lags of log(y), as the other distributions in logs.
+* dgamma and dinvgauss take the lags of log(y) in the ARI models, as dexp and as
+  R: with the lags of y, the I(d) models could not be estimated.
+* `ALM` refuses the responses R's `alm()` refuses: negative values for the
+  distributions of non-negative data, zeros for dinvgauss, dgamma, dlnorm,
+  dllaplace, dls and dlgnorm without an occurrence model, fractional values for
+  the count distributions, and values outside [0, 1] for dbeta and dlogitnorm.
+* `nparam` counts the parameters of the occurrence model, as R's `nparam()`.
+* The sdist carries the C++ headers shared with R, so it builds on its own.
+* The Python port does what R's greybox does, function by function (an audit of
+  every exported function against R):
+  * `ALM` counts the parameters as R (`nparam`, `df_residual_` and the
+    information criteria: the scale only with the likelihood, the extra
+    parameter of dt, dbcnorm, dgnorm, dlgnorm and dalaplace, both shapes of
+    dbeta, the non-zero parameters of LASSO / RIDGE), returns the likelihood at
+    the estimates of MSE (dnorm, dlnorm, dbcnorm, dlogitnorm), MAE (dlaplace,
+    dllaplace) and HAM (ds, dls), and adds the occurrence model to the loss.
+  * LASSO and RIDGE are R's estimators: the response in the space of the model,
+    the regressors centred and scaled, LASSO from the RIDGE solution with R's
+    bounds, RIDGE in its closed form.
+  * `ALM` drops the regressors without variability, perfectly correlated with
+    another one or in a perfect combination with the others (R's checks of
+    `fast=FALSE`), and `predict()` takes the same columns.
+  * `ALM` penalises a non-stationary AR polynomial as R, binarises the response
+    of plogis / pnorm, moves the boundary values of dbeta / dlogitnorm inside,
+    fixes the extra parameter at 0.5 for the losses other than the likelihood,
+    leaves dt / dchisq unbounded, uses R's pivoted least squares for the
+    starting values, and builds the AR terms of plogis / pnorm from smooth's
+    `OM`, refitted by the model, as R.
+  * `ALM(occurrence="plogis")` / `"pnorm"` estimates the occurrence model, as R;
+    the fitted one is `occurrence_`. `loss` accepts a function, as R's custom
+    loss.
+  * `ALM` has R's `data` (the response and the regressors), `df_`, `rank_` and
+    `B_`. dbinom's fitted values take its size; dbeta's `coefficients` hold
+    both shapes, and its `mu_` and `scale` are its mean and variance, as R.
+  * `ALM.predict()` without `X` gives the in-sample values, as R's
+    `newdata=NULL` (any `X` of the length of the data was taken for it). Its
+    result has R's `location`, `scale`, `distribution` and `occurrence` (the
+    predictions of the occurrence model).
+  * `summary()` has R's `significance` (the interval excludes zero), `r_squared`
+    and `adj_r_squared`, and labels the bounds at its level.
+  * New `rstandard()`, `rstudent()` and `hatvalues()` methods of `ALM`, with R's
+    formulas for every distribution; `outlier_dummy()` is built on them with
+    R's statistics, and its `outliers` is a DataFrame with R's column names.
+  * New `coefbootstrap()` (R's "cr" and "dsr" methods) returning a
+    `BootstrapResult`, and `bootstrap=` in `vcov()`, `confint()` and `summary()`.
+  * New `cramer()`, `determ()` and `assoc()` (R's alias of `association()`);
+    `mcor()` returns R's value, statistic, df, df_residual and p_value;
+    `association()`, `pcor()`, `mcor()`, `cramer()` take R's `use`.
+  * New `spread()`, `graphmaker()` and `tableplot()` (module `greybox.plots`),
+    `ALM.plot()` (R's `plot.greybox()`, its 16 plots with `which`, `level`,
+    `legend`, `ask` and `lowess`) and `PredictionResult.plot()` (R's
+    `plot.predict.greybox()`, with the holdout actuals in `y`). The predictions
+    keep R's `model`, `newdata` and `newdata_provided`.
+  * New scale model, as R's: `sm()`, `implant()` and `ScaleModel` (module
+    `greybox.sm`), and `ALM(scale_formula=...)` taking a one-sided formula, a
+    design matrix or a fitted `ScaleModel`, as R's `alm(scale=)`. The fitted
+    model keeps it in `scale_model`; `extract_scale()` and `extract_sigma()`
+    are R's `extractScale()` / `extractSigma()`; `summary()` and `confint()`
+    add the rows of the scale model (`SummaryResult.scale_parameters`), and
+    `predict()` takes its forecasts for the intervals.
+  * `temporal_dummy()` takes R's `type`, `of`, `factors` and `h`, with R's
+    calendar logic for dates; `freq` is deprecated.
+  * `xreg_expander()`, `xreg_transformer()`, `xreg_multiplier()` and
+    `temporal_dummy()` return a DataFrame with R's column names for pandas
+    input, and lay the columns out as R.
+  * `formula()` handles `.`, `-1` / `0 +`, factors and character columns
+    (R's treatment contrasts and names), interactions, and any expression, as
+    R's `model.matrix()`.
+  * The arguments take R's names, the old ones are deprecated: the measures
+    take `holdout` (for `actual`), the half-moment functions `C` (for
+    `center`), greybox's distributions `mu` / `sigma` (for `loc` / `scale`),
+    their p / q functions `log_p`, and the wrappers of R's distributions R's
+    names (`mean` / `sd`, `meanlog` / `sdlog`, `location`, `shape1` / `shape2`,
+    `lambda_`, `rate`, `mean` / `dispersion`, ...), with `lower_tail` /
+    `log_p` and `ncp` where R has them. New `dchisq()` and its family (R's
+    names), `dchi2()` is deprecated.
+  * `stepwise()` and `CALM` treat missing values, factors, binary responses and
+    `occurrence` as R; `CALM` takes R's least squares for dnorm, has R's
+    `other_`, `rank_` and `data`, and predicts through `ALM.predict()`.
+
+* The noncentral t and chi-squared distributions (`dt`, `pt`, `qt` and
+  `dchisq`, `pchisq`, `qchisq` with `ncp`) are R's nmath algorithms (pnt, qnt,
+  dnt, pnchisq, qnchisq, dnchisq, with toms708), so they return R's values to
+  the last bit, including the far tails where scipy's differed (`qt(1e-10, 4.5,
+  ncp=1.2, lower_tail=False)` was 405.941 instead of R's 405.973). `ALM` with
+  dchisq takes them for its likelihood and intervals.
+* `formula()` expands the terms as R's `terms.formula()`: `x^2` is `x` (use
+  `I(x^2)` for the square, as in R), bracketed groups (`(a+b)^2`, `(a+b):c`,
+  `a*(b+c)`), `%in%`, `offset()` (dropped, as by `alm()`), and calls with
+  several arguments such as `log(x, base=10)`. Logical columns and comparisons
+  are factors with the levels FALSE and TRUE (`amTRUE`, `x > 2TRUE`).
+* The levels of character columns are sorted as by R's `factor()`: by code point
+  in the C / POSIX locale, and by the Unicode collation (ICU's, as R) in the
+  others (`a A b B`, `e é f`, space < punctuation < digits < letters), the locale
+  taken from `LC_ALL`, `LC_COLLATE` or `LANG` as R takes it.
+* The prediction from new data takes the levels of the factors of the training
+  data, as R's `xlevels`, in `predict()`, `CALM` and the scale model: new data
+  with fewer or reordered levels give the same columns, and an unseen level is
+  an error. `predict()` builds the new data from the formula of the model and
+  predicts through `ALM.predict()` (it had its own Normal intervals without the
+  uncertainty of the parameters).
+* The least squares of the scale model's start, `stepwise()`, `pcor()`,
+  `mcor()`, `association()`, `rmcb()` and `stick()` are R's `.lm.fit()`
+  (LINPACK's dqrdc2 and dqrsl), as the starting values of `ALM`, with R's
+  residuals and rank.
+
+Bugfixes:
+* The estimates and the covariance matrices differed from R's in the last bits,
+  which the finite-difference Hessian (up to 1e-2 on ill-conditioned
+  regressors) and the optimiser amplified. ALM now computes as R does: the
+  starting values with R's `.lm.fit()` (LINPACK's dqrdc2 and dqrsl), the
+  product of the regressors in R's column-major order, `exp()` of the log-link
+  distributions through libm, `dlogis()` and `dbeta()` as R's nmath, and the
+  sums of the losses in R's order and accumulator. The coefficients and the
+  Fisher information are R's to the last bit on the parity tests.
+* The covariance matrix under the MAE, HAM and MSE losses missed R's second
+  attempt with a larger step: the rounding of the loss left the Hessian of a
+  piecewise-linear loss slightly off zero (hat values of 1e7 instead of 0.02).
+* `ALM` with an occurrence model and ARI orders kept the lags at the zeros
+  fixed instead of running the recursion, and stopped the estimation after one
+  evaluation for dnorm and dlnorm. It now estimates as R, including the second
+  optimisation from the first solution.
+* Without an occurrence model, the zeros of the response are kept in the lags
+  as observed values.
+* The lags before the sample and at the zeros of an occurrence model start from
+  the mean of the observed sizes, as in R.
+* The residuals at the zeros of an occurrence model are zero, and the residuals
+  of dgamma, dinvgauss and dexp are y/mu, as in R.
+* `sigma` divides by the number of non-zero observations less the parameters of
+  both the size and the occurrence models (all the observations for dgamma,
+  dinvgauss and dexp), as R.
+* The prediction intervals of dlnorm take the estimated scale in place of
+  sigma², as R.
+* `vcov()` of the ARI models with an occurrence model takes the Hessian through
+  the latent lags for all the distributions, as R: dnorm and dlnorm took the
+  analytical form, which ignored them.
+* `vcov()` of the models with an occurrence model took the likelihood of all the
+  observations, the zeros included, and held the lags of the ARI models fixed.
+  It now takes the likelihood of the sizes and rebuilds the latent lags, as R.
+* `vcov()` of the ARI models with I(d) failed through the Hessian, and took the
+  analytical form, which R does not, for dnorm-like distributions; their
+  intervals used the levels of the lags instead of their differences.
+* The starting values of the ARI models with I(d) and an occurrence model were
+  taken over the zeros too, and those of the distributions in logs over the
+  non-zero values only (R takes log(y+1) when there are zeros): the estimation
+  could diverge, as dgeom did in `aid()` for an obsolete product.
+* `pgnorm()` took the rate of its gamma for its scale (right only at scale 1);
+  `qfnorm()` returned the quantiles in the reverse order below -10 standard
+  deviations; the densities of dbcnorm, dlogitnorm and the distributions in
+  logs were floored at 1e-300; `pnorm()` / `plogis()` lost their upper tails;
+  `dnbinom()` lost precision for large sizes; degenerate scales gave NaN or
+  errors where R gives limits.
+* `MPE` / `MAPE` dropped the zero actuals, `sPIS`, `GMRAE` and `MIS` treated
+  missing values and zeros differently from R, `extremity()` / `cextremity()`
+  took the wrong centre, and `MRE` dropped its imaginary part.
+* `association()` always took Pearson's correlation with `method="auto"` and
+  never removed missing values; `pcor()` took the inverse correlation matrix
+  instead of R's residuals; `determination()` returned 1 for the first
+  variable; `mcor()` did not treat the variables with few values as factors.
+* `stick()` counted the degrees of freedom of aliased factors and failed on
+  missing values; `rmcb()` took one more degree of freedom than R.
+* `CALM` computed BICc wrongly and its intervals symmetrically; `rolling_origin()`
+  swallowed the errors and failed on matrix outputs.
+* `aid()` swallowed the errors of its models and did not pad the location of its
+  stockout model.
+* `ALM` with `orders=(p, d, 0)`, p>1 and d>0, failed.
+* `predict()` of dlogitnorm, dlnorm (its variances), dgeom, dbinom, dbeta,
+  dfnorm and drectnorm differed from R, and dfnorm with an occurrence model
+  failed.
+
+
+greybox for Python v1.0.9 (2026-10-14)
 ==============
 
 Changes:
@@ -40,7 +252,7 @@ Bugfixes:
   `ALM` with these distributions that way.
 
 
-greybox for Python v1.0.8
+greybox for Python v1.0.8 (2026-10-02)
 ==============
 
 Changes:

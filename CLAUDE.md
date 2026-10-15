@@ -51,7 +51,7 @@ pytest tests/test_alm_distributions_compare.py
 
 - **`alm.py`** — Core `ALM` class (scikit-learn-style estimator). Supports 27 distributions and 7 loss functions. Uses `nlopt` for optimization (default: Nelder-Mead).
 - **`formula.py`** — R-style formula parser (`formula()`, `expand_formula()`). Supports `y ~ x1 + x2`, `y ~ 0 + x1` (no intercept), `log(y) ~ x`, `I(x+z)` (protected expressions), `trend` auto-generation.
-- **`fitters.py`** — Internal fitting machinery: `scaler_internal`, `fitter`, `fitter_recursive`. Wraps `cost_function.py`.
+- **`fitters.py`** — Internal fitting machinery: `scaler_internal`, `fitter`, `fitter_recursive`, and `_lm_fit` (R's `.lm.fit()`: LINPACK's dqrdc2/dqrsl, used wherever R takes `.lm.fit()` or `lm()`). Wraps `cost_function.py`.
 - **`cost_function.py`** — Loss functions: `likelihood`, `MSE`, `MAE`, `HAM`, `LASSO`, `RIDGE`, `ROLE`.
 - **`predict.py`** — `predict_basic()` returning `PredictionResult` dataclass with `.mean`, `.lower`, `.upper`.
 - **`distributions/`** — 27 distributions with d/p/q/r functions (density, CDF, quantile, random).
@@ -60,10 +60,13 @@ pytest tests/test_alm_distributions_compare.py
 - **`point_measures.py`** — 20+ accuracy metrics (MAE, MSE, RMSE, MAPE, MASE, etc.).
 - **`xreg.py`** — Variable processing: lag/lead expansion, transformations, temporal dummies.
 - **`rolling.py`** — `rolling_origin()` cross-validation with `RollingOriginResult`.
-- **`association.py`** — `pcor()`, `mcor()`, `association()`, `determination()` (partial/multiple correlations).
+- **`association.py`** — `pcor()`, `mcor()`, `cramer()`, `association()` / `assoc()`, `determination()` / `determ()` (partial/multiple correlations, Cramer's V).
 - **`hm.py`** — Half-moment measures: `hm()`, `ham()`, `asymmetry()`, `extremity()`, `mre()`.
 - **`quantile_measures.py`** — `pinball()` quantile/expectile scoring, `MIS`.
 - **`diagnostics.py`** — `outlier_dummy()` with `OutlierResult`.
+- **`sm.py`** — Scale model: `sm()`, `implant()`, `ScaleModel` (R's `scaler.R`); `ALM(scale_formula=...)` fits it.
+- **`bootstrap.py`** — `coefbootstrap()` with `BootstrapResult` (R's "cr" and "dsr").
+- **`plots.py`** — `spread()`, `graphmaker()`, `tableplot()`, and the plots behind `ALM.plot()` / `PredictionResult.plot()`.
 - **`stick.py`** — `stick()` (Seasonality, Trend, Irregular contribution via ANOVA) with `StickResult` (`.strength`, `.anova`, `.plot()`).
 - **`transforms.py`** — `bc_transform()`, `bc_transform_inv()`, `mean_fast()`.
 - **`smoothers.py`** — `lowess()` and `supsmu()`, thin wrappers over the native extensions below.

@@ -13,9 +13,8 @@ from numpy.testing import assert_allclose, assert_array_equal
 pytest.importorskip("rpy2.robjects", reason="Requires rpy2 and R")
 
 import rpy2.robjects as ro
-from rpy2.robjects import numpy2ri
-
-numpy2ri.activate()
+from rpy2.robjects import default_converter, numpy2ri
+from rpy2.robjects.conversion import localconverter
 
 from greybox import aid, aid_cat
 from greybox.pointlik import point_lik_cumulative
@@ -24,6 +23,13 @@ from greybox.alm import ALM
 from greybox.formula import formula
 
 ro.r["library"]("greybox")
+
+
+# The numpy conversion only inside these tests, not in the later test files
+@pytest.fixture(autouse=True)
+def numpy_conversion():
+    with localconverter(default_converter + numpy2ri.converter):
+        yield
 
 
 def _r_aid(y, **kwargs):
@@ -42,15 +48,9 @@ def _r_aid(y, **kwargs):
     start_r = ro.r("res$stockouts$start")
     end_r = ro.r("res$stockouts$end")
     start = (
-        np.array([], dtype=int)
-        if start_r is ro.NULL
-        else np.array(start_r, dtype=int)
+        np.array([], dtype=int) if start_r is ro.NULL else np.array(start_r, dtype=int)
     )
-    end = (
-        np.array([], dtype=int)
-        if end_r is ro.NULL
-        else np.array(end_r, dtype=int)
-    )
+    end = np.array([], dtype=int) if end_r is ro.NULL else np.array(end_r, dtype=int)
     type1 = str(ro.r("res$type$type1")[0])
     type2 = str(ro.r("res$type$type2")[0])
     type2a_r = ro.r("res$type$type2a")
@@ -187,30 +187,17 @@ class TestAidVsR:
         self._round_trip(y)
 
     def test_injected_stockout(self):
-        ro.r(
-            "set.seed(0); y <- rpois(100, 3); y[41:50] <- 0"
-        )
+        ro.r("set.seed(0); y <- rpois(100, 3); y[41:50] <- 0")
         y = np.array(ro.r("y"))
         py_r, r_r = self._round_trip(y)
         assert len(py_r.stockouts["start"]) >= 1
 
     def test_new_product(self):
-        ro.r(
-            "set.seed(5); y <- c(rep(0, 20), rpois(80, 5))"
-        )
+        ro.r("set.seed(5); y <- c(rep(0, 20), rpois(80, 5))")
         y = np.array(ro.r("y"))
         py_r, _ = self._round_trip(y)
         assert py_r.new is True
 
-    @pytest.mark.xfail(
-        reason=(
-            "Python's ALM dgeom optimizer diverges on intervals with a "
-            "single very large tail value (20+ trailing zeros). R's nloptr "
-            "stays stable. This is a pre-existing Python ALM convergence "
-            "limitation, not an aid()-level bug."
-        ),
-        strict=False,
-    )
     def test_obsolete_product(self):
         ro.r("set.seed(11); y <- c(rpois(80, 5), rep(0, 20))")
         y = np.array(ro.r("y"))
@@ -227,10 +214,7 @@ class TestAidVsR:
         self._round_trip(y)
 
     def test_fractional_intermittent(self):
-        ro.r(
-            "set.seed(4); occ <- rbinom(150, 1, 0.6); "
-            "y <- occ * rnorm(150, 5, 1.5)"
-        )
+        ro.r("set.seed(4); occ <- rbinom(150, 1, 0.6); y <- occ * rnorm(150, 5, 1.5)")
         y = np.array(ro.r("y"))
         self._round_trip(y)
 
@@ -272,7 +256,9 @@ class TestAidCatVsR:
             "r_res <- aidCat(xreg)"
         )
         xreg = np.array(ro.r("xreg"))
-        r_anomalies = dict(zip(["New", "Stockouts", "Old"], list(ro.r("r_res$anomalies"))))
+        r_anomalies = dict(
+            zip(["New", "Stockouts", "Old"], list(ro.r("r_res$anomalies")))
+        )
 
         py_r = aid_cat(xreg)
         assert int(py_r.anomalies["New"]) == int(r_anomalies["New"])
@@ -282,3 +268,38 @@ class TestAidCatVsR:
         r_categories = np.array(ro.r("as.character(r_res$categories)"))
         for py_cat, r_cat in zip(py_r.categories, r_categories):
             assert str(py_cat) == str(r_cat)
+
+    def test_named_list_input(self):
+        ro.r(
+            "set.seed(2); "
+            "sl <- list(p=rpois(70, 1), q=rnorm(90, 10, 2), r=rpois(80, 4)); "
+            "r_res <- aidCat(sl); r_unnamed <- aidCat(unname(sl))"
+        )
+        series = {k: np.array(ro.r(f"sl${k}")) for k in ("p", "q", "r")}
+        r_categories = list(ro.r("as.character(r_res$categories)"))
+        assert list(ro.r("names(r_res$categories)")) == ["p", "q", "r"]
+        assert ro.r("names(r_unnamed$categories)") is ro.NULL
+
+        py_named = aid_cat(series)
+        assert list(py_named.categories.index) == ["p", "q", "r"]
+        assert [str(c) for c in py_named.categories] == r_categories
+
+        py_unnamed = aid_cat(list(series.values()))
+        assert list(py_unnamed.categories.index) == [0, 1, 2]
+        assert [str(c) for c in py_unnamed.categories] == r_categories
+
+
+class TestAidStockoutMuVsR:
+    """The stockout model's mu is padded with 100 for new/obsolete products."""
+
+    def test_new_and_obsolete_padding(self):
+        ro.r(
+            "set.seed(41); invisible(rpois(120, 0.7)); "
+            "y <- c(rep(0,15), rpois(80,3), rep(0,25)); r_res <- aid(y)"
+        )
+        y = np.array(ro.r("y"))
+        r_mu = np.array(ro.r("r_res$models$stockout$mu"))
+        py_r = aid(y)
+        assert py_r.new and py_r.obsolete
+        assert len(py_r.models["stockout"].mu_) == len(r_mu) == 77
+        assert_allclose(py_r.models["stockout"].mu_, r_mu, rtol=1e-6)

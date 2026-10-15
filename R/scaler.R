@@ -102,6 +102,20 @@ sm.alm <- function(object, formula=NULL, data=NULL,
 # ADAM monograph, while their densities take the standard deviation, sqrt(scale).
 scaleNormalBased <- c("dnorm","dlnorm","dbcnorm","dlogitnorm","dfnorm","drectnorm");
 
+# The distributions additive in the space of the lags of the dynamic models of alm(): the errors
+# after the latent sizes of an occurrence model have the variances of the Kalman filter
+# (almLatentCpp()), and the scale of an error is scale*variance^(1/2), ^(1/4) for the S ones.
+ariFilterDistributions <- c("dnorm","dlaplace","ds","dgnorm","dlogis","dalaplace",
+                            "dlnorm","dllaplace","dls","dlgnorm","dbcnorm");
+
+# The variances of those errors relative to the scale, which depend on the AR polynomial and on
+# the observed sizes only
+almLatentVariance <- function(polynomial, observed){
+    obs <- length(observed);
+    return(almLatentCpp(numeric(obs), polynomial, numeric(obs), observed,
+                        numeric(length(polynomial)), numeric(0), TRUE)$variance);
+}
+
 scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu, y, residuals,
                    parameters=NULL, occurrence=NULL, other=NULL, recursive=FALSE, ...){
     # The function estimates the scale model
@@ -113,6 +127,10 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
 
     obsInsample <- length(y);
 
+    # The ARI polynomial of a dynamic location model
+    polynomial <- other$polynomial;
+    # The parameters of the distribution of the location model, which the scale model keeps
+    otherList <- other;
     # Extract the other value
     if(!is.null(other)){
         other <- switch(distribution,
@@ -143,9 +161,10 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
     else{
         B <- ellipsis$B;
     }
-    # Parameters for the nloptr from the ellipsis
+    # Parameters for the nloptr from the ellipsis. The likelihood of the scale is flat in its
+    # parameters, so the optimiser needs the accurate estimation to reach its maximum
     if(is.null(ellipsis$xtol_rel)){
-        xtol_rel <- 1E-6;
+        xtol_rel <- 1E-8;
     }
     else{
         xtol_rel <- ellipsis$xtol_rel;
@@ -155,7 +174,7 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
         # algorithm <- "NLOPT_LN_BOBYQA";
         # }
         # else{
-        algorithm <- "NLOPT_LN_SBPLX";
+        algorithm <- "NLOPT_LN_NELDERMEAD";
         # }
     }
     else{
@@ -174,7 +193,7 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
         xtol_abs <- ellipsis$xtol_abs;
     }
     if(is.null(ellipsis$ftol_rel)){
-        ftol_rel <- 1E-6;
+        ftol_rel <- 1E-10;
     }
     else{
         ftol_rel <- ellipsis$ftol_rel;
@@ -210,12 +229,10 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
     }
 
     occurrenceModel <- FALSE;
-    obsZero <- 0;
     otU <- rep(TRUE,obsInsample);
     if(is.occurrence(occurrence)){
         occurrenceModel[] <- TRUE;
         otU[] <- actuals(occurrence)!=0;
-        obsZero[] <- sum(!otU);
     }
     # Deal with subset
     if(is.null(subset)){
@@ -230,6 +247,14 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
 
     if(any(residuals[otU]==0)){
         otU <- otU & residuals[subset]!=0;
+    }
+
+    # The errors after the latent sizes of a dynamic occurrence model have the variances of the
+    # Kalman filter, as in alm(): the variance, or its root (the fourth one for the S), of the scale
+    scaleFilter <- 1;
+    if(occurrenceModel && recursive && any(distribution==ariFilterDistributions)){
+        scaleFilter <- almLatentVariance(polynomial, actuals(occurrence)!=0)[otU]^
+            switch(distribution, "dnorm"=,"dlnorm"=,"dbcnorm"=1, "ds"=,"dls"=1/4, 1/2);
     }
 
     # Prepare the data
@@ -283,9 +308,8 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
 
     #### The function estimates parameters of scale model ####
     CFScale <- function(B){
-        scaleAll <- fitterScale(B, distribution);
         # The densities are evaluated on the non-zeroes, with their scales
-        scale <- scaleAll[otU];
+        scale <- fitterScale(B, distribution)[otU] * scaleFilter;
         CFValue <- -sum(switch(distribution,
                                "dnorm" = dnorm(y[otU], mean=mu[otU], sd=sqrt(scale), log=TRUE),
                                "dlaplace" = dlaplace(y[otU], mu=mu[otU], scale=scale, log=TRUE),
@@ -320,16 +344,6 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
                                # "plogis" = c(plogis(mu[otU][ot], location=0, scale=1, log.p=TRUE),
                                #              plogis(mu[otU][!ot], location=0, scale=1, lower.tail=FALSE, log.p=TRUE))
         ));
-
-        # The differential entropy of the zeros, when the location model is recursive, as in alm()
-        if(occurrenceModel && recursive){
-            CFValue[] <- CFValue + sum(entropyZero(distribution,
-                                                   switch(distribution,
-                                                          "dnorm"=,"dlnorm"=,"dbcnorm"=,"dlogitnorm"=,
-                                                          "dfnorm"=,"drectnorm"=sqrt(scaleAll[!otU]),
-                                                          scaleAll[!otU]),
-                                                   mu[!otU], other));
-        }
         return(CFValue);
     }
 
@@ -358,6 +372,10 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
             B <- .lm.fit(matrixXregScale[otU,,drop=FALSE],log(abs(residuals[otU])))$coefficients;
         }
     }
+    # The provided parameters are used as they are
+    if(!is.null(parameters)){
+        B <- parameters;
+    }
     names(B) <- variablesNames;
 
     BLower <- rep(-Inf,nVariables);
@@ -365,22 +383,27 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
 
     #### Define what to do with the maxeval ####
     if(is.null(ellipsis$maxeval)){
-        maxeval <- length(B) * 40;
+        maxeval <- length(B) * 200;
     }
     else{
         maxeval <- ellipsis$maxeval;
     }
 
-    res <- nloptr(B, CFScale,
-                  opts=list(algorithm=algorithm, xtol_rel=xtol_rel, maxeval=maxeval, print_level=print_level,
-                            maxtime=maxtime, xtol_abs=xtol_abs, ftol_rel=ftol_rel, ftol_abs=ftol_abs),
-                  lb=BLower, ub=BUpper);
+    if(is.null(parameters)){
+        res <- nloptr(B, CFScale,
+                      opts=list(algorithm=algorithm, xtol_rel=xtol_rel, maxeval=maxeval, print_level=print_level,
+                                maxtime=maxtime, xtol_abs=xtol_abs, ftol_rel=ftol_rel, ftol_abs=ftol_abs),
+                      lb=BLower, ub=BUpper);
 
-    B[] <- res$solution;
-    CFValue <- res$objective;
+        B[] <- res$solution;
+        CFValue <- res$objective;
 
-    if(print_level_hidden>0){
-        print(res);
+        if(print_level_hidden>0){
+            print(res);
+        }
+    }
+    else{
+        CFValue <- CFScale(B);
     }
 
     scale <- fitterScale(B, distribution);
@@ -445,8 +468,8 @@ scaler <- function(formula, data, subset=NULL, na.action=NULL, distribution, mu,
     finalModel <- structure(list(formula=formula, coefficients=B, fitted=scale, residuals=errors,
                                  df.residual=obsInsample-nVariables, df=nVariables, call=cl, rank=nVariables,
                                  data=matrixXregScale, terms=dataTerms, logLik=-CFValue,
-                                 occurrence=occurrence, subset=subset, other=ellipsis, B=B, FI=FI,
-                                 distribution=distribution, other=other, loss="likelihood",
+                                 occurrence=occurrence, subset=subset, B=B, FI=FI,
+                                 distribution=distribution, other=otherList, loss="likelihood",
                                  timeElapsed=Sys.time()-startTime),
                             class=c("scale","alm","greybox"));
     return(finalModel);
@@ -496,11 +519,18 @@ implant.alm <- function(location, scale, ...){
         stop("sm is not a scale model. Cannot procede.",
              call.=FALSE)
     }
-    nParam <- nparam(location) + nparam(scale);
+    # The parameters of the scale model replace the scale of the location model (or its previous
+    # scale model), as in alm(), without those of the occurrence model, which nparam() adds
+    nParam <- location$df + scale$df -
+        ifelse(is.scale(location$scale), location$scale$df,
+               any(location$loss==c("likelihood","ROLE")) *
+                   all(location$distribution!=c("dexp","dpois","dgeom","dbinom","plogis","pnorm")));
     obsInsample <- nobs(location);
 
     location$scale <- scale;
-    location$logLik <- logLik(scale);
+    # The scale model's likelihood is that of the non-zeroes: add the occurrence part, as alm()
+    location$logLik <- as.numeric(logLik(scale)) +
+        ifelse(is.occurrence(location$occurrence), location$occurrence$logLik, 0);
     location$df.residual <- obsInsample-nParam;
     location$df <- nParam;
     location$rank <- nParam;

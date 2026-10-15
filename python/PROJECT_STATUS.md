@@ -2,339 +2,170 @@
 
 ## Overview
 
-Python port of the R `greybox` package — a toolbox for regression model building and forecasting. The Python implementation provides scikit-learn-style API parity with the R package for core regression and forecasting tasks.
+Python port of the R `greybox` package: regression model building and forecasting
+with the Augmented Linear Model (ALM), model selection and combination, the
+distributions of greybox, accuracy measures, association measures, variable
+processing and diagnostics.
+
+The port is numerical, not only functional: on the same data, Python returns what
+R returns. The coefficients, likelihoods, information criteria, covariance matrices
+and predictions of `ALM` match R's to the last bit on the parity tests, because
+Python computes them as R does:
+
+- the starting values with R's `.lm.fit()` (LINPACK's dqrdc2 and dqrsl, the same
+  BLAS calls, `fitters._lm_fit`), also used by the scale model, `stepwise()`,
+  `pcor()`, `mcor()`, `association()`, `rmcb()` and `stick()`;
+- the product of the regressors in R's column-major order, `exp()` of the log-link
+  distributions through libm, and the sums of the losses in R's order and long
+  double accumulator;
+- the densities through R's nmath code, in C++ (`src/greybox/_native/`, built with
+  `-ffp-contract=off`): dgamma, dlogis, dbeta, the noncentral t and chi-squared
+  (pnt, qnt, dnt, pnchisq, qnchisq, dnchisq with toms708), and greybox's own
+  Laplace, S and Generalised Normal;
+- the latent sizes of the ARI models with an occurrence model through a C++ header
+  shared with R (`src/headers/almLatent.h`).
+
+The R package and the Python port live in the same repository. A change to the
+behaviour of one is made in the other in the same commit.
 
 ## Test Status
 
-- **Total Tests**: 348
-- **Failing**: 0
-- **xfail**: 0
-- **Runtime**: ~13 seconds
-- **Coverage**: Formula parsing (with custom functions), ALM fitting (all 26 distributions), prediction intervals, model selection, accuracy measures, variable processing, R-vs-Python comparison tests
+- **Total tests**: 2,900+ in 39 files, 15 of them comparing Python with R through
+  rpy2 (`tests/*_compare.py`).
+- **Failing**: 0. **xfail**: 0.
+- **Runtime**: about 6 minutes for the whole suite with R available; the
+  comparison tests are skipped without rpy2 and R.
+- The R-comparison tests need greybox from this branch in R (install it into a
+  library and point `R_LIBS` to it).
 
-## Main Features Implemented
+## Main Features
 
-1. **Regression Models**
-   - `ALM` class with 26 distributions and 7 loss functions (likelihood, MSE, MAE, HAM, LASSO, RIDGE, ROLE)
-   - `dbeta` two-part model (2 × n_features parameters: shape1 + shape2)
+1. **Regression models**
+   - `ALM`: 27 distributions and the losses likelihood, MSE, MAE, HAM, LASSO,
+     RIDGE, ROLE and custom functions; ARI orders (`orders`), occurrence models
+     (`occurrence="plogis"` / `"pnorm"` or a fitted `ALM`), the scale model
+     (`scale_formula`).
+   - Methods: `predict()` (confidence and prediction intervals, `side`, several
+     levels, the occurrence as R's `$occurrence`), `summary()`, `confint()`,
+     `vcov()` (analytical, Hessian or bootstrap), `plot()` (R's 16 diagnostic
+     plots), `hatvalues()`, `rstandard()`, `rstudent()`, `extract_scale()`,
+     `extract_sigma()`, `multipliers()`, and the attributes of R's `alm` object.
+   - `sm()`, `implant()`, `ScaleModel`: the scale model.
+   - `coefbootstrap()`: R's "cr" and "dsr" bootstraps.
+2. **Selection and combination**: `stepwise()`, `CALM()` (R's `calm()` /
+   `lmCombine()`).
+3. **Distributions**: d/p/q/r functions of greybox (alaplace, bcnorm, fnorm,
+   gnorm, laplace, lgnorm, llaplace, logitnorm, ls, rectnorm, s) and wrappers of
+   R's base distributions with R's argument names (norm, lnorm, logis, t, chisq,
+   gamma, exp, invgauss, pois, nbinom, binom, geom, beta), with `lower_tail`,
+   `log_p` and `ncp` where R has them.
+4. **Measures**: the point measures of R (`mae`, `mse`, `rmse`, `mpe`, `mape`,
+   `mase`, `rmsse`, `me`, `mre`, `gmrae`, `same`, the relative and scaled ones,
+   `measures()`), the interval and quantile measures (`mis`, `smis`, `rmis`,
+   `pinball`, `spis`, `sce`), and the half-moments (`hm`, `ham`, `asymmetry`,
+   `extremity`, `cextremity`).
+5. **Association**: `association()` / `assoc()`, `pcor()`, `mcor()`, `cramer()`,
+   `determination()` / `determ()`.
+6. **Variable processing**: `formula()` (R's terms and model.matrix: factors with
+   the training levels at prediction, interactions, `^` crossing, `%in%`,
+   `offset()`, transformations and user functions, `I()`, `trend`),
+   `xreg_expander()`, `xreg_multiplier()`, `xreg_transformer()`,
+   `temporal_dummy()`, `B()`.
+7. **Diagnostics and other tools**: `outlier_dummy()`, `point_lik()`, `aid()`,
+   `aid_cat()`, `rmcb()`, `stick()`, `rolling_origin()`, `lowess()`, `supsmu()`.
+8. **Plots**: `ALM.plot()`, `PredictionResult.plot()`, `graphmaker()`,
+   `tableplot()`, `spread()`.
 
-2. **Distributions (26)**
-   - Normal family: `dnorm`, `dfnorm`, `drectnorm`, `dbcnorm`, `dgnorm`, `dlgnorm`, `dlnorm`, `dlogitnorm`
-   - Laplace family: `dlaplace`, `dalaplace`, `dllaplace`
-   - Logistic: `dlogis`
-   - Student-t: `dt`
-   - S-distribution: `ds`
-   - Gamma family: `dgamma`, `dexp`, `dchisq`, `dinvgauss`
-   - Count: `dpois`, `dnbinom`, `dbinom`, `dgeom`
-   - Other: `dbeta`, `dls`
-   - Cumulative: `pnorm`, `plogis`
+## R vs Python
 
-3. **Model Selection**
-   - `stepwise()` — stepwise regression using partial correlations (matching R implementation)
-   - `CALM()` — model combination via IC weights
+| R | Python | Status |
+|---|---|---|
+| `alm()` | `ALM` | Implemented |
+| `sm()`, `implant()` | `sm()`, `implant()`, `ScaleModel` | Implemented |
+| `stepwise()` | `stepwise()` | Implemented |
+| `calm()`, `lmCombine()` | `CALM()` | Implemented |
+| `predict()`, `plot()` of alm and of its predictions | `ALM.predict()`, `ALM.plot()`, `PredictionResult.plot()` | Implemented |
+| `coefbootstrap()` | `coefbootstrap()` | Implemented |
+| `hatvalues()`, `rstandard()`, `rstudent()` | `ALM` methods | Implemented |
+| `outlierdummy()`, `pointLik()` | `outlier_dummy()`, `point_lik()` | Implemented |
+| `extractScale()`, `extractSigma()`, `nparam()`, `actuals()`, `AICc()`, `BICc()` | `ALM` methods and attributes | Implemented |
+| `association()`, `assoc()`, `pcor()`, `mcor()`, `cramer()`, `determination()`, `determ()` | same names | Implemented |
+| `aid()`, `aidCat()`, `rmcb()`, `stick()`, `ro()` | `aid()`, `aid_cat()`, `rmcb()`, `stick()`, `rolling_origin()` | Implemented |
+| `xregExpander()`, `xregMultiplier()`, `xregTransformer()`, `temporaldummy()`, `B()`, `multipliers()` | `xreg_expander()`, `xreg_multiplier()`, `xreg_transformer()`, `temporal_dummy()`, `B()`, `multipliers()` | Implemented |
+| `graphmaker()`, `tableplot()`, `spread()` | same names | Implemented |
+| The measures (`MAE()` ... `sMIS()`, `pinball()`, `hm()`, `ham()`, `measures()`) | lower-case names | Implemented |
+| The distributions of greybox | same names | Implemented |
+| `lmDynamic()` | - | Not ported |
+| `forecast()` of alm, `accuracy()` | - | Not ported (`predict()` and `measures()` cover them) |
+| `pAIC()`, `pAICc()`, `pBIC()`, `pBICc()` | - | Not ported |
+| `dtplnorm()` family | - | Not ported |
+| `detectdst()`, `detectleap()`, `dsrboot()` | - | Not ported (`dsrboot()` is private, inside `coefbootstrap(method="dsr")`) |
+| `nvariate()`, `errorType()`, `extractAIC()`, `cooks.distance()`, `is.*()`, `xtable()` | - | Not ported (Python uses `isinstance`; Cook's distance is plot 12 of `ALM.plot()`) |
 
-4. **Variable Processing**
-   - `xreg_expander` — lag/lead expansion
-   - `xreg_multiplier` — cross-product generation
-   - `xreg_transformer` — mathematical transformations (log, exp, inv, sqrt, square)
-   - `temporal_dummy` — temporal dummy variables
+## Known differences from R
 
-5. **Forecasting & Prediction**
-   - Point forecasts with confidence/prediction intervals (t-distribution based)
-   - Rolling origin evaluation for time series cross-validation
-
-6. **Formula System**
-   - R-style formula parsing (`y ~ x1 + x2`)
-   - Built-in transformations: log, log10, log2, sqrt, exp, abs, sin, cos, tan
-   - Custom functions: Use any user-defined or imported function in formulas
-   - I() wrapper for protected expressions
-   - Polynomial terms (x^2, x^3)
-
-7. **Accuracy Measures**
-   - MAE, MSE, RMSE, MPE, MAPE, MASE, accuracy
-
-8. **Association & Correlation**
-   - `association` — measures of association for different variable types
-   - `pcor` — partial correlations
-   - `mcor` — multiple correlation
-
-9. **Model Methods**
-   - `predict()`, `summary()`, `confint()`
-   - Properties: `coef`, `vcov`, `nobs`, `nparam`, `residuals`, `fitted`, `actuals`, `sigma`, `log_lik`, `formula`
-   - `determination` — R-squared and adjusted R-squared
-   - `outlier_dummy` — outlier detection and dummy variable creation
-   - `pointLik` — point likelihood values
+- `hatvalues()` of dbeta fails in both languages (two linear predictors),
+  openforecast-org/greybox#79. Plot 12 is not available for dbeta.
+- The noncentral Beta: R's own `pbeta(..., ncp)` is accurate to about 1e-9
+  absolute; Python takes the Poisson mixture of the central `pbeta`, which is
+  exact.
+- `qt()` with a large `ncp` hangs in R for some lower-tail probabilities below
+  1e-100 (its bisection stops at a root of exactly 0); the port of R's `qnt`
+  hangs the same way.
+- The levels of character columns follow R's `factor()` in the locale named by
+  `LC_ALL` / `LC_COLLATE` / `LANG`: code points in the C locale, the Unicode
+  collation otherwise, implemented for Latin text, digits and ASCII punctuation;
+  other scripts follow the Latin letters in code-point order, as ICU's root order
+  does for the common ones.
+- On Windows built with MSVC, `long double` is double precision, so the last bits
+  of the long double sums and of R's nmath code can differ from R's there.
 
 ## Project Structure
 
 ```
 python/src/greybox/
-├── __init__.py
-├── alm.py                   # Main ALM model class
-├── formula.py               # R-style formula parser
-├── fitters.py               # Internal fitting machinery
-├── cost_function.py         # Loss functions
-├── predict.py               # Prediction utilities
-├── transforms.py            # Data transformations
-├── diagnostics.py           # outlier_dummy
-├── measures.py              # Accuracy metrics, pcor, mcor, association
-├── selection.py             # stepwise, CALM
-├── xreg.py                  # Variable processing
-├── pointlik.py              # Point likelihood functions
-├── rolling.py               # Rolling origin evaluation
-│
-├── distributions/
-│   ├── __init__.py
-│   ├── helper.py
-│   ├── alaplace.py          # Asymmetric Laplace
-│   ├── bcnorm.py            # Box-Cox Normal
-│   ├── beta.py
-│   ├── binom.py
-│   ├── chi2.py
-│   ├── exp.py
-│   ├── fnorm.py             # Folded Normal
-│   ├── gamma.py
-│   ├── geom.py
-│   ├── gnorm.py             # Generalised Normal
-│   ├── invgauss.py          # Inverse Gaussian
-│   ├── laplace.py
-│   ├── lgnorm.py            # Log-Generalised Normal
-│   ├── llaplace.py          # Log-Laplace
-│   ├── lnorm.py             # Log-Normal
-│   ├── logis.py
-│   ├── logitnorm.py         # Logit-Normal
-│   ├── ls.py                # Location-Scale
-│   ├── nbinom.py            # Negative Binomial
-│   ├── pois.py
-│   ├── rectnorm.py          # Rectified Normal
-│   ├── s.py                 # S-distribution
-│   └── t.py
-│
-└── methods/
-    ├── __init__.py
-    └── summary.py           # SummaryResult class
+├── alm.py                # ALM, PredictionResult
+├── sm.py                 # sm(), implant(), ScaleModel
+├── fitters.py            # fitter, scaler, _lm_fit (R's .lm.fit), latent sizes
+├── cost_function.py      # the losses
+├── predict.py            # predict() from a data frame
+├── formula.py            # formula(), expand_formula()
+├── selection.py          # stepwise(), CALM()
+├── bootstrap.py          # coefbootstrap(), BootstrapResult
+├── association.py        # association(), pcor(), mcor(), cramer(), determination()
+├── point_measures.py     # point measures, measures()
+├── quantile_measures.py  # pinball(), interval measures
+├── hm.py                 # half-moment measures
+├── diagnostics.py        # outlier_dummy()
+├── pointlik.py           # point_lik()
+├── plots.py              # graphmaker(), tableplot(), spread(), the ALM plots
+├── xreg.py               # xreg_expander() and the variable processing
+├── aid.py, rmcb.py, stick.py, rolling.py, smoothers.py, transforms.py, data.py
+├── methods/summary.py    # SummaryResult
+├── distributions/        # the d/p/q/r functions
+└── _native/              # C++ (pybind11): densities and nmath, dgamma, lowess,
+                          # supsmu, the latent sizes (with ../../src/headers)
 ```
 
-## R vs Python Comparison
+## Usage
 
-### Core Model Fitting
-
-| R function | Python equivalent | Status |
-|---|---|---|
-| `alm()` | `ALM` class | Implemented |
-| `sm()` (scale model) | — | Not implemented |
-| `stepwise()` | `stepwise()` | Implemented (matches R algorithm) |
-| `lmCombine()` | `CALM()` | Implemented |
-| `lmDynamic()` | — | Not implemented |
-
-### Distribution Families (d/p/q/r functions)
-
-| R distribution | Python module | Status |
-|---|---|---|
-| `dnorm` / `pnorm` / `qnorm` / `rnorm` | `distributions/` (scipy) | Implemented |
-| `dlogis` / `plogis` / `qlogis` / `rlogis` | `distributions/logis.py` | Implemented |
-| `dlaplace` / `plaplace` / `qlaplace` / `rlaplace` | `distributions/laplace.py` | Implemented |
-| `dalaplace` / `palaplace` / `qalaplace` / `ralaplace` | `distributions/alaplace.py` | Implemented |
-| `dllaplace` / `pllaplace` / `qllaplace` / `rllaplace` | `distributions/llaplace.py` | Implemented |
-| `ds` / `ps` / `qs` / `rs` | `distributions/s.py` | Implemented |
-| `dfnorm` / `pfnorm` / `qfnorm` / `rfnorm` | `distributions/fnorm.py` | Implemented |
-| `drectnorm` / `prectnorm` / `qrectnorm` / `rrectnorm` | `distributions/rectnorm.py` | Implemented |
-| `dbcnorm` / `pbcnorm` / `qbcnorm` / `rbcnorm` | `distributions/bcnorm.py` | Implemented |
-| `dgnorm` / `pgnorm` / `qgnorm` / `rgnorm` | `distributions/gnorm.py` | Implemented |
-| `dlgnorm` / `plgnorm` / `qlgnorm` / `rlgnorm` | `distributions/lgnorm.py` | Implemented |
-| `dlnorm` / `plnorm` / `qlnorm` / `rlnorm` | `distributions/lnorm.py` | Implemented |
-| `dlogitnorm` / `plogitnorm` / `qlogitnorm` / `rlogitnorm` | `distributions/logitnorm.py` | Implemented |
-| `dt` / `pt` / `qt` / `rt` | `distributions/t.py` | Implemented |
-| `dgamma` / `pgamma` / `qgamma` / `rgamma` | `distributions/gamma.py` | Implemented |
-| `dexp` / `pexp` / `qexp` / `rexp` | `distributions/exp.py` | Implemented |
-| `dchisq` / `pchisq` / `qchisq` / `rchisq` | `distributions/chi2.py` | Implemented |
-| `dinvgauss` / `pinvgauss` / `qinvgauss` / `rinvgauss` | `distributions/invgauss.py` | Implemented |
-| `dpois` / `ppois` / `qpois` / `rpois` | `distributions/pois.py` | Implemented |
-| `dnbinom` / `pnbinom` / `qnbinom` / `rnbinom` | `distributions/nbinom.py` | Implemented |
-| `dbinom` / `pbinom` / `qbinom` / `rbinom` | `distributions/binom.py` | Implemented |
-| `dgeom` / `pgeom` / `qgeom` / `rgeom` | `distributions/geom.py` | Implemented |
-| `dbeta` / `pbeta` / `qbeta` / `rbeta` | `distributions/beta.py` | Implemented |
-| `dls` / `pls` / `qls` / `rls` | `distributions/ls.py` | Implemented |
-| `dtplnorm` / `ptplnorm` / `qtplnorm` / `rtplnorm` | — | Not implemented |
-
-### Prediction & Forecasting
-
-| R function | Python equivalent | Status |
-|---|---|---|
-| `predict.alm()` | `ALM.predict()` | Implemented |
-| `forecast.alm()` | — | Not implemented |
-| `ro()` (rolling origin) | `rolling.ro()` | Implemented |
-
-### Accuracy Measures
-
-| R function | Python equivalent | Status |
-|---|---|---|
-| `MAE()` | `mae()` | Implemented |
-| `MSE()` | `mse()` | Implemented |
-| `RMSE()` | `rmse()` | Implemented |
-| `MPE()` | `mpe()` | Implemented |
-| `MAPE()` | `mape()` | Implemented |
-| `MASE()` | `mase()` | Implemented |
-| `accuracy()` | `accuracy()` | Implemented |
-| `ME()` | — | Not implemented |
-| `MRE()` | — | Not implemented |
-| `RMSSE()` | — | Not implemented |
-| `MIS()` | — | Not implemented |
-| `rMAE()` / `rRMSE()` / `rAME()` / `rMIS()` | — | Not implemented |
-| `sMSE()` / `sPIS()` / `sCE()` / `sMIS()` | — | Not implemented |
-| `GMRAE()` / `SAME()` | — | Not implemented |
-| `pinball()` | — | Not implemented |
-| `hm()` | — | Not implemented |
-| `ham()` | — | Not implemented |
-| `asymmetry()` / `extremity()` / `cextremity()` | — | Not implemented |
-
-### Information Criteria
-
-| R function | Python equivalent | Status |
-|---|---|---|
-| `AICc()` | Via `ALM` (built-in) | Implemented |
-| `BICc()` | Via `ALM` (built-in) | Implemented |
-| `pointLik()` | `pointlik.py` | Implemented |
-| `pAIC()` / `pAICc()` | — | Not implemented |
-| `pBIC()` / `pBICc()` | — | Not implemented |
-
-### Model Methods
-
-| R function | Python equivalent | Status |
-|---|---|---|
-| `coef()` | `ALM.coef` | Implemented |
-| `confint()` | `ALM.confint()` | Implemented |
-| `vcov()` | `ALM.vcov` | Implemented |
-| `sigma()` | `ALM.sigma` | Implemented |
-| `logLik()` | `ALM.log_lik` | Implemented |
-| `nobs()` | `ALM.nobs` | Implemented |
-| `nparam()` | `ALM.nparam` | Implemented |
-| `summary()` | `ALM.summary()` | Implemented |
-| `determination()` | `ALM.determination()` | Implemented |
-| `outlierdummy()` | `outlier_dummy()` | Implemented |
-| `coefbootstrap()` | — | Not implemented |
-| `hatvalues()` | — | Not implemented |
-| `rstandard()` | — | Not implemented |
-| `rstudent()` | — | Not implemented |
-| `cooks.distance()` | — | Not implemented |
-| `extractAIC()` | — | Not implemented |
-
-### Association & Correlation
-
-| R function | Python equivalent | Status |
-|---|---|---|
-| `association()` | `association()` | Implemented |
-| `mcor()` | `mcor()` | Implemented |
-| `pcor()` | `pcor()` | Implemented |
-| `cramer()` | — | Not implemented |
-
-### Variable Engineering
-
-| R function | Python equivalent | Status |
-|---|---|---|
-| `xregExpander()` | `xreg_expander()` | Implemented |
-| `xregMultiplier()` | `xreg_multiplier()` | Implemented |
-| `xregTransformer()` | `xreg_transformer()` | Implemented |
-| `temporaldummy()` | `temporal_dummy()` | Implemented |
-
-### Plotting
-
-| R function | Python equivalent | Status |
-|---|---|---|
-| `plot.greybox()` | — | Not implemented |
-| `graphmaker()` | — | Not implemented |
-| `tableplot()` | — | Not implemented |
-| `spread()` | — | Not implemented |
-
-### Other R Functions Not Implemented
-
-| R function | Description |
-|---|---|
-| `sm()` / `implant()` | Scale model and its implant method |
-| `lmDynamic()` | Dynamic linear model with AR components |
-| `aid()` / `aidCat()` | Automatic Identification of Distributions |
-| `rmcb()` / `dsrboot()` | Regression model comparison bootstrap |
-| `detectdst()` / `detectleap()` | DST / leap year detection |
-| `dtplnorm()` family | Three-Parameter Log-Normal distribution |
-
-### Summary Counts
-
-| Category | Implemented | Not implemented |
-|---|---|---|
-| Core model fitting | 3 | 2 |
-| Distribution families (d/p/q/r) | 24 | 1 |
-| Prediction & forecasting | 3 | 0 |
-| Accuracy measures | 7 | ~19 |
-| Information criteria | 3 | 4 |
-| Model methods | 10 | 6 |
-| Association & correlation | 3 | 1 |
-| Variable engineering | 4 | 0 |
-| Plotting | 0 | 4 |
-| Other utilities | 0 | ~8 |
-| **Total** | **~57** | **~45** |
-
-## Usage Examples
-
-### Basic ALM Model
 ```python
-from greybox.formula import formula
-from greybox.alm import ALM
+from greybox import ALM, formula, mtcars
 
-data = {'y': [1, 2, 3, 4, 5], 'x1': [1, 2, 3, 4, 5], 'x2': [2, 4, 6, 8, 10]}
-y, X = formula("y ~ x1 + x2", data)
+y, X = formula("mpg ~ wt + hp", mtcars)
+model = ALM(distribution="dlaplace").fit(X, y)
+print(model.summary())
 
-model = ALM(distribution="dnorm", loss="likelihood")
-model.fit(X, y)
-
-# Predictions with confidence intervals
-result = model.predict(X, interval="confidence", level=0.95)
-```
-
-### Stepwise Regression
-```python
-from greybox.selection import stepwise
-
-data = {'y': [1, 2, 3, 4, 5], 'x1': [1, 2, 3, 4, 5],
-        'x2': [2, 4, 6, 8, 10], 'x3': [3, 6, 9, 12, 15]}
-model = stepwise(data, ic="AICc")
-
-# Access IC values and timing
-print(model.ic_values)      # List of IC values at each step
-print(model.time_elapsed)  # Time taken for selection
-```
-
-### Formula with Custom Functions
-```python
-from greybox.formula import formula
-import numpy as np
-from scipy.special import erfc
-
-# User-defined function
-def my_transform(x):
-    return x * 2
-
-# Or use imported functions directly
-data = {'y': [1, 2, 3], 'x': [1, 2, 3]}
-y, X = formula("y ~ my_transform(x)", data)  # Custom function
-y, X = formula("y ~ erfc(x)", data)           # Imported function
-y, X = formula("my_transform(y) ~ x", data)  # Custom function on LHS
-```
-
-### Accuracy Measures
-```python
-from greybox.measures import accuracy, mae, mape
-
-actual = [1, 2, 3, 4, 5]
-forecast = [1.1, 2.0, 3.2, 3.9, 5.1]
-
-measures = accuracy(actual, forecast)
+prediction = model.predict(X.iloc[:5], interval="prediction", level=[0.8, 0.95])
+prediction.plot()
+model.plot(which=(1, 2, 4, 6))
 ```
 
 ## References
 
-- Original R package: https://github.com/openforecast-org/greybox
-- R greybox on CRAN: https://cran.r-project.org/web/packages/greybox/
+- R package: https://github.com/openforecast-org/greybox
+- CRAN: https://cran.r-project.org/package=greybox
 
 ---
 
-*Last Updated: February 2026*
+*Last Updated: October 2026*

@@ -88,7 +88,7 @@ cramer <- function(x, y, use=c("na.or.complete","complete.obs","everything","all
             x <- x[!obsNAx & !obsNAy];
             y <- y[!obsNAx & !obsNAy];
             if(length(x)<2){
-                if(use=="complete.obs"){
+                if(use=="na.or.complete"){
                     return(returner(1));
                 }
                 else{

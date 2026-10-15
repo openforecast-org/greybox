@@ -4,18 +4,20 @@ This module provides functions for stepwise regression, model combination,
 and forecasting accuracy measures.
 """
 
-import itertools
 import time
+import warnings
 from typing import Any, ClassVar, Literal, TypedDict
 
 import numpy as np
+import pandas as pd
 from pandas import DataFrame
 from scipy import stats
 
 from .alm import ALM, PredictionResult
+from .fitters import _lm_fit
 from .formula import formula as formula_func
 from .methods.summary import DISTRIBUTION_NAMES
-from .transforms import bc_transform_inv
+from .transforms import bc_transform, bc_transform_inv, mean_fast
 
 
 class ModelInfo(TypedDict):
@@ -69,8 +71,16 @@ class CALMSummary:
     def __str__(self) -> str:
         dist_name = DISTRIBUTION_NAMES.get(self.distribution, self.distribution)
 
-        level_low = (1 - 0.95) / 2 * 100
-        level_high = (1 + 0.95) / 2 * 100
+        # The level of the intervals, from the Student quantile they were built with
+        se = np.asarray(self.se, dtype=float)
+        usable = np.flatnonzero(se > 0)
+        level = np.nan
+        if len(usable) > 0:
+            j = usable[0]
+            quantile = (self.upper_ci[j] - self.coefficients[j]) / se[j]
+            level = 2 * stats.t.cdf(quantile, self.df_residual) - 1
+        level_low = (1 - level) / 2 * 100
+        level_high = (1 + level) / 2 * 100
         col_lo = f"Lower {level_low:.1f}%"
         col_hi = f"Upper {level_high:.1f}%"
 
@@ -125,6 +135,8 @@ class CALMResult:
         self._actuals = kwargs.pop("actuals", None)
         self._X_train = kwargs.pop("X_train", None)
         self._formula = kwargs.pop("formula_str", None)
+        # The levels of the factors of the data, for the new data, as R's xlevels
+        self._xlevels: dict[str, list] = {}
         self._vcov_matrix = kwargs.pop("vcov", None)
         self._fitted = kwargs.pop("fitted", None)
         self._residuals = kwargs.pop("residuals", None)
@@ -147,6 +159,8 @@ class CALMResult:
         self._combination = kwargs.pop("combination", None)
         self._combination_col_names = kwargs.pop("combination_col_names", None)
         self._combination_row_names = kwargs.pop("combination_row_names", None)
+        # The combined extra parameter of the distribution, as R's $other
+        self.other_ = kwargs.pop("other_", None)
         for key, val in kwargs.items():
             setattr(self, key, val)
 
@@ -270,10 +284,11 @@ class CALMResult:
 
     @property
     def bicc(self) -> float:
+        k = self.nparam
         n = self._n_obs
-        if n is None or n == 0:
-            return 0.0
-        return self.bic + self.nparam * np.log(n) ** 2 / n
+        if n is None or self.log_lik is None or n - k - 1 <= 0:
+            return np.inf
+        return -2 * self.log_lik + k * np.log(n) * n / (n - k - 1)
 
     @property
     def distribution_(self) -> str:
@@ -306,7 +321,13 @@ class CALMResult:
 
     @property
     def data(self) -> np.ndarray:
-        return self._actuals
+        """The response and the regressors (without the intercept), as R's $data."""
+        return np.column_stack([self._actuals, self._X_train[:, 1:]])
+
+    @property
+    def rank_(self) -> int:
+        """The number of the combined parameters, as R's $rank."""
+        return len(self.coefficients)
 
     @property
     def formula(self) -> str:
@@ -418,7 +439,7 @@ class CALMResult:
         ----------
         X : array-like, dict, DataFrame, or None
             Design matrix (with intercept column), dict/DataFrame of new data,
-            or None to return training fitted values.
+            or None for the in-sample predictions, as R.
         interval : str, default="none"
             "none", "confidence", or "prediction".
         level : float or list of float, default=0.95
@@ -431,37 +452,16 @@ class CALMResult:
         PredictionResult
         """
         if X is None:
-            return PredictionResult(
-                mean=self.fitted,
-                level=level,
-                side=side,
-                interval=interval,
-            )
+            X = self._X_train
 
-        # Handle dict or DataFrame input - convert to design matrix using stored formula
+        # The design matrix of all the variables of the new data, with the levels of
+        # the factors of the training data, and its columns of the parameters, as
+        # R's predict.greybox() of y ~ .
         if isinstance(X, (dict, DataFrame)):
-            # Get formula - use stored formula or build from coefficient names
-            formula_str = self._formula
-            if formula_str is None:
-                # Build formula from coefficient names if not stored
-                if hasattr(self, "coefficient_names") and self.coefficient_names:
-                    formula_str = "y ~ " + " + ".join(
-                        name for name in self.coefficient_names if name != "(Intercept)"
-                    )
-                else:
-                    raise ValueError(
-                        "Cannot convert dict/DataFrame to design "
-                        "matrix: no formula stored in model. "
-                        "Please pass a design matrix (np.ndarray)"
-                        " with intercept as first column."
-                    )
-
-            # Convert dict to the format expected by formula
-            data_dict = X if isinstance(X, dict) else X.to_dict(orient="list")
-            # Add a dummy y variable for formula parsing (will be ignored)
-            data_dict = {k: np.asarray(v) for k, v in data_dict.items()}
-            _, X_design = formula_func(formula_str, data_dict, as_dataframe=True)
-            X = np.asarray(X_design, dtype=float)
+            frame = DataFrame(X)
+            frame.attrs["_xlevels"] = self._xlevels
+            X = formula_func(f"`{self.y_variable}` ~ .", frame, return_type="X")
+            X = np.asarray(X[self.coefficient_names], dtype=float)
         else:
             X = np.asarray(X, dtype=float)
 
@@ -474,60 +474,26 @@ class CALMResult:
                 f"but model expects {len(self.coefficients)}"
             )
 
-        mu = _combine_mu(self.distribution, X, self.coefficients)
-        mean = _combine_fitted(self.distribution, mu, self.scale)
-
-        variances = None
-        lower: np.ndarray | None = None
-        upper: np.ndarray | None = None
-        if interval != "none":
-            vcov_matrix = self._vcov_matrix
-            variances = np.diag(X @ vcov_matrix @ X.T)
-            if interval == "prediction":
-                variances = variances + self.sigma**2
-
-            if not isinstance(level, list):
-                level = [level]
-            n_levels = len(level)
-            n_obs = len(mean)
-            se = np.sqrt(variances)
-
-            if side == "upper":
-                level_low = [0.0] * n_levels
-                level_up = level
-            elif side == "lower":
-                level_low = [1 - lev for lev in level]
-                level_up = [1.0] * n_levels
-            else:
-                level_low = [(1 - lev) / 2 for lev in level]
-                level_up = [(1 + lev) / 2 for lev in level]
-
-            q_low = stats.t.ppf(level_low, df=self.df_residual)
-            q_up = stats.t.ppf(level_up, df=self.df_residual)
-
-            lower = np.zeros((n_obs, n_levels))
-            upper = np.zeros((n_obs, n_levels))
-            for i in range(n_levels):
-                lower[:, i] = mean + q_low[i] * se
-                upper[:, i] = mean + q_up[i] * se
-
-            if n_levels == 1:
-                lower = lower.ravel()
-                upper = upper.ravel()
-
-            if side == "upper":
-                lower = None
-            elif side == "lower":
-                upper = None
-
-        return PredictionResult(
-            mean=mean,
-            lower=lower,
-            upper=upper,
+        # An ALM with the combined parameters, as R's predict.alm() of a calm object
+        model = ALM(distribution=self.distribution, loss="likelihood")
+        model.intercept_ = self.coefficients[0]
+        model._coef = self.coefficients[1:]
+        model._n_features = len(self.coefficients)
+        model._ari_order = 0
+        model._X_train_ = self._X_train
+        model._y_train_ = self._actuals
+        model.fitted_values_ = self._fitted
+        model.residuals_ = self._residuals
+        model._scale = self._scale
+        model.other_ = self.other_
+        model._n_params_ = self.nparam
+        model._df_residual = self.df_residual
+        model.vcov = lambda *_, **__: self._vcov_matrix  # type: ignore[method-assign]
+        return model.predict(
+            X,
+            interval=interval,  # type: ignore[arg-type]
             level=level,
-            variances=variances,
-            side=side,
-            interval=interval,
+            side=side,  # type: ignore[arg-type]
         )
 
     def confint(
@@ -662,9 +628,9 @@ class CALMResult:
         bic = -2 * log_lik + k * np.log(n)
         if n - k - 1 > 0:
             aicc = aic + (2 * k**2 + 2 * k) / (n - k - 1)
+            bicc = -2 * log_lik + k * np.log(n) * n / (n - k - 1)
         else:
-            aicc = np.inf
-        bicc = bic + k * np.log(n) ** 2 / n
+            aicc = bicc = np.inf
 
         return CALMSummary(
             coefficients=coef,
@@ -687,18 +653,11 @@ class CALMResult:
         )
 
 
-def _convert_to_dict(data: dict | DataFrame) -> dict:
-    """Convert DataFrame to dict if needed."""
-    if isinstance(data, DataFrame):
-        return data.to_dict(orient="list")
-    return data
-
-
 def _prepare_data(
     data: dict | DataFrame,
     formula_str: str | None = None,
     subset: Any | None = None,
-) -> tuple[dict, str, np.ndarray]:
+) -> tuple[DataFrame, str, np.ndarray]:
     """Prepare data for stepwise selection.
 
     Parameters
@@ -713,40 +672,44 @@ def _prepare_data(
     Returns
     -------
     tuple
-        (data_dict, response_name, rows_selected)
+        (data frame, response name, rows without missing values)
     """
-    data_dict = _convert_to_dict(data)
+    frame = DataFrame(data).reset_index(drop=True)
+    frame.columns = [str(name) for name in frame.columns]
 
-    if formula_str is not None or subset is not None:
-        raise NotImplementedError(
-            "formula and subset parameters are not yet implemented"
+    # The variables of the formula after the transformations, as R's model.frame()
+    if formula_str is not None:
+        y_frame, X_frame = formula_func(
+            formula_str, {k: frame[k].to_numpy() for k in frame}, as_dataframe=True
         )
-
-    all_vars = list(data_dict.keys())
-    response_name = all_vars[0]
-
-    n_obs = len(data_dict[response_name])
+        frame = pd.concat(
+            [y_frame, X_frame.drop(columns="(Intercept)", errors="ignore")], axis=1
+        )
     if subset is not None:
-        rows_selected = np.array(subset, dtype=bool)
-        if len(rows_selected) != n_obs:
-            raise ValueError("subset length does not match data")
-    else:
-        rows_selected = np.ones(n_obs, dtype=bool)
+        subset = np.asarray(subset)
+        rows = np.flatnonzero(subset) if subset.dtype == bool else subset
+        frame = frame.iloc[rows].reset_index(drop=True)
 
-    if any(isinstance(v, list) for v in data_dict.values()):
-        for key in data_dict:
-            data_dict[key] = np.array(data_dict[key], dtype=float)
+    response_name = str(frame.columns[0])
+    if not pd.api.types.is_numeric_dtype(frame[response_name]):
+        warnings.warn(
+            "The response variable is not numeric! We will make it numeric, but we "
+            "cannot promise anything.",
+            stacklevel=3,
+        )
+        frame[response_name] = frame[response_name].astype(float)
 
-    return data_dict, response_name, rows_selected
+    rows_selected = ~frame.isna().any(axis=1).to_numpy()
+    return frame, response_name, rows_selected
 
 
-def _check_variability(data_dict: dict, var_names: list[str]) -> list[str]:
+def _check_variability(data: DataFrame, var_names: list[str]) -> list[str]:
     """Check variability in variables and remove those without any.
 
     Parameters
     ----------
-    data_dict : dict
-        Data dictionary.
+    data : DataFrame
+        Data frame.
     var_names : list of str
         Variable names to check.
 
@@ -755,35 +718,29 @@ def _check_variability(data_dict: dict, var_names: list[str]) -> list[str]:
     list of str
         Variable names that have variability.
     """
-    vars_with_variability = []
-    for var in var_names:
-        values = np.array(data_dict[var])
-        if len(np.unique(values)) > 1:
-            vars_with_variability.append(var)
-    return vars_with_variability
+    return [var for var in var_names if data[var].nunique(dropna=False) > 1]
 
 
 def _calculate_associations(
     residuals: np.ndarray,
-    data_dict: dict,
-    var_names: list[str],
-    rows_selected: np.ndarray,
+    blocks: dict[str, DataFrame],
+    numeric: dict[str, bool],
     method: str = "pearson",
 ) -> dict[str, float]:
     """Calculate association measures between residuals and variables.
 
-    This is similar to R's assocFast() function.
+    This is similar to R's assocFast(): the correlation with the numeric
+    variables, and the square root of the coefficient of determination of the
+    regression of the residuals on the categorical and the binary ones.
 
     Parameters
     ----------
     residuals : np.ndarray
         Model residuals.
-    data_dict : dict
-        Data dictionary.
-    var_names : list of str
-        Variable names to calculate associations for.
-    rows_selected : np.ndarray
-        Boolean array indicating which rows to use.
+    blocks : dict
+        The columns of the design matrix of each variable.
+    numeric : dict
+        Whether each variable is numeric and not binary.
     method : str
         Correlation method: "pearson", "kendall", or "spearman".
 
@@ -793,47 +750,30 @@ def _calculate_associations(
         Dictionary mapping variable names to association values.
     """
     associations = {}
-
-    for var in var_names:
-        values = np.array(data_dict[var])[rows_selected]
-        resid = residuals[rows_selected]
-
-        try:
-            if method == "pearson":
-                corr, _ = stats.pearsonr(resid, values)
-            elif method == "spearman":
-                corr, _ = stats.spearmanr(resid, values)
-            elif method == "kendall":
-                corr, _ = stats.kendalltau(resid, values)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for var, block in blocks.items():
+            values = block.to_numpy(dtype=float)
+            if numeric[var]:
+                if method == "spearman":
+                    corr = stats.spearmanr(residuals, values[:, 0]).statistic
+                elif method == "kendall":
+                    corr = stats.kendalltau(residuals, values[:, 0]).statistic
+                else:
+                    corr = np.corrcoef(residuals, values[:, 0])[0, 1]
             else:
-                corr = 0.0
-
-            associations[var] = abs(corr) if not np.isnan(corr) else 0.0
-        except Exception:  # noqa: BLE001 - unstable correlation falls back to 0.0
-            associations[var] = 0.0
+                design = np.column_stack([np.ones(len(residuals)), values])
+                fit_residuals = _lm_fit(design, residuals)[1]
+                corr = np.sqrt(
+                    np.abs(
+                        1
+                        - mean_fast(fit_residuals**2, 1)
+                        / mean_fast((residuals - np.mean(residuals)) ** 2, 1)
+                    )
+                )
+            associations[var] = float(corr)
 
     return associations
-
-
-def _get_ic_function(ic: str):
-    """Get the IC function for calculation."""
-    ic = ic.upper()
-    if ic == "AIC":
-        return lambda log_lik, df: -2 * log_lik + 2 * df
-    elif ic == "BIC":
-        return lambda log_lik, df: (
-            -2 * log_lik
-            + df * np.log(len(log_lik) if hasattr(log_lik, "__len__") else 1)
-        )
-    elif ic == "AICCC":
-        n = 1
-        return lambda log_lik, df: (
-            -2 * log_lik + 2 * df + (2 * df * (df + 1)) / (n - df - 1)
-            if n - df - 1 > 0
-            else np.inf
-        )
-    else:
-        return lambda log_lik, df: -2 * log_lik + 2 * df
 
 
 def _calculate_ic(
@@ -890,7 +830,7 @@ def stepwise(
     subset: Any | None = None,
     method: Literal["pearson", "kendall", "spearman"] = "pearson",
     distribution: str = "dnorm",
-    occurrence: Literal["none", "plogis", "pnorm"] = "none",
+    occurrence: Literal["none", "plogis", "pnorm"] | ALM = "none",
     **kwargs,
 ) -> ALM:
     """Stepwise selection of regressors.
@@ -901,13 +841,16 @@ def stepwise(
     than step() function from stats package.
 
     The algorithm uses ALM to fit different models and correlation to select
-    the next regressor in the sequence.
+    the next regressor in the sequence. The association with the categorical
+    and the binary variables is measured via the square root of the coefficient
+    of determination, as in R.
 
     Parameters
     ----------
     data : dict or DataFrame
         Data frame containing dependent variable in the first column and
-        the others in the rest.
+        the others in the rest. The non-numeric columns are treated as
+        categorical variables and expanded into dummies.
     ic : {"AICc", "AIC", "BIC", "BICc"}, default="AICc"
         Information criterion to use.
     silent : bool, default=True
@@ -920,15 +863,17 @@ def stepwise(
         variables in the formula after all the necessary transformations.
     subset : array-like, optional
         An optional vector specifying a subset of observations to be used
-        in the fitting process.
+        in the fitting process (boolean mask or integer positions).
     method : {"pearson", "kendall", "spearman"}, default="pearson"
         Method of correlations calculation. The default is Pearson's
         correlation, which should be applicable to a wide range of data
         in different scales.
     distribution : str, default="dnorm"
         Distribution to use for the ALM model. See ALM for details.
-    occurrence : {"none", "plogis", "pnorm"}, default="none"
-        What distribution to use for occurrence part. See ALM for details.
+    occurrence : {"none", "plogis", "pnorm"} or ALM, default="none"
+        What distribution to use for occurrence part, or a fitted occurrence
+        model. The selection is done on the non-zero observations, and the
+        final model is estimated with the occurrence model, as in R.
 
     Returns
     -------
@@ -951,118 +896,164 @@ def stepwise(
     if df is None:
         df = 0
 
-    data_dict, response_name, rows_selected = _prepare_data(data, formula, subset)
-
-    data_dict = {k: np.array(v) for k, v in data_dict.items()}
-
-    x_vars = [k for k in data_dict if k != response_name]
+    frame, response_name, rows_complete = _prepare_data(data, formula, subset)
+    x_vars = [k for k in frame.columns if k != response_name]
 
     if len(x_vars) == 0:
         raise ValueError("Need at least one predictor variable")
 
-    x_vars = _check_variability(data_dict, x_vars)
+    if distribution in ("plogis", "pnorm"):
+        frame[response_name] = (frame[response_name] != 0).astype(float)
 
-    if len(x_vars) == 0:
+    variables = _check_variability(frame, x_vars)
+    if len(variables) == 0:
         raise ValueError(
             "None of exogenous variables has variability. There's nothing to select!"
         )
+    if len(variables) < len(x_vars):
+        warnings.warn(
+            "Some exogenous variables did not have any variability. "
+            "We dropped them out.",
+            stacklevel=2,
+        )
+    x_vars = variables
+
+    # The observations without missing values, and the non-zero ones are used in the
+    # selection with an occurrence model
+    frame = frame.loc[rows_complete].reset_index(drop=True)
+    y = frame[response_name].to_numpy(dtype=float)
+    occurrence_model = isinstance(occurrence, ALM) or occurrence in ("plogis", "pnorm")
+    rows_selected = y != 0 if occurrence_model else np.ones(len(y), dtype=bool)
+    n_obs = int(np.sum(rows_selected))
+
+    # The columns of each variable in the design matrix (dummies for the categorical
+    # ones) and whether it is numeric and not binary, as in R
+    blocks: dict[str, DataFrame] = {}
+    numeric: dict[str, bool] = {}
+    xlevels: dict[str, list] = {}
+    for var in x_vars:
+        column = frame[var]
+        if pd.api.types.is_numeric_dtype(column) and column.dtype.kind != "b":
+            blocks[var] = column.astype(float).to_frame()
+            subset_column = column[rows_selected]
+            numeric[var] = bool(((subset_column != 0) & (subset_column != 1)).any())
+        else:
+            design = formula_func(f"~ `{var}`", frame, return_type="X")
+            blocks[var] = design.iloc[:, 1:]
+            xlevels |= design.attrs["_xlevels"]
+            numeric[var] = False
+    blocks_selected = {var: block[rows_selected] for var, block in blocks.items()}
 
     selected_vars: list[str] = []
     all_ics: dict[str, float] = {}
 
     formula_str = f"{response_name} ~ 1"
-    y_fit, X_fit = formula_func(formula_str, data_dict, as_dataframe=True)
-    feature_names = [c for c in X_fit.columns if c != "(Intercept)"]
-
     model = ALM(distribution=distribution, loss="likelihood", **kwargs)
-    model.fit(X_fit, y_fit, formula=formula_str, feature_names=feature_names)
+    model.fit(np.ones((n_obs, 1)), y[rows_selected], formula=formula_str)
 
     current_ic = _calculate_ic(model, ic, df)
     best_ic = current_ic
     all_ics["Intercept"] = current_ic
 
-    residuals = np.array(model.residuals)
-    if len(residuals.shape) > 1:
-        residuals = residuals.flatten()
-
+    residuals = np.ravel(model.residuals)
     best_formula = formula_str
 
     if not silent:
         print(f"Formula: {formula_str}, IC: {current_ic:.4f}\n")
 
     m = 2
-    best_ic_not_found = True
-
-    while best_ic_not_found:
+    while True:
         associations = _calculate_associations(
-            residuals, data_dict, x_vars, rows_selected, method
+            residuals, blocks_selected, numeric, method
         )
 
-        available_vars = [v for v in x_vars if v not in selected_vars]
-
-        if not available_vars:
-            best_ic_not_found = False
+        # The first variable with the highest absolute association among those not
+        # in the model, as R
+        absolute = np.abs([associations[var] for var in x_vars])
+        candidates = [
+            value
+            for var, value in zip(x_vars, absolute)
+            if var not in selected_vars and not np.isnan(value)
+        ]
+        if not candidates:
+            break
+        new_element = x_vars[int(np.flatnonzero(absolute == max(candidates))[0])]
+        if new_element in selected_vars:
             break
 
-        max_assoc: float = -1.0
-        new_element: str | None = None
-        for var in available_vars:
-            if var in associations and associations[var] > max_assoc:
-                max_assoc = associations[var]
-                new_element = var
-
-        if new_element is None:
-            best_ic_not_found = False
-            break
-
+        test_vars = [*selected_vars, new_element]
         test_formula = best_formula + f" + {new_element}"
+        X_fit = pd.concat([blocks_selected[var] for var in test_vars], axis=1)
+        X_fit.insert(0, "(Intercept)", 1.0)
 
-        try:
-            y_fit, X_fit = formula_func(test_formula, data_dict, as_dataframe=True)
-            feature_names = [c for c in X_fit.columns if c != "(Intercept)"]
+        model = ALM(distribution=distribution, loss="likelihood", **kwargs)
+        model.fit(
+            X_fit.to_numpy(),
+            y[rows_selected],
+            formula=test_formula,
+            feature_names=list(X_fit.columns[1:]),
+        )
 
-            model = ALM(distribution=distribution, loss="likelihood", **kwargs)
-            model.fit(X_fit, y_fit, formula=test_formula, feature_names=feature_names)
-
-            current_ic = _calculate_ic(model, ic, df)
-
+        if model.nparam + df >= n_obs + 1:
             if not silent:
-                print(f"Step {m - 1}. Formula: {test_formula}, IC: {current_ic:.4f}")
-                print("Correlations: ")
-                for var in available_vars:
-                    print(f"  {var}: {associations.get(var, 0):.3f}")
-                print()
+                warnings.warn(
+                    "Number of degrees of freedom is greater than number of "
+                    "observations. Cannot proceed.",
+                    stacklevel=2,
+                )
+            break
 
-            if current_ic >= best_ic:
-                best_ic_not_found = False
-            else:
-                best_ic = current_ic
-                best_formula = test_formula
-                selected_vars.append(new_element)
-                residuals = np.array(model.residuals)
-                if len(residuals.shape) > 1:
-                    residuals = residuals.flatten()
+        current_ic = _calculate_ic(model, ic, df)
 
-            all_ics[new_element] = current_ic
-            m += 1
+        if not silent:
+            print(f"Step {m - 1}. Formula: {test_formula}, IC: {current_ic:.4f}")
+            print("Correlations: ")
+            for var in x_vars:
+                print(f"  {var}: {associations[var]:.3f}")
+            print()
 
-        except Exception as e:  # noqa: BLE001 - stop stepwise if a candidate fails
-            if not silent:
-                print(f"Error fitting model with {new_element}: {e}")
-            best_ic_not_found = False
+        all_ics[new_element] = current_ic
+        m += 1
+        if current_ic >= best_ic:
+            break
+        best_ic = current_ic
+        best_formula = test_formula
+        selected_vars.append(new_element)
+        residuals = np.ravel(model.residuals)
 
-    y_final, X_final = formula_func(best_formula, data_dict, as_dataframe=True)
-    feature_names_final = [c for c in X_final.columns if c != "(Intercept)"]
+    # The final model on all the observations, with the occurrence model estimated
+    # on the same variables, as R's alm()
+    X_final = pd.concat(
+        [DataFrame({"(Intercept)": np.ones(len(y))})]
+        + [blocks[var] for var in selected_vars],
+        axis=1,
+    )
+    feature_names_final = list(X_final.columns[1:])
+    if occurrence in ("plogis", "pnorm"):
+        occurrence = ALM(
+            distribution=occurrence,
+            loss="likelihood",
+            orders=kwargs.get("orders", (0, 0, 0)),
+        ).fit(
+            X_final.to_numpy(),
+            (y != 0).astype(float),
+            formula=best_formula,
+            feature_names=feature_names_final,
+        )
 
-    final_model = ALM(distribution=distribution, loss="likelihood", **kwargs)
+    final_model = ALM(
+        distribution=distribution, loss="likelihood", occurrence=occurrence, **kwargs
+    )
     final_model.fit(
-        X_final, y_final, formula=best_formula, feature_names=feature_names_final
+        X_final.to_numpy(),
+        pd.Series(y, name=response_name),
+        formula=best_formula,
+        feature_names=feature_names_final,
     )
 
-    elapsed_time = time.time() - start_time
-
+    final_model._xlevels = xlevels
     final_model.ic_values = all_ics
-    final_model.time_elapsed = elapsed_time
+    final_model.time_elapsed = time.time() - start_time
 
     return final_model
 
@@ -1092,7 +1083,7 @@ def _combine_mu(distribution: str, X: np.ndarray, coef: np.ndarray) -> np.ndarra
     Applies distribution-specific link function matching R's lmCombine.
     """
     linear_pred = X @ coef
-    if distribution in ("dinvgauss", "dgamma", "dpois", "dnbinom"):
+    if distribution in ("dinvgauss", "dgamma", "dexp", "dpois", "dnbinom"):
         return np.exp(linear_pred)
     elif distribution == "dchisq":
         return linear_pred**2
@@ -1114,7 +1105,7 @@ def _combine_scale(
     """
     # The scale of the Normal-based distributions is the variance, as in the
     # ADAM monograph; R's calm() divides by n
-    if distribution in ("dnorm", "dfnorm"):
+    if distribution in ("dnorm", "dfnorm", "drectnorm"):
         return float(np.mean((y - mu) ** 2))
     elif distribution == "dlaplace":
         return float(np.mean(np.abs(y - mu)))
@@ -1153,6 +1144,8 @@ def _combine_scale(
         return float(np.mean((y / mu - 1) ** 2 / (y / mu)))
     elif distribution == "dgamma":
         return float(np.mean((y / mu - 1) ** 2))
+    elif distribution == "dexp":
+        return 1.0
     elif distribution == "dpois":
         return mu
     elif distribution == "dbcnorm":
@@ -1186,12 +1179,14 @@ def _combine_errors(distribution: str, y: np.ndarray, mu: np.ndarray) -> np.ndar
 
     Matches R lmCombine's switch(distribution, ...) block for errors.
     """
-    if distribution in ("dinvgauss", "dgamma"):
+    if distribution in ("dinvgauss", "dgamma", "dexp"):
         return y / mu
     elif distribution == "dchisq":
         return np.sqrt(y) - np.sqrt(mu)
     elif distribution in ("dlnorm", "dllaplace", "dls", "dlgnorm"):
         return np.log(y) - mu
+    elif distribution == "dlogitnorm":
+        return np.log(y / (1 - y)) - mu
     elif distribution == "pnorm":
         return stats.norm.ppf((y - stats.norm.cdf(mu) + 1) / 2)
     elif distribution == "plogis":
@@ -1216,6 +1211,9 @@ def _combine_fitted(
         return np.sqrt(2 / np.pi) * sd * np.exp(-(mu**2) / (2 * scale)) + mu * (
             1 - 2 * stats.norm.cdf(-mu / sd)
         )
+    elif distribution == "drectnorm":
+        sd = np.sqrt(scale)
+        return mu * (1 - stats.norm.cdf(0, mu, sd)) + sd * stats.norm.pdf(0, mu, sd)
     elif distribution == "dlogitnorm":
         return np.exp(mu) / (1 + np.exp(mu))
     elif distribution == "dbcnorm":
@@ -1239,7 +1237,7 @@ def CALM(
     silent: bool = True,
     distribution: str = "dnorm",
     **kwargs,
-) -> CALMResult:
+) -> CALMResult | ALM:
     """Combine ALM models based on information criteria.
 
     Function combines parameters of linear regressions of the first variable
@@ -1253,7 +1251,8 @@ def CALM(
     ----------
     data : dict or DataFrame
         Data frame containing dependent variable in the first column and
-        the others in the rest.
+        the others in the rest. The observations with missing values are
+        dropped, and the non-numeric columns are expanded into dummies.
     ic : {"AICc", "AIC", "BIC", "BICc"}, default="AICc"
         Information criterion to use.
     bruteforce : bool, default=False
@@ -1264,20 +1263,25 @@ def CALM(
     silent : bool, default=True
         If False, then progress is printed.
     distribution : str, default="dnorm"
-        Distribution to use for the ALM model.
+        Distribution to use for the ALM model. With "dnorm", the models are
+        estimated via least squares, as R's lmGreybox.
     **kwargs
         Additional arguments passed to ALM().
 
     Returns
     -------
-    dict
-        Dictionary containing:
+    CALMResult or ALM
+        The fitted model of stepwise when it has the intercept only, as R.
+        Otherwise a CALMResult containing:
+
         - coefficients: combined parameters
         - vcov: combined variance-covariance matrix
         - fitted: fitted values (on original scale)
         - residuals: residuals (distribution-specific)
         - mu: location parameter
         - scale: scale parameter
+        - ``other_``: the combined extra parameter of the distribution (shape,
+          alpha, lambda of Box-Cox, nu or size), None for the others
         - distribution: distribution used
         - log_lik: combined log-likelihood
         - IC: combined information criterion value
@@ -1297,75 +1301,75 @@ def CALM(
     """
     start_time = time.time()
 
-    data_dict = _convert_to_dict(data)
-    data_dict = {k: np.array(v, dtype=float) for k, v in data_dict.items()}
-
-    y_var = next(iter(data_dict))
-    x_vars = list(data_dict.keys())[1:]
-
-    if len(x_vars) == 0:
+    frame, y_var, rows_selected = _prepare_data(data)
+    if frame.shape[1] < 2:
         raise ValueError("Need at least one predictor variable")
+    if distribution in ("plogis", "pnorm"):
+        frame[y_var] = (frame[y_var] != 0).astype(float).where(frame[y_var].notna())
 
-    n_vars = len(x_vars)
-    y = data_dict[y_var]
-    n_obs = len(y)
-
-    # Check if bruteforce is feasible
-    if n_vars >= n_obs and bruteforce:
-        if not silent:
-            print(
-                "You have more variables than observations. "
-                "Switching to bruteforce=False."
-            )
+    # R compares the number of columns of the data with the number of its rows
+    if frame.shape[1] > frame.shape[0] and bruteforce:
+        warnings.warn(
+            "You have more variables than observations. We have to be smart here. "
+            "Switching to 'bruteforce=FALSE'.",
+            stacklevel=2,
+        )
         bruteforce = False
 
-    if n_vars > 14 and bruteforce and not silent:
-        print(
-            "You have more than 14 variables. The computation might take a lot of time."
+    if frame.shape[1] > 14 and bruteforce:
+        warnings.warn(
+            "You have more than 14 variables. The computation might take a lot of "
+            "time.",
+            stacklevel=2,
         )
 
-    # Initialize for bruteforce=False case (non-bruteforce mode)
-    selected_names: list[str] = []
-
-    # --- Non-bruteforce mode ---
     if not bruteforce:
         if not silent:
             print("Selecting the best model...")
-        best_model = stepwise(
-            data_dict,
-            ic=ic,
-            silent=True,
-            distribution=distribution,
-            **kwargs,
-        )
+        best_model = stepwise(frame, ic=ic, distribution=distribution, **kwargs)
+        # If the selected model does not contain variables, return it
+        if len(best_model.coefficients) == 1:
+            return best_model
 
-        # If intercept-only model selected, return it
-        if best_model.coef is None or len(best_model.coef) == 0:
-            elapsed = time.time() - start_time
-            return CALMResult(
-                coefficients=np.array([best_model.intercept_]),
-                coefficient_names=["(Intercept)"],
-                time_elapsed=elapsed,
-            )
+    # The models of dalaplace are estimated with alpha=0.5 by default, as R
+    if distribution == "dalaplace":
+        kwargs.setdefault("alpha", 0.5)
 
-        # Get selected variable names
-        if best_model._feature_names is not None:
-            selected_names = list(best_model._feature_names)
+    # The design matrix without the missing values, with the dummies of the
+    # categorical variables, as R's model.matrix()
+    frame = frame.loc[rows_selected].reset_index(drop=True)
+    y = frame[y_var].to_numpy(dtype=float)
+    exogenous = formula_func(f"`{y_var}` ~ .", frame, return_type="X")
+    xlevels = exogenous.attrs["_xlevels"]
+    exogenous = exogenous.drop(columns="(Intercept)")
+    x_vars = [str(name) for name in exogenous.columns]
+    n_vars = len(x_vars)
+    n_obs = len(y)
+    X_matrix = np.column_stack([np.ones(n_obs), exogenous.to_numpy()])
+
+    if bruteforce:
+        # All the combinations, counting in binary, as R
+        n_combinations = 2**n_vars
+        var_binary = (
+            np.arange(n_combinations)[:, np.newaxis] >> np.arange(n_vars) & 1
+        ).astype(int)
+    else:
+        selected_names = list(best_model._feature_names or [])
 
         # If <14 params, recurse with bruteforce on selected vars
-        if best_model.nparam < 14 and len(selected_names) > 0:
-            subset_data = {y_var: data_dict[y_var]}
-            for name in selected_names:
-                if name in data_dict:
-                    subset_data[name] = data_dict[name]
-            return CALM(
-                subset_data,
+        if best_model.nparam < 14:
+            result = CALM(
+                DataFrame(
+                    {y_var: y, **{name: exogenous[name] for name in selected_names}}
+                ),
                 ic=ic,
                 bruteforce=True,
                 silent=silent,
                 distribution=distribution,
                 **kwargs,
             )
+            result._xlevels = xlevels
+            return result
 
         # Stress-testing mode: best model +/- each single variable
         best_vars = [name for name in selected_names if name in x_vars]
@@ -1373,16 +1377,12 @@ def CALM(
 
         # Build binary combination matrix
         n_in_model = len(best_vars)
-        n_combos = 1 + len(excluded_vars) + n_in_model
-        var_binary = np.zeros((n_combos, n_vars), dtype=int)
+        n_combinations = 1 + len(excluded_vars) + n_in_model
+        var_binary = np.zeros((n_combinations, n_vars), dtype=int)
 
-        # Row 0: best model
+        # Row 0: best model, copied to all rows
         for var in best_vars:
-            var_binary[0, x_vars.index(var)] = 1
-
-        # Copy best model pattern to all rows
-        for row in range(1, n_combos):
-            var_binary[row] = var_binary[0].copy()
+            var_binary[:, x_vars.index(var)] = 1
 
         # Rows 1..len(excluded_vars): add one excluded var
         for i, var in enumerate(excluded_vars):
@@ -1394,19 +1394,6 @@ def CALM(
             included_indices = np.where(var_binary[row] == 1)[0]
             var_binary[row, included_indices[i]] = 0
 
-        # Build all_combinations from var_binary
-        all_combinations: list[list[str]] = []
-        for row in range(n_combos):
-            combo = [x_vars[j] for j in range(n_vars) if var_binary[row, j] == 1]
-            all_combinations.append(combo)
-    else:
-        # Bruteforce mode: generate all 2^n combinations
-        all_combinations: list[list[str]] = [[]]  # type: ignore[no-redef]
-        for r in range(1, n_vars + 1):
-            for comb in itertools.combinations(x_vars, r):
-                all_combinations.append(list(comb))
-
-    n_combinations = len(all_combinations)
     n_params = n_vars + 1  # intercept + variables
 
     # Storage arrays matching R's parameters, vcovValues, ICs, logLiks
@@ -1434,7 +1421,7 @@ def CALM(
             end="",
         )
 
-    for i, combo in enumerate(all_combinations):
+    for i in range(n_combinations):
         if not silent and i > 0:
             prev = f"{round(i / n_combinations * 100)}%"
             print("\b" * len(prev), end="")
@@ -1443,52 +1430,42 @@ def CALM(
                 end="",
             )
 
-        # Build formula
-        if len(combo) == 0:
-            formula_str = f"{y_var} ~ 1"
+        model_indices = [0] + [j + 1 for j in range(n_vars) if var_binary[i, j]]
+        X_fit = X_matrix[:, model_indices]
+
+        if distribution == "dnorm":
+            # The least squares of R's lmGreybox: logLik with the scale, the
+            # corrected ICs and the variance of the errors without it
+            k = len(model_indices)
+            coef, fit_residuals, _ = _lm_fit(X_fit, y)
+            sse = mean_fast(fit_residuals**2, 1)
+            ll = -n_obs / 2 * (np.log(2 * np.pi) + 1 + np.log(sse / n_obs))
+            denominator = np.float64(n_obs - k - 1)
+            with np.errstate(divide="ignore"):
+                ics_array[i] = {
+                    "AIC": -2 * ll + 2 * (k + 1),
+                    "BIC": -2 * ll + (k + 1) * np.log(n_obs),
+                    "AICc": 2 * k - 2 * ll + 2 * k * (k + 1) / denominator,
+                    "BICc": -2 * ll + k * np.log(n_obs) * n_obs / denominator,
+                }[ic]
+            log_liks[i] = ll
+            model_vcov = sse / (n_obs - k) * np.linalg.inv(X_fit.T @ X_fit)
         else:
-            formula_str = f"{y_var} ~ " + " + ".join(combo)
-
-        try:
-            y_fit, X_fit = formula_func(formula_str, data_dict, as_dataframe=True)
-            feature_names = [c for c in X_fit.columns if c != "(Intercept)"]
-
-            model = ALM(
-                distribution=distribution,
-                loss="likelihood",
-                **kwargs,
-            )
+            model = ALM(distribution=distribution, loss="likelihood", **kwargs)
             model.fit(
                 X_fit,
-                y_fit,
-                formula=formula_str,
-                feature_names=feature_names,
+                y,
+                feature_names=[x_vars[j - 1] for j in model_indices[1:]],
             )
-
-            ic_value = _get_ic_value(model, ic)
-            ics_array[i] = ic_value
+            ics_array[i] = _get_ic_value(model, ic)
             log_liks[i] = model.log_lik
-
-            # Build full coefficient vector
-            full_coef = np.zeros(n_params)
-            full_coef[0] = model.intercept_
-            for j, var in enumerate(combo):
-                idx = x_vars.index(var) + 1
-                full_coef[idx] = model.coef[j]
-            parameters[i] = full_coef
-
-            # Build full vcov matrix
+            coef = model.coefficients
             model_vcov = model.vcov()
-            model_indices = [0] + [x_vars.index(var) + 1 for var in combo]
-            for mi, fi in enumerate(model_indices):
-                for mj, fj in enumerate(model_indices):
-                    vcov_values[i, fi, fj] = model_vcov[mi, mj]
-
             if has_other and model.other_ is not None:
                 other_parameters[i] = model.other_  # type: ignore[index]
 
-        except Exception:  # noqa: BLE001, S112 - skip models that fail to fit
-            continue
+        parameters[i, model_indices] = coef
+        vcov_values[i][np.ix_(model_indices, model_indices)] = model_vcov
 
     if not silent:
         print(" Done!")
@@ -1506,11 +1483,6 @@ def CALM(
 
     # Combined parameters (weighted sum)
     combined_coef = np.sum(parameters * ic_weights[:, np.newaxis], axis=0)
-
-    # Build design matrix with all variables
-    formula_full = f"{y_var} ~ " + " + ".join(x_vars)
-    _y_final, X_full = formula_func(formula_full, data_dict, as_dataframe=True)
-    X_matrix = np.array(X_full)
 
     coefficient_names = ["(Intercept)"] + list(x_vars)
 
@@ -1535,16 +1507,14 @@ def CALM(
         other_for_fitted = 0.0
     fitted_values = _combine_fitted(distribution, mu, scale, other_for_fitted)
 
-    # Residuals/errors (distribution-specific)
-    errors = _combine_errors(distribution, y, mu)
+    # Residuals/errors (distribution-specific), of the Box-Cox transform for dbcnorm
+    errors = _combine_errors(
+        distribution,
+        bc_transform(y, other_combined) if distribution == "dbcnorm" else y,
+        mu,
+    )
 
     # Importance: sum of IC weights for models containing each variable
-    var_binary = np.zeros((n_combinations, n_vars))
-    for i, combo in enumerate(all_combinations):
-        for var in combo:
-            idx = x_vars.index(var)
-            var_binary[i, idx] = 1
-
     importance = np.zeros(n_params)
     importance[0] = 1.0  # intercept always included
     importance[1:] = ic_weights @ var_binary
@@ -1582,7 +1552,7 @@ def CALM(
 
     elapsed_time = time.time() - start_time
 
-    return CALMResult(
+    result = CALMResult(
         coefficients=combined_coef,
         coefficient_names=coefficient_names,
         vcov=vcov_combined,
@@ -1603,9 +1573,12 @@ def CALM(
         y_variable=y_var,
         x_variables=x_vars,
         weights=ic_weights,
+        other_=other_combined if has_other else None,
         n_obs=n_obs,
         time_elapsed=elapsed_time,
         actuals=y,
         X_train=X_matrix,
-        formula_str=formula_full,
+        formula_str=f"{y_var} ~ " + " + ".join(x_vars),
     )
+    result._xlevels = xlevels
+    return result

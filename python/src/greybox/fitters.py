@@ -5,7 +5,11 @@ in alm.R: scalerInternal, extractorFitted, extractorResiduals, fitter,
 fitterRecursive, and the cost function (cf).
 """
 
+import math
+
 import numpy as np
+from numpy.typing import ArrayLike
+from scipy.linalg import blas
 
 from . import distributions as dist
 from .cost_function import cf  # noqa: F401 - re-exported for backwards compatibility
@@ -52,6 +56,24 @@ VARIANCE_SCALE_DISTRIBUTIONS = (
     "drectnorm",
 )
 
+# The distributions additive in the space of the lags of the dynamic models (R's
+# ariFilterDistributions): the errors after the latent sizes of an occurrence model
+# have the variances of the Kalman filter, with the scale scale * variance^(1/2),
+# ^(1/4) for the S ones
+ARI_FILTER_DISTRIBUTIONS = (
+    "dnorm",
+    "dlaplace",
+    "ds",
+    "dgnorm",
+    "dlogis",
+    "dalaplace",
+    "dlnorm",
+    "dllaplace",
+    "dls",
+    "dlgnorm",
+    "dbcnorm",
+)
+
 
 def scale_sd(distribution: str, scale):
     """Return the scale in the form that the densities of the model take.
@@ -66,6 +88,81 @@ def scale_sd(distribution: str, scale):
     return scale
 
 
+def _lm_fit(X, y, tol: float = 1e-7):
+    """R's ``.lm.fit()``: LINPACK's dqrdc2 and dqrsl with the same BLAS calls.
+
+    A column in a linear combination of the previous ones (relative tolerance
+    ``tol``) goes to the end with a zero coefficient, and the coefficients stay in
+    this pivoted order, as R's. The residuals come from Q, as R's, not from
+    ``y - X @ B``. ``y`` may be a matrix, fitted column by column.
+
+    Returns
+    -------
+    tuple
+        The coefficients, the residuals and the rank.
+    """
+    x = np.array(X, dtype=float, order="F")
+    qty = np.array(y, dtype=float, order="F")
+    vector = qty.ndim == 1
+    qty = qty.reshape(len(qty), -1, order="F")
+    n, p = x.shape
+    # dqrdc2: the Householder reduction, moving the negligible columns to the end
+    qraux = np.array([blas.dnrm2(x[:, j]) for j in range(p)])
+    norms = np.column_stack([qraux, np.where(qraux == 0, 1.0, qraux)])
+    k = p
+    for c in range(min(n, p)):
+        while c < k and qraux[c] < norms[c, 1] * tol:
+            order = np.r_[np.arange(c), np.arange(c + 1, p), c]
+            x = np.asfortranarray(x[:, order])
+            qraux, norms = qraux[order], norms[order]
+            k -= 1
+        nrmxl = blas.dnrm2(x[c:, c]) if c < n - 1 else 0.0
+        if nrmxl == 0:
+            continue
+        nrmxl = np.copysign(nrmxl, x[c, c]) if x[c, c] != 0 else nrmxl
+        x[c:, c] = blas.dscal(1.0 / nrmxl, x[c:, c])
+        x[c, c] = 1.0 + x[c, c]
+        for j in range(c + 1, p):
+            t = -blas.ddot(x[c:, c], x[c:, j]) / x[c, c]
+            x[c:, j] = blas.daxpy(x[c:, c], x[c:, j], a=t)
+            if qraux[j] == 0:
+                continue
+            t = max(1.0 - (abs(x[c, j]) / qraux[j]) ** 2, 0.0)
+            if t >= 1e-6:
+                qraux[j] = qraux[j] * np.sqrt(t)
+            else:
+                qraux[j] = norms[j, 0] = blas.dnrm2(x[c + 1 :, j])
+        qraux[c], x[c, c] = x[c, c], -nrmxl
+    k = min(k, n)
+    reflections = [j for j in range(min(k, n - 1)) if qraux[j] != 0]
+    # The reflections with the vectors of qraux on the diagonal
+    diagonal = x.diagonal().copy()
+    householder = x.copy(order="F")
+    householder[reflections, reflections] = qraux[reflections]
+
+    # dqrsl with job 1110: Q'y, the back-substitution and the residuals
+    B = np.zeros((p, qty.shape[1]))
+    residuals = np.zeros_like(qty)
+    for col in range(qty.shape[1]):
+        v = qty[:, col].copy()
+        # Q'y, then the residuals with Q applied backwards to Q'y without its top k
+        for step in (reflections, reflections[::-1]):
+            for j in step:
+                t = -blas.ddot(householder[j:, j], v[j:]) / householder[j, j]
+                v[j:] = blas.daxpy(householder[j:, j], v[j:], a=t)
+            if step is reflections:
+                B[:k, col] = v[:k]
+                v[:k] = 0.0
+        for j in range(k - 1, -1, -1):
+            B[j, col] = B[j, col] / diagonal[j]
+            if j > 0:
+                B[:j, col] = blas.daxpy(x[:j, j], B[:j, col], a=-B[j, col])
+        residuals[:, col] = v
+    if vector:
+        return B[:, 0], residuals[:, 0], k
+    return B, residuals, k
+
+
 def scaler_internal(
     B: np.ndarray,
     distribution: str,
@@ -77,7 +174,8 @@ def scaler_internal(
     df: int,
     trim: float = 0.0,
     side: str = "both",
-) -> float:
+    variance: np.ndarray | None = None,
+) -> float | np.ndarray:
     """Calculate scale parameter based on distribution.
 
     Parameters
@@ -102,60 +200,79 @@ def scaler_internal(
         Trim proportion for mean_fast.
     side : str, default="both"
         Trim side.
+    variance : np.ndarray, optional
+        The variances of the errors of the dynamic occurrence models relative to the
+        scale (the Kalman filter over the latent sizes): the errors are standardised
+        by their roots, as R's ``scalerInternal``.
 
     Returns
     -------
-    float
-        Scale parameter value.
+    float or np.ndarray
+        Scale parameter value (one per observation for dbeta and dpois).
     """
     y_otU = y[otU]
     mu_otU = mu[otU]
+    error_scale = np.sqrt(variance[otU]) if variance is not None else 1.0
 
     if distribution == "dbeta":
-        return np.exp(matrix_xreg @ B[-len(B) // 2 :])
+        # The second shape, through libm and in R's order of the product
+        shape2 = np.asfortranarray(matrix_xreg) @ B[-len(B) // 2 :]
+        return np.fromiter(map(math.exp, shape2), float, shape2.size)
 
     elif distribution == "dnorm":
-        return np.sqrt(mean_fast((y_otU - mu_otU) ** 2, df, trim, side))
+        return np.sqrt(mean_fast(((y_otU - mu_otU) / error_scale) ** 2, df, trim, side))
 
     elif distribution == "dlaplace":
-        return mean_fast(np.abs(y_otU - mu_otU), df, trim, side)
+        return mean_fast(np.abs(y_otU - mu_otU) / error_scale, df, trim, side)
 
     elif distribution == "ds":
-        return mean_fast(np.sqrt(np.abs(y_otU - mu_otU)), df * 2, trim, side)
+        return mean_fast(
+            np.sqrt(np.abs(y_otU - mu_otU) / error_scale), df * 2, trim, side
+        )
 
     elif distribution == "dgnorm":
-        return (other * mean_fast(np.abs(y_otU - mu_otU) ** other, df, trim, side)) ** (
-            1 / other
-        )
+        return (
+            other
+            * mean_fast((np.abs(y_otU - mu_otU) / error_scale) ** other, df, trim, side)
+        ) ** (1 / other)
 
     elif distribution == "dlogis":
         return (
-            np.sqrt(mean_fast((y_otU - mu_otU) ** 2, df, trim, side))
+            np.sqrt(mean_fast(((y_otU - mu_otU) / error_scale) ** 2, df, trim, side))
             * np.sqrt(3)
             / np.pi
         )
 
     elif distribution == "dalaplace":
         indicator = (y_otU <= mu_otU).astype(float)
-        return mean_fast((y_otU - mu_otU) * (other - indicator), df, trim)
+        return mean_fast((y_otU - mu_otU) / error_scale * (other - indicator), df, trim)
 
     elif distribution == "dlnorm":
-        return np.sqrt(mean_fast((np.log(y_otU) - mu_otU) ** 2, df, trim, side))
+        return np.sqrt(
+            mean_fast(((np.log(y_otU) - mu_otU) / error_scale) ** 2, df, trim, side)
+        )
 
     elif distribution == "dllaplace":
-        return mean_fast(np.abs(np.log(y_otU) - mu_otU), df, trim, side)
+        return mean_fast(np.abs(np.log(y_otU) - mu_otU) / error_scale, df, trim, side)
 
     elif distribution == "dls":
-        return mean_fast(np.sqrt(np.abs(np.log(y_otU) - mu_otU)), df * 2, trim, side)
+        return mean_fast(
+            np.sqrt(np.abs(np.log(y_otU) - mu_otU) / error_scale), df * 2, trim, side
+        )
 
     elif distribution == "dlgnorm":
         return (
-            other * mean_fast(np.abs(np.log(y_otU) - mu_otU) ** other, df, trim, side)
+            other
+            * mean_fast(
+                (np.abs(np.log(y_otU) - mu_otU) / error_scale) ** other, df, trim, side
+            )
         ) ** (1 / other)
 
     elif distribution == "dbcnorm":
         y_transformed = bc_transform(y_otU, other)
-        return np.sqrt(mean_fast((y_transformed - mu_otU) ** 2, df, trim, side))
+        return np.sqrt(
+            mean_fast(((y_transformed - mu_otU) / error_scale) ** 2, df, trim, side)
+        )
 
     elif distribution == "dinvgauss":
         return mean_fast(((y_otU / mu_otU - 1) ** 2) / (y_otU / mu_otU), df, trim, side)
@@ -216,12 +333,12 @@ def extractor_fitted(
     """
     if distribution == "dfnorm":
         return np.sqrt(2 / np.pi) * scale * np.exp(-(mu**2) / (2 * scale**2)) + mu * (
-            1 - 2 * dist.pnorm(-mu / scale, loc=0, scale=1)
+            1 - 2 * dist.pnorm(-mu / scale, mean=0, sd=1)
         )
 
     elif distribution == "drectnorm":
-        return mu * (1 - dist.pnorm(0, loc=mu, scale=scale)) + scale * dist.dnorm(
-            0, loc=mu, scale=scale
+        return mu * (1 - dist.pnorm(0, mean=mu, sd=scale)) + scale * dist.dnorm(
+            0, mean=mu, sd=scale
         )
 
     elif distribution in (
@@ -260,10 +377,10 @@ def extractor_fitted(
         return mu / (mu + scale)
 
     elif distribution == "pnorm":
-        return dist.pnorm(mu, loc=0, scale=1)
+        return dist.pnorm(mu, mean=0, sd=1)
 
     elif distribution == "plogis":
-        return dist.plogis(mu, loc=0, scale=1)
+        return dist.plogis(mu, location=0, scale=1)
 
     else:
         return mu
@@ -306,12 +423,10 @@ def extractor_residuals(
         "dgeom",
         "dnbinom",
         "dpois",
-        "dinvgauss",
-        "dgamma",
     ):
         return y - mu
 
-    elif distribution == "dexp":
+    elif distribution in ("dinvgauss", "dgamma", "dexp"):
         return y / mu
 
     elif distribution == "dchisq":
@@ -437,7 +552,8 @@ def fitter(
 
         if poly1 is not None and ar_order > 0:
             poly1[1:] = -B[-ar_order:]
-            if n_variables > ar_order:
+            # R compares its count of the variables with the AR ones with the AR order
+            if n_variables > 0:
                 B = np.concatenate(
                     [B[: len(B) - ar_order], -np.convolve(poly2, poly1)[1:]]
                 )
@@ -445,12 +561,17 @@ def fitter(
                 B = -np.convolve(poly2, poly1)[1:]
         elif i_order > 0:
             B = np.concatenate([B, -poly2[1:]])
+        else:
+            poly1 = np.concatenate([[1.0], -B[-ar_order:]])
 
     if loss in ("LASSO", "RIDGE") and lambda_val == 1.0:
         B[1:] = 0
 
     mu = np.zeros_like(y, dtype=float)
+    # Column-major, as R's matrices: BLAS then accumulates the product in R's order
+    matrix_xreg = np.asfortranarray(matrix_xreg)
 
+    mu = matrix_xreg @ (B[: len(B) // 2] if distribution == "dbeta" else B)
     if distribution in (
         "dinvgauss",
         "dgamma",
@@ -459,16 +580,12 @@ def fitter(
         "dnbinom",
         "dbinom",
         "dgeom",
+        "dbeta",
     ):
-        mu = np.exp(matrix_xreg @ B)
+        # Through libm, as R's exp(): NumPy's kernel rounds differently in the last bit
+        mu = np.fromiter(map(math.exp, mu), float, mu.size)
     elif distribution == "dchisq":
-        linear_pred = matrix_xreg @ B
-        mu = np.where(linear_pred < 0, 1e100, linear_pred**2)
-    elif distribution == "dbeta":
-        half_len = len(B) // 2
-        mu = np.exp(matrix_xreg @ B[:half_len])
-    else:
-        mu = matrix_xreg @ B
+        mu = np.where(mu < 0, 1e100, mu**2)
 
     # The scale is estimated on the non-zeroes of an occurrence model, as in R
     if otU is None:
@@ -482,7 +599,28 @@ def fitter(
         "scale": scale,
         "other": other,
         "poly1": poly1 if poly1 is not None else np.array([1.0]),
+        "B": B,
     }
+
+
+def alm_latent_variance(polynomial: ArrayLike, observed: ArrayLike) -> np.ndarray:
+    """The variances of the errors after the latent sizes of a dynamic occurrence model,
+    relative to the scale: the Kalman filter of ``alm_latent``, which depends on the AR
+    polynomial and on the observed sizes only (R's ``almLatentVariance``)."""
+    from ._native_alm_latent import alm_latent
+
+    polynomial = np.asarray(polynomial, dtype=float)
+    observed = np.asarray(observed).astype(int)
+    n = len(observed)
+    return alm_latent(
+        np.zeros(n),
+        polynomial,
+        np.zeros(n),
+        observed,
+        np.zeros(len(polynomial)),
+        np.zeros(0),
+        True,
+    )["variance"]
 
 
 def fitter_recursive(
@@ -490,13 +628,18 @@ def fitter_recursive(
     distribution: str,
     y: np.ndarray,
     matrix_xreg: np.ndarray,
-    ari_order: int = 0,
+    latent: dict,
     other=None,
     a_parameter_provided: bool = False,
-    lambda_bc: float = 0.0,
     **kwargs,
 ) -> dict:
-    """Fitter for dynamic (ARIMA) models.
+    """Fitter for the dynamic (ARI) models with an occurrence model (R's
+    ``fitterRecursive``).
+
+    The sizes at the zeros are latent: they go on with the recursion of the model, as
+    the conditional means given the observed values (the Kalman filter for the
+    distributions additive in the space of the lags, with the variances of the
+    errors), in the shared C++ ``alm_latent``.
 
     Parameters
     ----------
@@ -507,23 +650,27 @@ def fitter_recursive(
     y : np.ndarray
         Observed values.
     matrix_xreg : np.ndarray
-        Design matrix (will be modified in place).
-    ari_order : int, default=0
-        ARIMA order (sum of p+d+q).
+        Design matrix, with the lags of the response in its last columns.
+    latent : dict
+        The response in the space of the lags (``response``), the observed sizes
+        (``observed``), the number of the regressors (``n_exo``) and the lags
+        (``ari_order``), whether to filter (``filter``), the link of the latent lags
+        (``link``) and the power of the scale (``scale_power``).
     other : various, optional
         Additional distribution parameter.
     a_parameter_provided : bool, default=False
         Whether additional parameter was provided.
-    lambda_bc : float, default=0.0
-        Box-Cox parameter.
     **kwargs
         Additional arguments passed to fitter.
 
     Returns
     -------
     dict
-        Dictionary with mu, scale, other, matrix_xreg keys.
+        The output of ``fitter`` on the matrix with the latent lags, with the
+        ``variance`` of each error relative to the scale and the ``matrix_xreg``.
     """
+    from ._native_alm_latent import alm_latent
+
     fitter_return = fitter(
         B,
         distribution,
@@ -533,11 +680,69 @@ def fitter_recursive(
         a_parameter_provided=a_parameter_provided,
         **kwargs,
     )
-
-    return {
-        "mu": fitter_return["mu"],
-        "scale": fitter_return["scale"],
-        "other": fitter_return["other"],
-        "poly1": fitter_return["poly1"],
-        "matrix_xreg": matrix_xreg,
-    }
+    # plogis / pnorm: the lags are the locations of the model, as R
+    if latent.get("cdf"):
+        matrix_xreg = matrix_xreg.copy()
+        for i in range(1, latent["ari_order"] + 1):
+            matrix_xreg[i:, latent["n_exo"] + i - 1] = fitter_return["mu"][:-i]
+        fitter_return = fitter(
+            B,
+            distribution,
+            y,
+            matrix_xreg,
+            other=other,
+            a_parameter_provided=a_parameter_provided,
+            **kwargs,
+        )
+        fitter_return["matrix_xreg"] = matrix_xreg
+        return fitter_return
+    b_location = fitter_return["B"]
+    if distribution == "dbeta":
+        b_location = b_location[: len(b_location) // 2]
+    n_exo = latent["n_exo"]
+    ari_index = n_exo + np.arange(latent["ari_order"])
+    response = (
+        bc_transform(y, fitter_return["other"])
+        if distribution == "dbcnorm"
+        else latent["response"]
+    )
+    # The sizes before the sample are not observed either: they start from the mean of
+    # the observed ones, as in R
+    observed = latent["observed"]
+    result = alm_latent(
+        matrix_xreg[:, :n_exo] @ b_location[:n_exo],
+        b_location[ari_index],
+        response,
+        observed.astype(int),
+        np.full(latent["ari_order"], np.mean(response[observed])),
+        np.zeros(0),
+        latent["filter"],
+    )
+    matrix_xreg = matrix_xreg.copy()
+    matrix_xreg[:, ari_index] = result["lags"]
+    fitter_return = fitter(
+        B,
+        distribution,
+        y,
+        matrix_xreg,
+        other=other,
+        a_parameter_provided=a_parameter_provided,
+        **kwargs,
+    )
+    fitter_return["variance"] = result["variance"]
+    if latent["filter"]:
+        otU = latent["observed"]
+        fitter_return["scale"] = scaler_internal(
+            fitter_return["B"],
+            distribution,
+            y,
+            matrix_xreg,
+            fitter_return["mu"],
+            fitter_return["other"],
+            otU,
+            int(np.sum(otU)),
+            kwargs.get("trim", 0.0),
+            variance=result["variance"],
+        )
+    fitter_return["matrix_xreg"] = matrix_xreg
+    return fitter_return

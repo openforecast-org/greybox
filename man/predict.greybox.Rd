@@ -42,7 +42,8 @@ the intervals for (0, level) are constructed Finally, with \code{"lower"} the in
 for (1-level, 1) is returned.}
 
 \item{occurrence}{If occurrence was provided, then a user can provide a vector of future
-values via this variable.}
+values via this variable. They scale the mean and the bounds of the confidence interval,
+while the prediction interval stays the one of the sizes, as in \code{adam()} from smooth.}
 
 \item{...}{Other arguments passed to \code{vcov} function (see \link[greybox]{coef.alm}
 for details).}
@@ -70,6 +71,9 @@ object of class "predict.alm", which in addition contains:
 \item \code{location} - the location parameter of the distribution.
 \item \code{scale} - the scale parameter of the distribution.
 \item \code{distribution} - name of the fitted distribution.
+\item \code{occurrence} - the predictions of the occurrence model, when the model has one
+and \code{occurrence} is not provided. Their mean scales the mean and the bounds of the
+confidence interval, and moves the levels of the prediction interval to the ones of the sizes.
 }
 
 \code{forecast()} functions return the same "predict.alm" and

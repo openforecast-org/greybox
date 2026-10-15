@@ -1,10 +1,14 @@
 """Tests for greybox.point_measures module."""
 
+import warnings
+
 import numpy as np
 import pytest
 
 from greybox.point_measures import (
     mae,
+    rrmse,
+    rame,
     mse,
     rmse,
     mpe,
@@ -25,6 +29,7 @@ from greybox.association import (
     association,
 )
 from greybox.hm import (
+    mre,
     hm,
     ham,
     asymmetry,
@@ -34,6 +39,8 @@ from greybox.hm import (
 from greybox.quantile_measures import (
     pinball,
     mis,
+    smis,
+    rmis,
 )
 
 # Simple test arrays
@@ -88,12 +95,12 @@ class TestMPE:
         result = mpe(actual, predicted)
         np.testing.assert_almost_equal(result, np.mean(errors))
 
-    def test_skips_zero_actual(self):
-        a = np.array([0.0, 2.0, 3.0])
-        f = np.array([0.1, 2.2, 2.8])
-        result = mpe(a, f)
-        expected = np.mean([(2 - 2.2) / 2, (3 - 2.8) / 3])
-        np.testing.assert_almost_equal(result, expected)
+    def test_zero_actual(self):
+        # As in R, a zero actual gives an infinite error, 0/0 is dropped
+        a = np.array([0.0, 0.0, 2.0])
+        f = np.array([0.1, 0.0, 2.2])
+        assert mpe(a, f) == -np.inf
+        np.testing.assert_almost_equal(mpe(a[1:], f[1:]), (2 - 2.2) / 2)
 
 
 class TestMAPE:
@@ -124,8 +131,9 @@ class TestMASE:
     def test_zero_scale(self):
         a = np.array([3.0, 3.0, 3.0])
         f = np.array([3.1, 2.9, 3.0])
-        result = mase(a, f)
-        assert np.isnan(result)
+        with np.errstate(divide="ignore"):
+            result = mase(a, f)
+        assert result == np.inf
 
 
 class TestDetermination:
@@ -165,7 +173,7 @@ class TestDetermination:
 class TestAssociation:
     def test_perfect_correlation(self):
         x = np.column_stack([np.array([1, 2, 3, 4, 5]), np.array([2, 4, 6, 8, 10])])
-        result = association(x)
+        result = association(x, method="pearson")
         np.testing.assert_almost_equal(result["value"][0, 1], 1.0)
         np.testing.assert_almost_equal(result["value"][1, 0], 1.0)
 
@@ -186,7 +194,7 @@ class TestAssociation:
         x = np.array([1, 2, 3, 4, 5])
         y = np.array([2, 4, 6, 8, 10])
         result = association(x, y)
-        assert result["value"].shape == (2, 2)
+        assert result["value"].shape == (1, 1)
 
 
 class TestME:
@@ -264,6 +272,10 @@ class TestMeasures:
         assert "MASE" in result
         assert "rMAE" in result
 
+    def test_invalid_benchmark(self):
+        with pytest.raises(ValueError):
+            measures(actual, predicted, actual[:-2], benchmark="drift")
+
 
 class TestPinball:
     def test_quantile(self):
@@ -274,9 +286,11 @@ class TestPinball:
         result = pinball(actual, predicted, level=0.5, loss=2)
         assert result >= 0
 
-    def test_invalid_loss(self):
-        with pytest.raises(ValueError):
-            pinball(actual, predicted, level=0.5, loss=3)
+    def test_any_loss(self):
+        result = pinball(actual, predicted, level=0.5, loss=3)
+        np.testing.assert_almost_equal(
+            result, 0.5 * np.sum(np.abs(actual - predicted) ** 3)
+        )
 
 
 class TestHalfMoment:
@@ -304,3 +318,73 @@ class TestHalfMoment:
         x = np.array([1, 2, 3, 4, 5])
         result = cextremity(x)
         assert isinstance(result, complex)
+
+
+lo = actual - 0.5
+up = actual + 0.5
+bench = {"benchmark": actual - 0.1}
+OLD_ACTUAL = [
+    (me, {}),
+    (mae, {}),
+    (mse, {}),
+    (rmse, {}),
+    (mpe, {}),
+    (mape, {}),
+    (mre, {}),
+    (mase, {"scale": 2.0}),
+    (rmsse, {"scale": 2.0}),
+    (same, {"scale": 2.0}),
+    (smse, {"scale": 2.0}),
+    (spis, {"scale": 2.0}),
+    (sce, {"scale": 2.0}),
+    (rmae, bench),
+    (rrmse, bench),
+    (rame, bench),
+    (gmrae, bench),
+]
+OLD_ACTUAL_INTERVALS = [
+    (mis, {}),
+    (smis, {"scale": 2.0}),
+    (rmis, {"benchmark_lower": lo - 1, "benchmark_upper": up + 1}),
+]
+
+
+class TestDeprecatedArguments:
+    @pytest.mark.parametrize(
+        "fun,kw", OLD_ACTUAL, ids=[f.__name__ for f, _ in OLD_ACTUAL]
+    )
+    def test_actual(self, fun, kw):
+        expected = fun(actual, predicted, **kw)
+        with pytest.warns(DeprecationWarning, match="'actual' is deprecated"):
+            result = fun(actual=actual, forecast=predicted, **kw)
+        np.testing.assert_equal(result, expected)
+
+    @pytest.mark.parametrize(
+        "fun,kw",
+        OLD_ACTUAL_INTERVALS,
+        ids=[f.__name__ for f, _ in OLD_ACTUAL_INTERVALS],
+    )
+    def test_actual_intervals(self, fun, kw):
+        expected = fun(actual, lo, up, **kw)
+        with pytest.warns(DeprecationWarning, match="'actual' is deprecated"):
+            result = fun(actual=actual, lower=lo, upper=up, **kw)
+        np.testing.assert_equal(result, expected)
+
+    @pytest.mark.parametrize("fun", [hm, ham, asymmetry, extremity, cextremity])
+    def test_center(self, fun):
+        x = np.array([1.0, 3.0, 2.0, 8.0, 0.0, 4.0])
+        expected = fun(x, C=2.0)
+        with pytest.warns(DeprecationWarning, match="'center' is deprecated"):
+            result = fun(x, center=2.0)
+        np.testing.assert_equal(result, expected)
+
+    def test_new_names_do_not_warn(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            mae(holdout=actual, forecast=predicted)
+            mis(holdout=actual, lower=lo, upper=up)
+            hm(actual, C=2.0)
+
+    def test_unknown_keyword_still_fails(self):
+        with pytest.raises(TypeError):
+            mae(actual, predicted, actuals=actual)

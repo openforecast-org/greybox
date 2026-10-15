@@ -19,6 +19,8 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from .fitters import _lm_fit
+
 
 class StickResult:
     """Result of :func:`stick`. Mirrors R's ``stick`` S3 class.
@@ -193,18 +195,11 @@ class StickResult:
         return axes
 
 
-def _residual_sum_of_squares(y: np.ndarray, design: np.ndarray) -> float:
-    """Residual sum of squares of an OLS fit of ``y`` on ``design``."""
-    coef, _, _, _ = np.linalg.lstsq(design, y, rcond=None)
-    residuals = y - design @ coef
-    return float(residuals @ residuals)
-
-
 def _factor_dummies(codes: np.ndarray) -> np.ndarray:
     """Treatment-coded dummies for a factor (first level dropped)."""
     levels = np.unique(codes)
     # Drop the first level for identifiability (treatment contrasts).
-    return np.column_stack([(codes == level).astype(float) for level in levels[1:]])
+    return (codes[:, None] == levels[1:]).astype(float)
 
 
 def stick(y, lags=None) -> StickResult:
@@ -295,45 +290,52 @@ def stick(y, lags=None) -> StickResult:
     term_names = [f"seasonal{int(lag)}" for lag in lags]
     term_codes = [positions % int(lag) for lag in lags]
 
+    # As R's aov(), the observations with missing values are dropped.
+    observed = ~np.isnan(y_values)
+    y_observed = y_values[observed]
+
     lag_max = int(np.max(lags))
     trend_codes = positions // lag_max
-    has_trend = len(np.unique(trend_codes)) > 1
+    has_trend = len(np.unique(trend_codes[observed])) > 1
     if has_trend:
         term_names.append("trend")
         term_codes.append(trend_codes)
 
+    term_codes = [codes[observed] for codes in term_codes]
+
     # Sequential (Type I) ANOVA: add each term's dummies in order and
-    # record the reduction in the residual sum of squares.
-    intercept = np.ones((nobs, 1))
-    design = intercept
-    rss_prev = _residual_sum_of_squares(y_values, design)
+    # record the reduction in the residual sum of squares. The degrees of
+    # freedom are the increments in the rank of the design, so the
+    # (partially) aliased terms only get their new columns.
+    design = np.ones((len(y_observed), 1))
+    residuals = _lm_fit(design, y_observed)[1]
+    rss_prev, rank_prev = float(residuals @ residuals), 1
 
     df = []
     sum_sq = []
     for codes in term_codes:
-        dummies = _factor_dummies(codes)
-        design = np.column_stack([design, dummies])
-        rss_curr = _residual_sum_of_squares(y_values, design)
-        df.append(dummies.shape[1])
+        design = np.column_stack([design, _factor_dummies(codes)])
+        _, residuals, rank_curr = _lm_fit(design, y_observed)
+        rss_curr = float(residuals @ residuals)
+        df.append(rank_curr - rank_prev)
         sum_sq.append(rss_prev - rss_curr)
-        rss_prev = rss_curr
+        rss_prev, rank_prev = rss_curr, rank_curr
 
-    # Residual ("irregular") row.
-    df_residual = nobs - design.shape[1]
-    sum_sq_residual = rss_prev
-
-    rows = term_names + ["Residuals"]
-    df_all = np.array(df + [df_residual], dtype=float)
-    sum_sq_all = np.array(sum_sq + [sum_sq_residual], dtype=float)
+    # Residual ("irregular") row. The rows without degrees of freedom are
+    # dropped, as in R's summary.aov().
+    df_all = np.array(df + [len(y_observed) - rank_prev], dtype=float)
+    keep = df_all > 0
+    rows = [row for row, k in zip(term_names + ["Residuals"], keep) if k]
+    df_all = df_all[keep]
+    sum_sq_all = np.array(sum_sq + [rss_prev], dtype=float)[keep]
     mean_sq = sum_sq_all / df_all
 
     # F values and p-values for the model terms (not for the residuals).
-    mean_sq_residual = mean_sq[-1]
     f_value = np.full(len(rows), np.nan)
     p_value = np.full(len(rows), np.nan)
-    if df_residual > 0:
-        f_value[:-1] = mean_sq[:-1] / mean_sq_residual
-        p_value[:-1] = stats.f.sf(f_value[:-1], df_all[:-1], df_residual)
+    if keep[-1]:
+        f_value[:-1] = mean_sq[:-1] / mean_sq[-1]
+        p_value[:-1] = stats.f.sf(f_value[:-1], df_all[:-1], df_all[-1])
 
     anova = pd.DataFrame(
         {
@@ -348,7 +350,7 @@ def stick(y, lags=None) -> StickResult:
 
     # Strength of each component = its share of the total Sum of Squares.
     strength_values = sum_sq_all / sum_sq_all.sum()
-    strength_names = term_names + ["irregular"]
+    strength_names = ["irregular" if row == "Residuals" else row for row in rows]
     strength = pd.Series(strength_values, index=strength_names)
 
     return StickResult(y=y_values, lags=lags, anova=anova, strength=strength)

@@ -11,10 +11,17 @@ References
 - Kourentzes N. (2014). The Bias Coefficient: a new metric for forecast bias.
 """
 
+import warnings
+
 import numpy as np
 
 
-def hm(x: np.ndarray, center: float | None = None) -> complex:
+def hm(
+    x: np.ndarray,
+    C: float | None = None,
+    *,
+    center: float | None = None,
+) -> complex:
     """Half Moment (HM).
 
     The half moment is a measure that captures the asymmetry of a distribution
@@ -29,8 +36,10 @@ def hm(x: np.ndarray, center: float | None = None) -> complex:
     ----------
     x : np.ndarray
         Data vector.
-    center : float, optional
+    C : float, optional
         Centering parameter. If None, uses mean(x).
+    center : float, optional
+        Deprecated alias of ``C``, kept for one release.
 
     Returns
     -------
@@ -47,16 +56,29 @@ def hm(x: np.ndarray, center: float | None = None) -> complex:
     ----------
     Svetunkov I., Kourentzes N., Svetunkov S. "Half Central Moment for Data Analysis".
     """
+    if center is not None:
+        warnings.warn(
+            "'center' is deprecated, use 'C' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        C = center
+
     x = np.asarray(x, dtype=float)
     x = x[~np.isnan(x)]
 
-    if center is None:
-        center = np.mean(x)
+    if C is None:
+        C = np.mean(x)
 
-    return np.mean(np.sqrt(np.array(x - center, dtype=complex)))
+    return np.mean(np.sqrt(np.array(x - C, dtype=complex)))
 
 
-def ham(x: np.ndarray, center: float | None = None) -> float:
+def ham(
+    x: np.ndarray,
+    C: float | None = None,
+    *,
+    center: float | None = None,
+) -> float:
     """Half Absolute Moment (HAM).
 
     The half absolute moment is the absolute value of the half moment.
@@ -69,8 +91,10 @@ def ham(x: np.ndarray, center: float | None = None) -> float:
     ----------
     x : np.ndarray
         Data vector.
-    center : float, optional
+    C : float, optional
         Centering parameter. If None, uses mean(x).
+    center : float, optional
+        Deprecated alias of ``C``, kept for one release.
 
     Returns
     -------
@@ -87,16 +111,29 @@ def ham(x: np.ndarray, center: float | None = None) -> float:
     ----------
     Svetunkov I., Kourentzes N., Svetunkov S. "Half Central Moment for Data Analysis".
     """
+    if center is not None:
+        warnings.warn(
+            "'center' is deprecated, use 'C' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        C = center
+
     x = np.asarray(x, dtype=float)
     x = x[~np.isnan(x)]
 
-    if center is None:
-        center = np.mean(x)
+    if C is None:
+        C = np.mean(x)
 
-    return float(np.mean(np.sqrt(np.abs(x - center))))
+    return float(np.mean(np.sqrt(np.abs(x - C))))
 
 
-def asymmetry(x: np.ndarray, center: float | None = None) -> float:
+def asymmetry(
+    x: np.ndarray,
+    C: float | None = None,
+    *,
+    center: float | None = None,
+) -> float:
     """Asymmetry coefficient.
 
     The asymmetry coefficient measures the asymmetry of a distribution
@@ -114,8 +151,10 @@ def asymmetry(x: np.ndarray, center: float | None = None) -> float:
     ----------
     x : np.ndarray
         Data vector.
-    center : float, optional
+    C : float, optional
         Centering parameter. If None, uses mean(x).
+    center : float, optional
+        Deprecated alias of ``C``, kept for one release.
 
     Returns
     -------
@@ -135,30 +174,47 @@ def asymmetry(x: np.ndarray, center: float | None = None) -> float:
     ----------
     Svetunkov I., Kourentzes N., Svetunkov S. "Half Central Moment for Data Analysis".
     """
+    if center is not None:
+        warnings.warn(
+            "'center' is deprecated, use 'C' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        C = center
+
     x = np.asarray(x, dtype=float)
     x = x[~np.isnan(x)]
 
-    if center is None:
-        center = np.mean(x)
+    if C is None:
+        C = np.mean(x)
 
-    return 1 - np.angle(hm(x, center)) / (np.pi / 4)
+    return 1 - np.angle(hm(x, C)) / (np.pi / 4)
 
 
-def extremity(x: np.ndarray, center: float | None = None) -> float:
+def extremity(
+    x: np.ndarray,
+    C: float | None = None,
+    *,
+    center: float | None = None,
+) -> float:
     """Extremity coefficient.
 
     The extremity coefficient measures how extreme the values in a distribution
     are relative to the center.
 
     Formula:
-        extremity = 2 * (ham(x, C) / (std(x)^0.5))^(log(0.5)/log(2*3^(-0.75))) - 1
+        extremity = 2 * (ham(x, C) / mean((x - C)^2)^0.25)^a - 1
+
+    where a = log(0.5)/log(2*3^(-0.75)). As in R, NA values in x give NA.
 
     Parameters
     ----------
     x : np.ndarray
         Data vector.
-    center : float, optional
+    C : float, optional
         Centering parameter. If None, uses mean(x).
+    center : float, optional
+        Deprecated alias of ``C``, kept for one release.
 
     Returns
     -------
@@ -175,28 +231,32 @@ def extremity(x: np.ndarray, center: float | None = None) -> float:
     ----------
     Svetunkov I., Kourentzes N., Svetunkov S. "Half Central Moment for Data Analysis".
     """
+    if center is not None:
+        warnings.warn(
+            "'center' is deprecated, use 'C' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        C = center
+
     x = np.asarray(x, dtype=float)
-    x = x[~np.isnan(x)]
 
-    if center is None:
-        center = np.mean(x)
-
-    if len(x) < 2:
-        return np.nan
-
-    ham_val = ham(x, center)
-    variance = np.var(x, ddof=0)
-
-    if variance == 0:
-        return np.nan
+    if C is None:
+        C = np.nanmean(x)
 
     exponent = np.log(0.5) / np.log(2 * 3**-0.75)
-    ch = ham_val / (variance**0.25)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ch = ham(x, C) / np.mean((x - C) ** 2) ** 0.25
 
     return 2 * (ch**exponent) - 1
 
 
-def cextremity(x: np.ndarray, center: float | None = None) -> complex:
+def cextremity(
+    x: np.ndarray,
+    C: float | None = None,
+    *,
+    center: float | None = None,
+) -> complex:
     """Complex Extremity coefficient.
 
     The complex extremity coefficient extends the extremity coefficient
@@ -205,14 +265,17 @@ def cextremity(x: np.ndarray, center: float | None = None) -> complex:
     Formula:
         cextremity = 2 * (CH * 2)^(log(0.5)/log(2*3^(-0.75))) - 1
 
-    where CH = hm(x, C) / (std(x)^0.25)
+    where CH = hm(x, C) / mean((x - C)^2)^0.25. As in R, NA values in x
+    give NA.
 
     Parameters
     ----------
     x : np.ndarray
         Data vector.
-    center : float, optional
+    C : float, optional
         Centering parameter. If None, uses mean(x).
+    center : float, optional
+        Deprecated alias of ``C``, kept for one release.
 
     Returns
     -------
@@ -229,23 +292,22 @@ def cextremity(x: np.ndarray, center: float | None = None) -> complex:
     ----------
     Svetunkov I., Kourentzes N., Svetunkov S. "Half Central Moment for Data Analysis".
     """
+    if center is not None:
+        warnings.warn(
+            "'center' is deprecated, use 'C' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        C = center
+
     x = np.asarray(x, dtype=float)
-    x = x[~np.isnan(x)]
 
-    if center is None:
-        center = np.mean(x)
-
-    if len(x) < 2:
-        return np.nan
-
-    hm_val = hm(x, center)
-    variance = np.var(x, ddof=0)
-
-    if variance == 0:
-        return np.nan
+    if C is None:
+        C = np.nanmean(x)
 
     exponent = np.log(0.5) / np.log(2 * 3**-0.75)
-    ch = hm_val / (variance**0.25)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ch = hm(x, C) / np.mean((x - C) ** 2) ** 0.25
 
     real_part = 2 * (np.real(ch) * 2) ** exponent - 1
     imag_part = 2 * (np.imag(ch) * 2) ** exponent - 1
@@ -254,24 +316,30 @@ def cextremity(x: np.ndarray, center: float | None = None) -> complex:
 
 
 def _validate_inputs(
-    actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True
+    holdout: np.ndarray | None, forecast: np.ndarray | None, na_rm: bool = True
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Validate and clean actual and forecast inputs."""
-    actual = np.asarray(actual, dtype=float)
+    """Validate and clean holdout and forecast inputs."""
+    holdout = np.asarray(holdout, dtype=float)
     forecast = np.asarray(forecast, dtype=float)
 
-    if len(actual) != len(forecast):
-        raise ValueError("Lengths of actual and forecast must match")
+    if len(holdout) != len(forecast):
+        raise ValueError("Lengths of holdout and forecast must match")
 
     if na_rm:
-        mask = ~(np.isnan(actual) | np.isnan(forecast))
-        actual = actual[mask]
+        mask = ~(np.isnan(holdout) | np.isnan(forecast))
+        holdout = holdout[mask]
         forecast = forecast[mask]
 
-    return actual, forecast
+    return holdout, forecast
 
 
-def mre(actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True) -> float:
+def mre(
+    holdout: np.ndarray | None = None,
+    forecast: np.ndarray | None = None,
+    na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
+) -> complex:
     """Mean Root Error (MRE).
 
     The MRE measures the average signed root error. It is used as a bias
@@ -279,38 +347,48 @@ def mre(actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True) -> float:
     under-forecasting.
 
     Formula:
-        MRE = mean(sqrt(actual - forecast))
+        MRE = mean(sqrt(holdout - forecast))
 
-    Note: When actual < forecast, the result is complex. The function
-    returns the real part of the mean.
+    Note: When holdout < forecast, the roots are complex, so the result is
+    a complex number, as in R.
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
     na_rm : bool, default=True
         Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
-    float
+    complex
         Mean Root Error.
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5])
+    >>> holdout = np.array([1, 2, 3, 4, 5])
     >>> forecast = np.array([1.1, 2.0, 3.2, 3.9, 5.1])
-    >>> round(float(mre(actual, forecast)), 4)
-    0.0632
+    >>> mre(holdout, forecast)  # doctest: +ELLIPSIS
+    (0.0632...+0.2159...j)
 
     References
     ----------
     Kourentzes N. (2014). The Bias Coefficient: a new metric for forecast bias.
     https://kourentzes.com/forecasting/2014/12/17/the-bias-coefficient-a-new-metric-for-forecast-bias/
     """
-    actual, forecast = _validate_inputs(actual, forecast, na_rm)
-    errors = actual - forecast
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
+
+    holdout, forecast = _validate_inputs(holdout, forecast, na_rm)
+    errors = holdout - forecast
     complex_roots = np.sqrt(np.array(errors, dtype=complex))
-    return np.mean(complex_roots).real
+    return complex(np.mean(complex_roots))

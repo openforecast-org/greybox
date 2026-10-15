@@ -77,9 +77,9 @@ if there is heteroscedasticity in time. This also shows, when the outliers happe
 details;
 \item PACF of the residuals. No, really, are they autocorrelated? See \link[stats]{pacf}
 for details;
-\item Cook's distance over time. Shows influential observations. 0.5, 0.75 and 0.95 quantile
-lines from Fisher's distribution are also plotted. If the value is above them then the
-observation is influencial. This does not work well for non-normal distributions;
+\item Cook's distance over time. Shows influential observations. The heuristic thresholds
+4/n, 4/(n-k) and 1 are also plotted. If the value is above them then the observation is
+influential. This does not work well for non-normal distributions;
 \item Absolute standardised residuals vs Fitted. Similar to the previous, but with absolute
 values. This is more relevant to the models where scale is calculated as an absolute value of
 something (e.g. Laplace);

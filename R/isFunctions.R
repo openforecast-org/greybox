@@ -13,7 +13,7 @@
 #' function;
 #' \item \code{is.greyboxD()} tests if the object was produced by \code{lmDynamic()}
 #' function;
-#' \item \code{is.rmc()} tests if the object was produced by \code{rmc()} function;
+#' \item \code{is.rmc()} tests if the object was produced by \code{rmcb()} function;
 #' \item \code{is.rollingOrigin()} tests if the object was produced by \code{ro()}
 #' function;
 #' \item \code{is.scale()} tests if the object is of the class "scale" (produced by
@@ -77,7 +77,7 @@ is.rollingOrigin <- function(x){
 #' @rdname isFunctions
 #' @export
 is.rmc <- function(x){
-    return(inherits(x,"rmc"))
+    return(inherits(x,"rmcb"))
 }
 
 #' @rdname isFunctions

@@ -98,14 +98,22 @@ class TestFormula:
         np.testing.assert_array_almost_equal(y, expected_y)
 
     def test_formula_polynomial(self):
-        """Test formula with polynomial terms."""
+        """Test formula with polynomial terms, protected by I() as in R."""
         data = {"y": [1, 2, 3, 4, 5], "x": [1, 2, 3, 4, 5]}
-        y, X = formula("y ~ x + x^2 + x^3", data)
+        y, X = formula("y ~ x + I(x^2) + I(x^3)", data)
 
         assert X.shape == (5, 4)
         X_np = np.asarray(X)
         np.testing.assert_array_equal(X_np[:, 2], np.array([1, 4, 9, 16, 25]))  # x^2
         np.testing.assert_array_equal(X_np[:, 3], np.array([1, 8, 27, 64, 125]))  # x^3
+
+    def test_formula_power_of_term(self):
+        """Without I(), x^2 is the crossing of x with itself, x, as in R."""
+        data = {"y": [1, 2, 3, 4, 5], "x": [1, 2, 3, 4, 5]}
+        y, X = formula("y ~ x^2 + x^3", data)
+
+        assert list(X.columns) == ["(Intercept)", "x"]
+        np.testing.assert_array_equal(X["x"], data["x"])
 
     def test_formula_log_x(self):
         """Test formula with log(x) transformation."""
@@ -326,7 +334,7 @@ class TestALMProperties:
     def test_alm_nparam_without_scale(self, mtcars_data):
         """Test ALM nparam for distributions without scale."""
         data = mtcars_data
-        y, X = formula("mpg ~ wt", data)
+        y, X = formula("carb ~ wt", data)
 
         model = ALM(distribution="dpois", loss="likelihood")
         model.fit(X, y)
@@ -1480,8 +1488,10 @@ class TestALMOrders:
         y, X = formula("mpg ~ wt", data)
 
         model = ALM(
-            distribution="dnorm", loss="likelihood", orders=(1, 0, 0),
-            nlopt_kargs={"maxeval": 5000}
+            distribution="dnorm",
+            loss="likelihood",
+            orders=(1, 0, 0),
+            nlopt_kargs={"maxeval": 5000},
         )
         model.fit(X, y)
 
@@ -1492,7 +1502,10 @@ class TestALMOrders:
             model.coef[0], -5.82, rtol=5e-2, err_msg="wt coefficient doesn't match R"
         )
         np.testing.assert_allclose(
-            model.coef[1], -0.118, rtol=1e-1, err_msg="mpgLag1 coefficient doesn't match R"
+            model.coef[1],
+            -0.118,
+            rtol=1e-1,
+            err_msg="mpgLag1 coefficient doesn't match R",
         )
         np.testing.assert_allclose(
             model.scale, 8.42, rtol=5e-2, err_msg="Scale doesn't match R"
@@ -1516,8 +1529,10 @@ class TestALMOrders:
         y, X = formula("mpg ~ wt", data)
 
         model = ALM(
-            distribution="dnorm", loss="likelihood", orders=(2, 0, 0),
-            nlopt_kargs={"maxeval": 5000}
+            distribution="dnorm",
+            loss="likelihood",
+            orders=(2, 0, 0),
+            nlopt_kargs={"maxeval": 5000},
         )
         model.fit(X, y)
 
@@ -1531,7 +1546,10 @@ class TestALMOrders:
             model.coef[1], -0.023, rtol=1, err_msg="mpgLag1 coefficient doesn't match R"
         )
         np.testing.assert_allclose(
-            model.coef[2], -0.181, rtol=1e-1, err_msg="mpgLag2 coefficient doesn't match R"
+            model.coef[2],
+            -0.181,
+            rtol=1e-1,
+            err_msg="mpgLag2 coefficient doesn't match R",
         )
         np.testing.assert_allclose(
             model.scale, 7.59, rtol=5e-2, err_msg="Scale doesn't match R"
@@ -1546,8 +1564,10 @@ class TestALMOrders:
         y, X = formula("mpg ~ wt", data)
 
         model = ALM(
-            distribution="dnorm", loss="likelihood", orders=(0, 0, 1),
-            nlopt_kargs={"maxeval": 100}
+            distribution="dnorm",
+            loss="likelihood",
+            orders=(0, 0, 1),
+            nlopt_kargs={"maxeval": 100},
         )
 
         with pytest.raises(NotImplementedError, match="MA.*not implemented"):
@@ -1555,7 +1575,10 @@ class TestALMOrders:
 
     def test_alm_orders_feature_names(self):
         """Test that orders parameter adds correct feature names."""
-        data = {"y": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
+        data = {
+            "y": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        }
         y, X = formula("y ~ x", data)
 
         model = ALM(distribution="dnorm", orders=(2, 0, 0))
@@ -1574,8 +1597,10 @@ class TestALMOrders:
         y, X = formula("mpg ~ wt", data)
 
         model = ALM(
-            distribution="dnorm", loss="likelihood", orders=(0, 1, 0),
-            nlopt_kargs={"maxeval": 2000}
+            distribution="dnorm",
+            loss="likelihood",
+            orders=(0, 1, 0),
+            nlopt_kargs={"maxeval": 2000},
         )
         model.fit(X, y)
 
@@ -1583,8 +1608,10 @@ class TestALMOrders:
         assert model.arima_polynomial_ is not None
         assert list(model.arima_polynomial_.keys()) == ["mpgLag1"]
         np.testing.assert_allclose(
-            model.arima_polynomial_["mpgLag1"], 1.0, atol=1e-10,
-            err_msg="Pure I(1) lag coefficient must be exactly 1.0"
+            model.arima_polynomial_["mpgLag1"],
+            1.0,
+            atol=1e-10,
+            err_msg="Pure I(1) lag coefficient must be exactly 1.0",
         )
 
     def test_alm_orders_ari11(self, mtcars_data):
@@ -1597,8 +1624,10 @@ class TestALMOrders:
         y, X = formula("mpg ~ wt", data)
 
         model = ALM(
-            distribution="dnorm", loss="likelihood", orders=(1, 1, 0),
-            nlopt_kargs={"maxeval": 5000}
+            distribution="dnorm",
+            loss="likelihood",
+            orders=(1, 1, 0),
+            nlopt_kargs={"maxeval": 5000},
         )
         model.fit(X, y)
 
@@ -1609,8 +1638,10 @@ class TestALMOrders:
         # Invariant: coefficients of ARI(1,d) polynomial always sum to 1
         poly_sum = sum(model.arima_polynomial_.values())
         np.testing.assert_allclose(
-            poly_sum, 1.0, atol=1e-8,
-            err_msg="ARI(1,1) polynomial coefficients must sum to 1.0"
+            poly_sum,
+            1.0,
+            atol=1e-8,
+            err_msg="ARI(1,1) polynomial coefficients must sum to 1.0",
         )
 
     def test_alm_orders_ari11_feature_names(self, mtcars_data):
@@ -1623,8 +1654,7 @@ class TestALMOrders:
         y, X = formula("mpg ~ wt", data)
 
         model = ALM(
-            distribution="dnorm", orders=(1, 1, 0),
-            nlopt_kargs={"maxeval": 2000}
+            distribution="dnorm", orders=(1, 1, 0), nlopt_kargs={"maxeval": 2000}
         )
         model.fit(X, y)
 
@@ -1685,7 +1715,9 @@ def test_point_lik_sums_to_loglik(distribution):
 _Y_OCC = (_RNG.random(150) < 0.6) * np.exp(_Z)
 
 
-@pytest.mark.parametrize("distribution", ["dnorm", "dlnorm", "dgamma", "dlaplace", "dinvgauss"])
+@pytest.mark.parametrize(
+    "distribution", ["dnorm", "dlnorm", "dgamma", "dlaplace", "dinvgauss"]
+)
 def test_occurrence_likelihood_matches_point_lik(distribution):
     """With an occurrence model the scale is estimated on the non-zeroes, as in R."""
     X = np.column_stack([np.ones(150), _X1])
@@ -1701,7 +1733,9 @@ def test_role_estimates_like_the_likelihood():
     role = ALM(distribution="dnorm", loss="ROLE").fit(X, _Z)
     lik = ALM(distribution="dnorm").fit(X, _Z)
     assert np.isfinite(role.loglik)
-    assert np.allclose(np.r_[role.intercept_, role.coef], np.r_[lik.intercept_, lik.coef], atol=0.2)
+    assert np.allclose(
+        np.r_[role.intercept_, role.coef], np.r_[lik.intercept_, lik.coef], atol=0.2
+    )
 
 
 def test_sigma_uses_nparam():
@@ -1724,7 +1758,7 @@ def test_dbinom_size_is_the_number_of_values_less_one():
 def test_qalaplace_vectorised_over_location():
     from greybox.distributions import qalaplace
 
-    q = qalaplace(0.9, loc=np.array([0.0, 1.0, 2.0]), scale=1.0, alpha=0.3)
+    q = qalaplace(0.9, mu=np.array([0.0, 1.0, 2.0]), scale=1.0, alpha=0.3)
     assert np.allclose(np.diff(q), 1.0)
 
 
@@ -1733,3 +1767,272 @@ def test_dbcnorm_predicts_with_the_estimated_lambda():
     model = ALM(distribution="dbcnorm").fit(X, np.exp(_Z))
     prediction = model.predict(X[:3], interval="prediction")
     assert np.all(np.isfinite(np.asarray(prediction.upper)))
+
+
+# ---------------------------------------------------------------------------
+# Latent sizes of the dynamic models with an occurrence model
+# ---------------------------------------------------------------------------
+
+_N_AR = 200
+_X_AR = _RNG.normal(size=_N_AR)
+_Z_AR = np.zeros(_N_AR)
+for _t in range(_N_AR):
+    _Z_AR[_t] = 15 + 0.4 * _X_AR[_t] + 0.7 * (_Z_AR[_t - 1] if _t > 0 else 50)
+    _Z_AR[_t] += _RNG.normal(0, 1)
+_Y_AR = (_RNG.random(_N_AR) < 0.6) * _Z_AR
+_XM_AR = np.column_stack([np.ones(_N_AR), _X_AR])
+
+
+def _alm_latent(c, a, z, observed, initial_mean):
+    from greybox._native_alm_latent import alm_latent
+
+    return alm_latent(
+        np.asarray(c, float),
+        np.asarray(a, float),
+        np.asarray(z, float),
+        np.asarray(observed, np.int32),
+        np.asarray(initial_mean, float),
+        np.zeros(0),
+        True,
+    )
+
+
+def test_alm_latent_ar1_variances():
+    """After an observed value, the variances of AR(1) grow as 1 + a^2 + a^4..."""
+    a = 0.7
+    result = _alm_latent(np.zeros(5), [a], [1, 0, 0, 0, 0], [1, 0, 0, 0, 0], [0.0])
+    expected = [1, 1, 1 + a**2, 1 + a**2 + a**4, 1 + a**2 + a**4 + a**6]
+    assert np.allclose(result["variance"], expected)
+    assert np.allclose(result["mu"], [0, a, a**2, a**3, a**4])
+
+
+def test_alm_latent_is_the_gaussian_conditional():
+    """The filter gives the mean and variance of z_t given the observed values before it."""
+    rng = np.random.default_rng(3)
+    a, n = np.array([0.5, 0.3]), 8
+    c, z, m0 = rng.normal(size=n), rng.normal(size=n), np.array([1.0, -1.0])
+    observed = np.array([1, 0, 0, 1, 0, 1, 0, 0])
+    # z = L^{-1}(b + e), with the presample in b
+    L = np.eye(n) - a[0] * np.eye(n, k=-1) - a[1] * np.eye(n, k=-2)
+    b = c.copy()
+    b[0] += a @ m0
+    b[1] += a[1] * m0[0]
+    mean = np.linalg.solve(L, b)
+    covariance = np.linalg.solve(L, np.linalg.inv(L).T)
+    result = _alm_latent(c, a, z, observed, m0)
+    for t in range(n):
+        o = np.flatnonzero(observed[:t])
+        gain = (
+            np.linalg.solve(covariance[np.ix_(o, o)], covariance[o, t])
+            if len(o)
+            else []
+        )
+        assert result["mu"][t] == pytest.approx(mean[t] + np.dot(gain, z[o] - mean[o]))
+        assert result["variance"][t] == pytest.approx(
+            covariance[t, t] - np.dot(gain, covariance[o, t])
+        )
+
+
+@pytest.mark.parametrize("distribution", ["dnorm", "dlnorm", "dgamma", "dlaplace"])
+@pytest.mark.parametrize("ar_order", [1, 2])
+def test_occurrence_ari_likelihood_matches_point_lik(distribution, ar_order):
+    """The zeros give only the occurrence likelihood, with no entropy of the sizes."""
+    occurrence = ALM(distribution="plogis").fit(_XM_AR, (_Y_AR != 0).astype(float))
+    model = ALM(
+        distribution=distribution, occurrence=occurrence, orders=(ar_order, 0, 0)
+    )
+    model.fit(_XM_AR, _Y_AR)
+    assert np.isfinite(model.loglik)
+    assert np.sum(point_lik(model)) == pytest.approx(model.loglik, rel=1e-8)
+    # The lags at the zeros are the latent sizes, near the observed ones, not zeros
+    lags = model._X_train_[1:, -ar_order]
+    assert np.all(lags[_Y_AR[:-1] == 0] > 0.8 * np.min(lags[_Y_AR[:-1] != 0]))
+
+
+def test_ari_zeros_are_kept_without_occurrence():
+    """Without an occurrence model the zeros are observed values of the response."""
+    model = ALM(distribution="dnorm", orders=(1, 0, 0)).fit(_XM_AR, _Y_AR)
+    assert np.array_equal(model._X_train_[1:, -1], _Y_AR[:-1])
+
+
+def test_ari_prediction_intervals_widen():
+    """The prediction variance of AR(1) grows with the horizon."""
+    model = ALM(distribution="dnorm", orders=(1, 0, 0)).fit(_XM_AR, _Z_AR)
+    prediction = model.predict(np.ones((6, 2)), interval="prediction")
+    width = np.ravel(prediction.upper) - np.ravel(prediction.lower)
+    assert np.all(np.diff(width) > 0)
+
+
+def test_ari_forecast_after_zeros_uses_the_latent_sizes():
+    """After trailing zeros the forecast goes on from the latent sizes, not from zero."""
+    y = _Y_AR.copy()
+    y[-3:] = 0
+    occurrence = ALM(distribution="plogis").fit(_XM_AR, (y != 0).astype(float))
+    model = ALM(distribution="dnorm", occurrence=occurrence, orders=(1, 0, 0))
+    model.fit(_XM_AR, y)
+    prediction = model.predict(
+        np.ones((2, 2)), interval="prediction", occurrence=np.ones(2)
+    )
+    assert np.all(np.ravel(prediction.mean) > 40)
+    # The first step is three steps after the last observed size
+    width = np.ravel(prediction.upper) - np.ravel(prediction.lower)
+    assert width[0] > 2 * 1.96 * model.sigma * 1.2
+
+
+def test_laplace_vcov_is_the_expected_information():
+    """The non-smooth Laplace likelihood takes the expected information, s^2 (X'X)^-1."""
+    X = np.column_stack([np.ones(150), _X1])
+    model = ALM(distribution="dlaplace").fit(X, _Z)
+    assert np.allclose(model.vcov(), model.scale**2 * np.linalg.inv(X.T @ X), rtol=1e-6)
+
+
+class TestALMResidualDiagnostics:
+    """hatvalues(), rstandard() and rstudent(), as R's methods for alm."""
+
+    @pytest.fixture(scope="class")
+    def data(self):
+        rng = np.random.default_rng(3)
+        x = rng.normal(size=(50, 2))
+        X = np.column_stack([np.ones(50), x])
+        return X, 5 + x @ np.array([1.0, -2.0]) + rng.normal(size=50)
+
+    def test_hatvalues_normal(self, data):
+        X, y = data
+        hat = ALM().fit(X, y).hatvalues()
+        assert np.isclose(hat.sum(), 3)
+        assert np.allclose(hat, np.diag(X @ np.linalg.inv(X.T @ X) @ X.T))
+
+    def test_rstandard_rstudent_normal(self, data):
+        """The classical standardised and studentised residuals of the regression."""
+        X, y = data
+        model = ALM().fit(X, y)
+        hat = model.hatvalues()
+        errors = model.residuals - model.residuals.mean()
+        n, k = 50, model.nparam
+        standardised = model.residuals / np.sqrt(model.scale * (1 - hat))
+        assert np.allclose(model.rstandard(), standardised)
+        others = (np.sum(errors**2) - errors**2) / (n - k - 1)
+        assert np.allclose(model.rstudent(), errors / np.sqrt(others * (1 - hat)))
+
+    def test_occurrence_zeros_are_nan(self, data):
+        X, y = data
+        rng = np.random.default_rng(4)
+        sizes = np.exp(y / 5) * (rng.random(50) < 0.7)
+        model = ALM(distribution="dlnorm", occurrence="plogis").fit(X, sizes)
+        for residuals in (model.rstandard(), model.rstudent()):
+            assert np.all(np.isnan(residuals[sizes == 0]))
+            assert np.all(np.isfinite(residuals[sizes != 0]))
+
+    @pytest.mark.parametrize(
+        "distribution", ["dlaplace", "ds", "dgnorm", "dalaplace", "dlogis", "dgamma"]
+    )
+    def test_other_distributions(self, data, distribution):
+        X, y = data
+        model = ALM(distribution=distribution).fit(X, y + 10)
+        for method in ("hatvalues", "rstandard", "rstudent"):
+            assert np.all(np.isfinite(getattr(model, method)()))
+
+
+class TestScaleModel:
+    """The scale model of ALM: ALM(scale_formula=...), sm() and implant()."""
+
+    @pytest.fixture
+    def data(self):
+        import pandas as pd
+
+        rng = np.random.default_rng(41)
+        x1, x2 = rng.normal(10, 3, 100), rng.normal(50, 5, 100)
+        y = 100 + 0.5 * x1 - 0.75 * x2 + np.exp(0.4 + 0.1 * x1) * rng.normal(size=100)
+        return pd.DataFrame({"y": y, "x1": x1, "x2": x2})
+
+    def test_formula_design_and_model_agree(self, data):
+        from greybox import ScaleModel, implant, sm
+
+        y, X = formula("y ~ x1 + x2", data)
+        by_formula = ALM(scale_formula="~ x1").fit(X, y)
+        by_design = ALM(scale_formula=formula("~ x1", data, return_type="X")).fit(X, y)
+        location = ALM().fit(X, y)
+        scale = sm(location, "~ x1")
+        by_model = ALM(scale_formula=scale).fit(X, y)
+        implanted = implant(location, scale)
+        assert isinstance(by_formula.scale_model, ScaleModel)
+        assert location.scale_model is None
+        for model in (by_design, by_model, implanted):
+            np.testing.assert_allclose(
+                model.scale_model.coefficients, by_formula.scale_model.coefficients
+            )
+            assert model.nparam == by_formula.nparam == 3 + 2
+            np.testing.assert_allclose(model.loglik, by_formula.loglik)
+            np.testing.assert_allclose(model.aicc, by_formula.aicc)
+        # The likelihood is that of the scale model, which is the maximum
+        assert by_formula.loglik == by_formula.scale_model.loglik
+        assert by_formula.loglik > location.loglik
+        np.testing.assert_allclose(np.sum(point_lik(by_formula)), by_formula.loglik)
+
+    def test_extract_scale_and_sigma(self, data):
+        y, X = formula("y ~ x1 + x2", data)
+        model = ALM(distribution="dlaplace", scale_formula="~ x1").fit(X, y)
+        np.testing.assert_allclose(model.extract_scale(), model.scale_model.fitted)
+        np.testing.assert_allclose(
+            model.extract_sigma(), np.sqrt(2) * model.extract_scale()
+        )
+        assert model.scale_model.extract_scale() == 1.0
+        constant = ALM(distribution="dlaplace").fit(X, y)
+        assert constant.extract_scale() == constant.scale
+        assert constant.extract_sigma() == constant.sigma
+
+    def test_predict_new_data(self, data):
+        y, X = formula("y ~ x1 + x2", data.iloc[:90])
+        new = formula("y ~ x1 + x2", data.iloc[90:], return_type="X")
+        model = ALM(scale_formula="~ x1").fit(X, y)
+        prediction = model.predict(new, interval="prediction")
+        # The same with the design matrix of the location model, as the regressors of
+        # the scale are among them
+        np.testing.assert_allclose(
+            model.predict(new.to_numpy(), interval="prediction").lower,
+            prediction.lower,
+        )
+        scale = model.scale_model.predict(new).mean
+        np.testing.assert_allclose(
+            prediction.scale**2 - model._calculate_variance(new.to_numpy()), scale
+        )
+        # The regressors of the scale outside of the location model need a DataFrame
+        outside = ALM(scale_formula=formula("~ x2", data.iloc[:90], return_type="X"))
+        outside.fit(formula("y ~ x1", data.iloc[:90], return_type="X"), y)
+        outside.predict(new, interval="prediction")
+        with pytest.raises(ValueError, match="scale model needs the regressors"):
+            outside.predict(
+                new[["(Intercept)", "x1"]].to_numpy(), interval="prediction"
+            )
+
+    def test_summary_and_checks(self, data):
+        from greybox import implant, sm
+
+        y, X = formula("y ~ x1 + x2", data)
+        with pytest.warns(UserWarning, match="Switching to likelihood"):
+            model = ALM(loss="MSE", scale_formula="~ x1").fit(X, y)
+        assert model.loss == "likelihood"
+        summary = model.summary()
+        assert list(summary.scale_parameters) == [False] * 3 + [True] * 2
+        assert "Coefficients for scale:" in str(summary)
+        assert model.confint().shape == (5, 2)
+        text = str(model.scale_model.summary())
+        assert text.startswith("Scale model for the variable: y")
+        assert "Error standard deviation" not in text
+        assert "Formula: ~ x1" in str(model.scale_model)
+        assert np.all(np.isfinite(model.scale_model.vcov()))
+        with pytest.raises(TypeError):
+            model.scale_model.fit(X, y)
+        with pytest.raises(TypeError):
+            implant(model, model)
+        with pytest.raises(ValueError, match="does not support"):
+            sm(ALM(distribution="dpois").fit(X, np.round(np.abs(y))), "~ x1")
+        with pytest.raises(ValueError, match="names of the regressors"):
+            ALM(scale_formula="~ x1").fit(X.to_numpy(), y)
+        # The names of the regressors may come with feature_names
+        named = ALM(scale_formula="~ x1").fit(
+            X.to_numpy(), y, feature_names=["x1", "x2"]
+        )
+        np.testing.assert_allclose(
+            named.scale_model.coefficients, model.scale_model.coefficients
+        )

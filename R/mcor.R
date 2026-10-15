@@ -76,11 +76,20 @@ mcor <- function(x, y, use=c("na.or.complete","complete.obs","everything","all.o
             # y <- y[!obsNAx & !obsNAy,];
             dataMatrix <- na.omit(data.frame(y=y,x=x));
             y <- dataMatrix[[1]];
-            x <- dataMatrix[[-1]];
+            # Keep the type of x: a matrix, a data.frame or a vector
+            if(is.matrix(x)){
+                x <- as.matrix(dataMatrix[,-1]);
+            }
+            else if(is.data.frame(x)){
+                x <- dataMatrix[,-1,drop=FALSE];
+            }
+            else{
+                x <- dataMatrix[[2]];
+            }
 
             # If there are less than 2 obs left...
-            if((!is.null(nrow(x)) && nrow(x)<2) || length(x)<2){
-                if(use=="complete.obs"){
+            if(nrow(dataMatrix)<2){
+                if(use=="na.or.complete"){
                     return(returner(1));
                 }
                 else{

@@ -68,6 +68,10 @@ tableplot <- function(x, y=NULL, labels=TRUE, legend=FALSE, points=TRUE, ...){
                 yIsProvided <- TRUE;
             }
             else{
+                if(is.null(ellipsis$xlab)){
+                    ellipsis$xlab <- colnames(x)[1];
+                }
+                x <- x[[1]];
                 yIsProvided <- FALSE;
                 y <- rep(0,length(x));
             }
@@ -172,7 +176,7 @@ tableplot <- function(x, y=NULL, labels=TRUE, legend=FALSE, points=TRUE, ...){
 
             # Colour for text and points
             if(tableData[i,j]>0.5){
-                colAdditional <- paletteBasic[2];
+                colAdditional <- "white";
             }
             else{
                 colAdditional <- paletteBasic[1];

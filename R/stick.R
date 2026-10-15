@@ -92,8 +92,8 @@ stick <- function(y, lags=frequency(y), ...){
     # The trend ("year") factor, based on the longest lag
     lagMax <- max(lags);
     trendFactor <- factor(((seq_len(obsInSample)-1) %/% lagMax) + 1);
-    # Only include the trend if it has at least two levels
-    trendIncluded <- nlevels(trendFactor)>1;
+    # Only include the trend if it has at least two levels with observed y
+    trendIncluded <- length(unique(trendFactor[!is.na(sticksData$y)]))>1;
     terms <- seasonalNames;
     if(trendIncluded){
         sticksData[["trend"]] <- trendFactor;

@@ -4,6 +4,8 @@ Density, cumulative distribution, quantile functions and random number
 generation for the Generalized Normal distribution.
 """
 
+import warnings
+
 import numpy as np
 from scipy import stats
 from scipy.special import gamma
@@ -21,12 +23,19 @@ def _density_parameters(scale, shape):
     scale = np.where(np.isnan(scale), 0, scale)
     scale = np.where(scale < 0, 0, scale)
     shape = np.where(np.isnan(shape), 0, shape)
-    shape = np.where(shape == 0, 1e-10, shape)
     return scale, shape
 
 
-def dgnorm(q, loc=0, scale=1, shape=1, log=False):
+def dgnorm(q, mu=0, scale=1, shape=1, log=False, *, loc=None):
     """Generalized Normal distribution density."""
+    if loc is not None:
+        warnings.warn(
+            "'loc' is deprecated, use 'mu' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        mu = loc
+    dims = np.broadcast(q, mu, scale, shape).shape
     scale, shape = _density_parameters(scale, shape)
     q = np.atleast_1d(q)
 
@@ -36,10 +45,10 @@ def dgnorm(q, loc=0, scale=1, shape=1, log=False):
                 np.log(shape)
                 - np.log(2 * scale)
                 - np.log(gamma(1 / shape))
-                - (np.abs(q - loc) / scale) ** shape
+                - (np.abs(q - mu) / scale) ** shape
             )
         return (
-            np.exp(-((np.abs(q - loc) / scale) ** shape))
+            np.exp(-((np.abs(q - mu) / scale) ** shape))
             * shape
             / (2 * scale * gamma(1 / shape))
         )
@@ -48,88 +57,136 @@ def dgnorm(q, loc=0, scale=1, shape=1, log=False):
     # analytically
     args = (
         np.asarray(q, dtype=float),
-        np.atleast_1d(np.asarray(loc, dtype=float)),
+        np.atleast_1d(np.asarray(mu, dtype=float)),
         scale.astype(float),
         shape.astype(float),
     )
-    if log:
-        return _native_densities.dgnorm_log(*args)
-    return _native_densities.dgnorm(*args)
+    density = _native_densities.dgnorm_log if log else _native_densities.dgnorm
+    return density(*args).reshape(dims)[()]
 
 
-def pgnorm(q, loc=0, scale=1, shape=1, lower_tail=True, log=False):
+def pgnorm(
+    q, mu=0, scale=1, shape=1, lower_tail=True, log_p=False, *, loc=None, log=None
+):
     """Generalized Normal distribution CDF."""
-    scale = np.atleast_1d(scale)
-    shape = np.atleast_1d(shape)
+    if loc is not None:
+        warnings.warn(
+            "'loc' is deprecated, use 'mu' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        mu = loc
+    if log is not None:
+        warnings.warn(
+            "'log' is deprecated, use 'log_p' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        log_p = log
+    q = np.asarray(q, dtype=float)
+    scale = np.asarray(scale, dtype=float)
+    shape = np.asarray(shape, dtype=float)
 
     scale = np.where(np.isnan(scale), 0, scale)
     scale = np.where(scale < 0, 0, scale)
     shape = np.where(np.isnan(shape), 0, shape)
-    shape = np.where(shape == 0, 1e-10, shape)
 
-    if np.any(shape > 100):
-        p = stats.uniform.cdf(q, loc=loc - scale, scale=2 * scale)
-    else:
+    # As R, with the rate (1/scale)^shape; uniform where shape is too high
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
         p = (
             1 / 2
-            + np.sign(q - loc)
+            + np.sign(q - mu)
             * stats.gamma.cdf(
-                np.abs(q - loc) ** shape, a=1 / shape, scale=(1 / scale) ** shape
+                np.abs(q - mu) ** shape, a=1 / shape, scale=1 / (1 / scale) ** shape
             )
             / 2
+        )
+        lower, upper = mu - scale, mu + scale
+        p = np.where(
+            shape > 100,
+            np.where(
+                q >= upper,
+                1.0,
+                np.where(q <= lower, 0.0, (q - lower) / (upper - lower)),
+            ),
+            p,
         )
 
     if not lower_tail:
         p = 1 - p
 
-    if log:
-        p = np.log(np.clip(p, 1e-300, None))
+    if log_p:
+        with np.errstate(divide="ignore"):
+            p = np.log(p)
 
-    return p
+    return p[()]
 
 
-def qgnorm(p, loc=0, scale=1, shape=1, lower_tail=True, log=False):
+def qgnorm(
+    p, mu=0, scale=1, shape=1, lower_tail=True, log_p=False, *, loc=None, log=None
+):
     """Generalized Normal distribution quantile function."""
-    p = np.asarray(p)
-    scale = np.atleast_1d(scale)
-    shape = np.atleast_1d(shape)
+    if loc is not None:
+        warnings.warn(
+            "'loc' is deprecated, use 'mu' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        mu = loc
+    if log is not None:
+        warnings.warn(
+            "'log' is deprecated, use 'log_p' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        log_p = log
+    p = np.asarray(p, dtype=float)
+    scale = np.asarray(scale, dtype=float)
+    shape = np.asarray(shape, dtype=float)
 
     scale = np.where(np.isnan(scale), 0, scale)
     scale = np.where(scale < 0, 0, scale)
     shape = np.where(np.isnan(shape), 0, shape)
-    shape = np.where(shape == 0, 1e-10, shape)
 
-    if log:
+    if log_p:
         p = np.exp(p)
     if not lower_tail:
         p = 1 - p
 
     if np.all(shape > 100):
-        result = stats.uniform.ppf(p, loc=loc - scale, scale=2 * scale)
-    elif np.any((1 / scale) ** shape < 1e-300):
-        lambdaScale = np.ceil(scale) / 10
-        lambda_val = (scale / lambdaScale) ** shape
-        result = (
-            np.sign(p - 0.5)
-            * (
-                stats.gamma.ppf(np.abs(p - 0.5) * 2, a=1 / shape, scale=lambda_val)
-                ** (1 / shape)
-            )
-            * lambdaScale
-            + loc
-        )
+        lower, upper = mu - scale, mu + scale
+        result = np.where((p < 0) | (p > 1), np.nan, lower + p * (upper - lower))
     else:
-        lambda_val = scale**shape
-        result = (
-            np.sign(p - 0.5)
-            * stats.gamma.ppf(np.abs(p - 0.5) * 2, a=1 / shape, scale=lambda_val)
-            ** (1 / shape)
-            + loc
-        )
+        # The upper tail of the gamma from the smaller of p and 1-p, as |p-0.5|*2
+        # cancels near p=0. The bounds of the tail first, as R's qgamma
+        tail = 2 * np.minimum(p, 1 - p)
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            lambdaScale = (
+                np.ceil(scale) / 10 if np.any((1 / scale) ** shape < 1e-300) else 1
+            )
+            gamma_scale = (scale / lambdaScale) ** shape
+            bounded = ~np.isnan(gamma_scale)
+            quantile = np.where(
+                bounded & (tail == 0),
+                np.inf,
+                np.where(
+                    bounded & (tail == 1),
+                    0.0,
+                    stats.gamma.isf(tail, a=1 / shape, scale=gamma_scale),
+                ),
+            )
+            result = np.sign(p - 0.5) * quantile ** (1 / shape) * lambdaScale + mu
 
-    return result
+    return result[()]
 
 
-def rgnorm(n, loc=0, scale=1, shape=1):
+def rgnorm(n, mu=0, scale=1, shape=1, *, loc=None):
     """Generalized Normal distribution random number generation."""
-    return qgnorm(np.random.uniform(0, 1, n), loc=loc, scale=scale, shape=shape)
+    if loc is not None:
+        warnings.warn(
+            "'loc' is deprecated, use 'mu' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        mu = loc
+    return qgnorm(np.random.uniform(0, 1, n), mu=mu, scale=scale, shape=shape)
