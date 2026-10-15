@@ -9,6 +9,7 @@ import math
 
 import numpy as np
 from numpy.typing import ArrayLike
+from scipy.linalg import blas
 
 from . import distributions as dist
 from .cost_function import cf  # noqa: F401 - re-exported for backwards compatibility
@@ -85,6 +86,81 @@ def scale_sd(distribution: str, scale):
     if distribution in VARIANCE_SCALE_DISTRIBUTIONS and scale is not None:
         return np.sqrt(scale)
     return scale
+
+
+def _lm_fit(X, y, tol: float = 1e-7):
+    """R's ``.lm.fit()``: LINPACK's dqrdc2 and dqrsl with the same BLAS calls.
+
+    A column in a linear combination of the previous ones (relative tolerance
+    ``tol``) goes to the end with a zero coefficient, and the coefficients stay in
+    this pivoted order, as R's. The residuals come from Q, as R's, not from
+    ``y - X @ B``. ``y`` may be a matrix, fitted column by column.
+
+    Returns
+    -------
+    tuple
+        The coefficients, the residuals and the rank.
+    """
+    x = np.array(X, dtype=float, order="F")
+    qty = np.array(y, dtype=float, order="F")
+    vector = qty.ndim == 1
+    qty = qty.reshape(len(qty), -1, order="F")
+    n, p = x.shape
+    # dqrdc2: the Householder reduction, moving the negligible columns to the end
+    qraux = np.array([blas.dnrm2(x[:, j]) for j in range(p)])
+    norms = np.column_stack([qraux, np.where(qraux == 0, 1.0, qraux)])
+    k = p
+    for c in range(min(n, p)):
+        while c < k and qraux[c] < norms[c, 1] * tol:
+            order = np.r_[np.arange(c), np.arange(c + 1, p), c]
+            x = np.asfortranarray(x[:, order])
+            qraux, norms = qraux[order], norms[order]
+            k -= 1
+        nrmxl = blas.dnrm2(x[c:, c]) if c < n - 1 else 0.0
+        if nrmxl == 0:
+            continue
+        nrmxl = np.copysign(nrmxl, x[c, c]) if x[c, c] != 0 else nrmxl
+        x[c:, c] = blas.dscal(1.0 / nrmxl, x[c:, c])
+        x[c, c] = 1.0 + x[c, c]
+        for j in range(c + 1, p):
+            t = -blas.ddot(x[c:, c], x[c:, j]) / x[c, c]
+            x[c:, j] = blas.daxpy(x[c:, c], x[c:, j], a=t)
+            if qraux[j] == 0:
+                continue
+            t = max(1.0 - (abs(x[c, j]) / qraux[j]) ** 2, 0.0)
+            if t >= 1e-6:
+                qraux[j] = qraux[j] * np.sqrt(t)
+            else:
+                qraux[j] = norms[j, 0] = blas.dnrm2(x[c + 1 :, j])
+        qraux[c], x[c, c] = x[c, c], -nrmxl
+    k = min(k, n)
+    reflections = [j for j in range(min(k, n - 1)) if qraux[j] != 0]
+    # The reflections with the vectors of qraux on the diagonal
+    diagonal = x.diagonal().copy()
+    householder = x.copy(order="F")
+    householder[reflections, reflections] = qraux[reflections]
+
+    # dqrsl with job 1110: Q'y, the back-substitution and the residuals
+    B = np.zeros((p, qty.shape[1]))
+    residuals = np.zeros_like(qty)
+    for col in range(qty.shape[1]):
+        v = qty[:, col].copy()
+        # Q'y, then the residuals with Q applied backwards to Q'y without its top k
+        for step in (reflections, reflections[::-1]):
+            for j in step:
+                t = -blas.ddot(householder[j:, j], v[j:]) / householder[j, j]
+                v[j:] = blas.daxpy(householder[j:, j], v[j:], a=t)
+            if step is reflections:
+                B[:k, col] = v[:k]
+                v[:k] = 0.0
+        for j in range(k - 1, -1, -1):
+            B[j, col] = B[j, col] / diagonal[j]
+            if j > 0:
+                B[:j, col] = blas.daxpy(x[:j, j], B[:j, col], a=-B[j, col])
+        residuals[:, col] = v
+    if vector:
+        return B[:, 0], residuals[:, 0], k
+    return B, residuals, k
 
 
 def scaler_internal(

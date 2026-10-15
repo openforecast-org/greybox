@@ -41,8 +41,8 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_greybox_almLatentCpp", (DL_FUNC) (RCPP_FUNC) &_greybox_almLatentCpp, 7},
-    {"_greybox_polyprod", (DL_FUNC) (RCPP_FUNC) &_greybox_polyprod, 2},
+    {"_greybox_almLatentCpp", (DL_FUNC) &_greybox_almLatentCpp, 7},
+    {"_greybox_polyprod", (DL_FUNC) &_greybox_polyprod, 2},
     {NULL, NULL, 0}
 };
 

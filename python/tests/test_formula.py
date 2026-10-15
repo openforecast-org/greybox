@@ -5,7 +5,8 @@ import pandas as pd
 import pytest
 from numpy.testing import assert_allclose, assert_array_equal
 
-from greybox import formula
+from greybox import ALM, CALM, formula
+from greybox.predict import predict
 
 
 @pytest.fixture
@@ -117,3 +118,108 @@ class TestFormula:
         assert X.shape == (6, 4)
         assert formula("y ~ x + g", data, return_type="variables") == ["x", "gb", "gc"]
         assert_array_equal(formula("log(y) ~ x", data, return_type="y"), np.log(data.y))
+
+    def test_power_of_term(self, data):
+        _, X = formula("y ~ x^2 + I(x^2)", data)
+        assert list(X.columns) == ["(Intercept)", "x", "I(x^2)"]
+        assert_array_equal(X["x"], data["x"])
+        with pytest.raises(ValueError, match="Invalid power"):
+            formula("y ~ x^1", data)
+
+    @pytest.mark.parametrize(
+        "formula_str, terms",
+        [
+            ("y ~ (x + z)^2", ["x", "z", "x:z"]),
+            ("y ~ (x + z + g)^3 - x:z:g", ["x", "z", "g", "x:z", "x:g", "z:g"]),
+            ("y ~ (x + z):g", ["x:g", "z:g"]),
+            ("y ~ x * (z + g)", ["x", "z", "g", "x:z", "x:g"]),
+            ("y ~ (x + z - x)^2", ["z"]),
+            ("y ~ x * z - (x + z)", ["x:z"]),
+            ("y ~ x %in% z", ["x:z"]),
+            ("y ~ x %in% (z + g)", ["x:z:g"]),
+            ("y ~ (x + z) / g", ["x", "z", "x:z:g"]),
+            ("y ~ x + offset(z) + offset(z):x", ["x"]),
+            ("y ~ (. - g)^2", ["x", "z", "x:z"]),
+        ],
+    )
+    def test_operators(self, data, formula_str, terms):
+        assert formula(formula_str, data, return_type="terms") == terms
+
+    def test_intercept_in_group(self, data):
+        assert list(formula("y ~ (x + z - 1)", data)[1].columns) == ["x", "z"]
+
+    def test_log_base(self, data):
+        _, X = formula("y ~ log(x, 2) + log(z,base=10) + log(x, 3)", data)
+        assert list(X.columns)[1:] == ["log(x, 2)", "log(z, base = 10)", "log(x, 3)"]
+        assert_array_equal(X["log(x, 2)"], np.log2(data["x"]))
+        assert_array_equal(X["log(z, base = 10)"], np.log10(data["z"]))
+        assert_allclose(X["log(x, 3)"], np.log(data["x"]) / np.log(3))
+
+    def test_logical(self, data):
+        data["l"] = [True, False, True, True, None, False]
+        _, X = formula("y ~ l", data)
+        assert list(X.columns) == ["(Intercept)", "lTRUE"]
+        assert_array_equal(X["lTRUE"], [1, 0, 1, 1, np.nan, 0])
+        assert list(formula("y ~ 0 + l", data)[1].columns) == ["lFALSE", "lTRUE"]
+
+    def test_logical_one_value(self, data):
+        _, X = formula("y ~ l", data.assign(l=True))
+        assert list(X.columns) == ["(Intercept)", "lTRUE"]
+
+
+class TestTrainingLevels:
+    @pytest.fixture
+    def model(self, data):
+        data["l"] = [True, False, True, True, False, False]
+        y, X = formula("y ~ x + g + l", data)
+        return ALM(distribution="dnorm").fit(X, y, formula="y ~ x + g + l")
+
+    def test_levels(self, data):
+        X = formula("y ~ x * g", data, return_type="X")
+        assert X.attrs["_xlevels"] == {"g": ["a", "b", "c"]}
+
+    @pytest.mark.parametrize("levels", [["c", "b"], ["b", "b", "a"]])
+    def test_new_data(self, data, levels):
+        newdata = pd.DataFrame({"x": 1.0, "g": levels})
+        newdata.attrs["_xlevels"] = {"g": ["a", "b", "c"]}
+        X = formula("~ x + g", newdata, return_type="X")
+        assert list(X.columns) == ["(Intercept)", "x", "gb", "gc"]
+        assert_array_equal(X["gb"], [level == "b" for level in levels])
+
+    def test_unseen_level(self, data):
+        newdata = pd.DataFrame({"x": [1.0, 2.0], "g": ["a", "d"]})
+        newdata.attrs["_xlevels"] = {"g": ["a", "b", "c"]}
+        with pytest.raises(ValueError, match="factor g has new levels d"):
+            formula("~ x + g", newdata)
+
+    def test_predict(self, model):
+        newdata = {"x": [1.0, 2.0], "g": ["c", "b"], "l": [True, True]}
+        X = np.array([[1, 1.0, 0, 1, 1], [1, 2.0, 1, 0, 1]])
+        assert model._xlevels == {"g": ["a", "b", "c"], "l": [False, True]}
+        assert_allclose(predict(model, newdata).mean, model.predict(X).mean)
+        with pytest.raises(ValueError, match="factor g has new levels d"):
+            predict(model, {"x": [1.0], "g": ["d"], "l": [True]})
+
+    def test_predict_trend(self, data):
+        y, X = formula("y ~ x + trend", data)
+        model = ALM(distribution="dnorm").fit(X, y, formula="y ~ x + trend")
+        X_new = np.array([[1, 3.0, 7], [1, 4.0, 8]])
+        assert_allclose(
+            predict(model, {"x": [3.0, 4.0]}).mean, model.predict(X_new).mean
+        )
+
+    def test_calm_predict(self):
+        rng = np.random.default_rng(1)
+        data = pd.DataFrame(
+            {
+                "x": rng.normal(size=30),
+                "g": rng.choice(["a", "b", "c"], 30),
+                "l": rng.choice([True, False], 30),
+            }
+        )
+        y = data["x"] + 2 * data["l"] + (data["g"] == "b") + rng.normal(size=30)
+        model = CALM(data.assign(y=y)[["y", "x", "g", "l"]], bruteforce=True)
+        newdata = {"x": [1.0, 2.0], "g": ["c", "b"], "l": [True, False]}
+        X = np.array([[1, 1.0, 0, 1, 1], [1, 2.0, 1, 0, 0]])
+        assert model.coefficient_names == ["(Intercept)", "x", "gb", "gc", "lTRUE"]
+        assert_allclose(model.predict(newdata).mean, model.predict(X).mean)

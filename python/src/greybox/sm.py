@@ -18,7 +18,7 @@ from scipy import stats
 
 from . import distributions as dist
 from .alm import ALM, NLOPT_ALGORITHMS, PredictionResult, _numerical_hessian
-from .fitters import VARIANCE_SCALE_DISTRIBUTIONS, alm_latent_variance
+from .fitters import VARIANCE_SCALE_DISTRIBUTIONS, _lm_fit, alm_latent_variance
 from .methods.summary import SummaryResult
 
 
@@ -102,7 +102,10 @@ class ScaleModel(ALM):
         elif isinstance(self._formula_, str):
             from .formula import formula
 
-            Z = formula(self._formula_, X, return_type="X")
+            # With the levels of the factors of the training data, as R's xlevels
+            frame = pd.DataFrame(X)
+            frame.attrs["_xlevels"] = self._xlevels or {}
+            Z = formula(self._formula_, frame, return_type="X")
         elif isinstance(X, pd.DataFrame) and self._feature_names is not None:
             regressors = list(self._feature_names)
             # The data with the columns of the scale model, with or without the
@@ -343,6 +346,7 @@ def sm(object, formula=None, data=None, parameters=None, **kwargs) -> ScaleModel
         Z = formula_parser(formula_string, data, return_type="X")
     else:
         Z, names = formula, None
+    xlevels = Z.attrs.get("_xlevels") if isinstance(Z, pd.DataFrame) else None
     if isinstance(Z, pd.DataFrame):
         names = [str(name) for name in Z.columns]
     Z = np.asarray(Z, dtype=float)
@@ -442,7 +446,7 @@ def sm(object, formula=None, data=None, parameters=None, **kwargs) -> ScaleModel
         response = np.log(errors)
     B = kwargs.get("B")
     if B is None:
-        B = np.linalg.lstsq(Z[otU], response, rcond=None)[0]
+        B = _lm_fit(Z[otU], response)[0]
     B = np.asarray(B if parameters is None else parameters, dtype=float)
 
     if parameters is None:
@@ -484,6 +488,7 @@ def sm(object, formula=None, data=None, parameters=None, **kwargs) -> ScaleModel
     model._latent = None
     model.arima_polynomial_ = model.arima_string_ = None
     model._formula_ = formula_string
+    model._xlevels = xlevels
     model._response_name = object._response_name
     model._intercept_needed = intercept_needed
     model._feature_names = (

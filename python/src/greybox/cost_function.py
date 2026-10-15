@@ -5,7 +5,6 @@ the loss function (likelihood, MSE, MAE, etc.).
 """
 
 import numpy as np
-from scipy import stats
 
 from . import distributions as dist
 from .transforms import mean_fast
@@ -94,7 +93,7 @@ def _compute_log_lik_array(
         return dist.dexp(y_otU, rate=1 / mu_otU, log=True)
     elif distribution == "dchisq":
         # R: dchisq(y, df=scale, ncp=mu), the non-central chi-squared
-        return stats.ncx2.logpdf(y_otU, df=scale, nc=mu_otU)
+        return dist.dchisq(y_otU, df=scale, ncp=mu_otU, log=True)
     elif distribution == "dgeom":
         return dist.dgeom(y_otU, prob=1 / (mu_otU + 1), log=True)
     elif distribution == "dpois":

@@ -52,6 +52,8 @@
 #' \item importance - importance of the parameters,
 #' \item combination - the table, indicating which variables were used in every
 #' model construction and what were the weights for each model,
+#' \item xlevels - the levels of the factors in the data, used by \code{predict()} for the
+#' new data, as in \link[stats]{lm},
 #' \item timeElapsed - the time elapsed for the estimation of the model.
 #' }
 #'
@@ -303,6 +305,11 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
     else{
         listToCall$data <- cbind(y,as.data.frame(data[rowsSelected,-1,drop=FALSE]));
     }
+    # The levels of the factors, for the new data of predict(), as alm()
+    xlevels <- NULL;
+    if(is.data.frame(data)){
+        xlevels <- .getXlevels(terms(cl$formula, data=data), model.frame(cl$formula, data));
+    }
     rm(data);
 
     # Other stuff for the things like alpha of ALaplace
@@ -436,6 +443,7 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
             ourModel <- calm(listToCall$data, ic=ic,
                                    bruteforce=TRUE, silent=silent, distribution=distribution, parallel=parallel, ...);
             ourModel$call <- cl;
+            ourModel$xlevels <- xlevels;
             return(ourModel);
         }
         # If we have too many variables, use "stress" analysis
@@ -761,6 +769,7 @@ calm <- function(data, ic=c("AICc","AIC","BIC","BICc"), bruteforce=FALSE, silent
                                  ICType=ic, df.residual=df, df=sum(importance)+1, importance=importance,
                                  call=cl, rank=nVariables+1, data=listToCall$data, mu=mu, scale=scale,
                                  combination=variablesCombinations, other=other, loss=loss,
+                                 xlevels=xlevels,
                                  timeElapsed=Sys.time()-startTime),
                             class=c("calm","alm","greybox"));
 

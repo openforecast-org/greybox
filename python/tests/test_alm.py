@@ -98,14 +98,22 @@ class TestFormula:
         np.testing.assert_array_almost_equal(y, expected_y)
 
     def test_formula_polynomial(self):
-        """Test formula with polynomial terms."""
+        """Test formula with polynomial terms, protected by I() as in R."""
         data = {"y": [1, 2, 3, 4, 5], "x": [1, 2, 3, 4, 5]}
-        y, X = formula("y ~ x + x^2 + x^3", data)
+        y, X = formula("y ~ x + I(x^2) + I(x^3)", data)
 
         assert X.shape == (5, 4)
         X_np = np.asarray(X)
         np.testing.assert_array_equal(X_np[:, 2], np.array([1, 4, 9, 16, 25]))  # x^2
         np.testing.assert_array_equal(X_np[:, 3], np.array([1, 8, 27, 64, 125]))  # x^3
+
+    def test_formula_power_of_term(self):
+        """Without I(), x^2 is the crossing of x with itself, x, as in R."""
+        data = {"y": [1, 2, 3, 4, 5], "x": [1, 2, 3, 4, 5]}
+        y, X = formula("y ~ x^2 + x^3", data)
+
+        assert list(X.columns) == ["(Intercept)", "x"]
+        np.testing.assert_array_equal(X["x"], data["x"])
 
     def test_formula_log_x(self):
         """Test formula with log(x) transformation."""

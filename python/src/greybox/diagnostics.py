@@ -78,6 +78,7 @@ def outlier_dummy(
     -------
     OutlierResult
         Object containing:
+
         - outliers: matrix with dummy variables flagging outliers
         - statistic: value of the statistic for the normalised variable
         - id: ids of the outliers

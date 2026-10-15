@@ -126,6 +126,28 @@ Changes:
     `occurrence` as R; `CALM` takes R's least squares for dnorm, has R's
     `other_`, `rank_` and `data`, and predicts through `ALM.predict()`.
 
+* The noncentral t and chi-squared distributions (`dt`, `pt`, `qt` and
+  `dchisq`, `pchisq`, `qchisq` with `ncp`) are R's nmath algorithms (pnt, qnt,
+  dnt, pnchisq, qnchisq, dnchisq, with toms708), so they return R's values to
+  the last bit, including the far tails where scipy's differed (`qt(1e-10, 4.5,
+  ncp=1.2, lower_tail=False)` was 405.941 instead of R's 405.973). `ALM` with
+  dchisq takes them for its likelihood and intervals.
+* `formula()` expands the terms as R's `terms.formula()`: `x^2` is `x` (use
+  `I(x^2)` for the square, as in R), bracketed groups (`(a+b)^2`, `(a+b):c`,
+  `a*(b+c)`), `%in%`, `offset()` (dropped, as by `alm()`), and calls with
+  several arguments such as `log(x, base=10)`. Logical columns and comparisons
+  are factors with the levels FALSE and TRUE (`amTRUE`, `x > 2TRUE`).
+* The prediction from new data takes the levels of the factors of the training
+  data, as R's `xlevels`, in `predict()`, `CALM` and the scale model: new data
+  with fewer or reordered levels give the same columns, and an unseen level is
+  an error. `predict()` builds the new data from the formula of the model and
+  predicts through `ALM.predict()` (it had its own Normal intervals without the
+  uncertainty of the parameters).
+* The least squares of the scale model's start, `stepwise()`, `pcor()`,
+  `mcor()`, `association()`, `rmcb()` and `stick()` are R's `.lm.fit()`
+  (LINPACK's dqrdc2 and dqrsl), as the starting values of `ALM`, with R's
+  residuals and rank.
+
 Bugfixes:
 * The estimates and the covariance matrices differed from R's in the last bits,
   which the finite-difference Hessian (up to 1e-2 on ill-conditioned

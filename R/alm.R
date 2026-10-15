@@ -191,6 +191,8 @@
 #' \item rank - rank of the model,
 #' \item data - data used for the model construction,
 #' \item terms - terms of the data. Needed for some additional methods to work,
+#' \item xlevels - the levels of the factors in the data, used by \code{predict()} for the
+#' new data, as in \link[stats]{lm},
 #' \item occurrence - the occurrence model used in the estimation,
 #' \item B - the value of the optimised parameters. Typically, this is a duplicate of coefficients,
 #' \item other - the list of all the other parameters either passed to the
@@ -213,17 +215,17 @@
 #'    carb <- factor(carb)
 #' })
 #' # The standard model with Log-Normal distribution
-#' ourModel <- alm(mpg~., mtcars2[1:30,], distribution="dlnorm")
+#' ourModel <- alm(mpg~., mtcars2[-c(1:2),], distribution="dlnorm")
 #' summary(ourModel)
 #' \donttest{plot(ourModel)}
 #' # Produce table based on the output for LaTeX
 #' xtable(summary(ourModel))
 #'
 #' # Produce predictions with the one sided interval (upper bound)
-#' predict(ourModel, mtcars2[-c(1:30),], interval="p", side="u")
+#' predict(ourModel, mtcars2[1:2,], interval="p", side="u")
 #'
 #' # Model with heteroscedasticity (scale changes with the change of qsec)
-#' \donttest{ourModel <- alm(mpg~., mtcars2[1:30,], scale=~qsec)}
+#' \donttest{ourModel <- alm(mpg~., mtcars2[-c(1:2),], scale=~qsec)}
 #'
 #' ### Artificial data for the other examples
 #' \donttest{xreg <- cbind(rlaplace(100,10,3),rnorm(100,50,5))
@@ -280,7 +282,7 @@
 #'
 #' @importFrom pracma hessian jacobian
 #' @importFrom nloptr nloptr
-#' @importFrom stats model.frame sd terms model.matrix update.formula
+#' @importFrom stats model.frame sd terms model.matrix update.formula .getXlevels
 #' @importFrom stats dchisq dlnorm dnorm dlogis dpois dnbinom dt dbeta dgamma dexp dgeom dbinom
 #' @importFrom stats plogis
 #' @importFrom statmod dinvgauss
@@ -1170,6 +1172,8 @@ alm <- function(formula, data, subset, na.action,
 
     dataWork <- eval(mf, parent.frame());
     dataTerms <- terms(dataWork);
+    # The levels of the factors, for the new data of predict(), as lm()
+    xlevels <- .getXlevels(dataTerms, dataWork);
     cl$formula <- formula(dataTerms);
     # Make this numeric, to address potential issues with zoo + data.table
     y <- as.numeric(dataWork[,1]);
@@ -2330,7 +2334,7 @@ alm <- function(formula, data, subset, na.action,
                                  mu=mu, scale=scale, distribution=distribution, logLik=logLik,
                                  loss=loss, lossFunction=lossFunction, lossValue=CFValue, res=res,
                                  df.residual=obsInsample-nParam, df=nParam, call=cl, rank=nParam,
-                                 data=dataWork, terms=dataTerms,
+                                 data=dataWork, terms=dataTerms, xlevels=xlevels,
                                  occurrence=occurrence, subset=subset, other=ellipsis, B=B,
                                  timeElapsed=Sys.time()-startTime),
                             class=c("alm","greybox"));

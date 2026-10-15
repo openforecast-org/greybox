@@ -1,7 +1,8 @@
 // The log-density of the Beta and the densities and log-densities of the logistic
 // distributions as R's nmath computes them, those of the Laplace, S and Generalised
 // Normal distributions as R's greybox computes them, the log-densities of their
-// log-variants as R's alm() computes them, and R's gamma function.
+// log-variants as R's alm() computes them, R's gamma function, and the noncentral t
+// and chi-squared distributions as R's nmath computes them (nmath.h).
 //
 // Everything is in R's order of operations and through libm, as R evaluates
 // log(), exp() and ^: NumPy's vectorised kernels round differently in the last
@@ -19,6 +20,7 @@
 #include <cstddef>
 #include <stdexcept>
 #include <tuple>
+#include <utility>
 
 #include "nmath.h"
 
@@ -58,63 +60,22 @@ inline double dlogis_one(double q, double location, double scale) {
     return e / (scale * f * f);
 }
 
-// R's nmath bd0(), dbinom_raw(log=TRUE), lbeta() and dbeta(), of R 4.3.3
-inline double bd0(double x, double np) {
-    if (!std::isfinite(x) || !std::isfinite(np) || np == 0.0) return NAN;
-    if (std::fabs(x - np) < 0.1 * (x + np)) {
-        double v = (x - np) / (x + np);
-        double s = (x - np) * v;
-        if (std::fabs(s) < DBL_MIN) return s;
-        double ej = 2 * x * v;
-        v *= v;
-        for (int j = 1; j < 1000; j++) {
-            ej *= v;
-            double s_ = s;
-            s += ej / ((j << 1) + 1);
-            if (s == s_) return s;
-        }
-    }
-    return x * std::log(x / np) + np - x;
-}
-
+// R's nmath dbinom_raw(log=TRUE) and dbeta(), of R 4.3.3; bd0() and lbeta() are in
+// nmath.h
 inline double dbinom_raw_log(double x, double n, double p, double q) {
     if (p == 0) return x == 0 ? 0.0 : -INFINITY;
     if (q == 0) return x == n ? 0.0 : -INFINITY;
     if (x == 0) {
         if (n == 0) return 0.0;
-        return p < 0.1 ? -bd0(n, n * q) - n * p : n * std::log(q);
+        return p < 0.1 ? -greybox_nmath::bd0(n, n * q) - n * p : n * std::log(q);
     }
-    if (x == n) return q < 0.1 ? -bd0(n, n * p) - n * q : n * std::log(p);
+    if (x == n) return q < 0.1 ? -greybox_nmath::bd0(n, n * p) - n * q : n * std::log(p);
     if (x < 0 || x > n) return -INFINITY;
     double lc = greybox_nmath::stirlerr(n) - greybox_nmath::stirlerr(x) -
-                greybox_nmath::stirlerr(n - x) - bd0(x, n * p) - bd0(n - x, n * q);
+                greybox_nmath::stirlerr(n - x) - greybox_nmath::bd0(x, n * p) -
+                greybox_nmath::bd0(n - x, n * q);
     double lf = 1.837877066409345483560659472811 + std::log(x) + std::log1p(-x / n);
     return lc - 0.5 * lf;
-}
-
-inline double lbeta(double a, double b) {
-    if (std::isnan(a) || std::isnan(b)) return a + b;
-    double p = std::min(a, b), q = std::max(a, b);
-    if (p < 0) return NAN;
-    if (p == 0) return INFINITY;
-    if (!std::isfinite(q)) return -INFINITY;
-    if (p >= 10) {
-        double corr = greybox_nmath::lgammacor(p) + greybox_nmath::lgammacor(q) -
-                      greybox_nmath::lgammacor(p + q);
-        return std::log(q) * -0.5 + 0.918938533204672741780329736406 + corr +
-               (p - 0.5) * std::log(p / (p + q)) + q * std::log1p(-p / (p + q));
-    }
-    if (q >= 10) {
-        double corr = greybox_nmath::lgammacor(q) - greybox_nmath::lgammacor(p + q);
-        return greybox_nmath::lgammafn(p) + corr + p - p * std::log(p + q) +
-               (q - 0.5) * std::log1p(-p / (p + q));
-    }
-    if (p < 1e-306) {
-        return greybox_nmath::lgammafn(p) +
-               (greybox_nmath::lgammafn(q) - greybox_nmath::lgammafn(p + q));
-    }
-    return std::log(greybox_nmath::gammafn(p) *
-                    (greybox_nmath::gammafn(q) / greybox_nmath::gammafn(p + q)));
 }
 
 inline double dbeta_log_one(double x, double a, double b) {
@@ -129,7 +90,8 @@ inline double dbeta_log_one(double x, double a, double b) {
     }
     if (x == 0) return a > 1 ? -INFINITY : (a < 1 ? INFINITY : std::log(b));
     if (x == 1) return b > 1 ? -INFINITY : (b < 1 ? INFINITY : std::log(a));
-    if (a <= 2 || b <= 2) return (a - 1) * std::log(x) + (b - 1) * std::log1p(-x) - lbeta(a, b);
+    if (a <= 2 || b <= 2) return (a - 1) * std::log(x) + (b - 1) * std::log1p(-x) -
+                                   greybox_nmath::lbeta(a, b);
     return std::log(a + b - 1) + dbinom_raw_log(a - 1, a + b - 2, x, 1 - x);
 }
 
@@ -201,7 +163,8 @@ py::array_t<double> elementwise(F f, const std::array<Array, N>& args) {
 
 PYBIND11_MODULE(_native_densities, m) {
     m.doc() = "Densities and log-densities of the Laplace, S and Generalised Normal "
-              "distributions and their log-variants, and the gamma function, as in R.";
+              "distributions and their log-variants, the gamma function and the "
+              "noncentral t and chi-squared distributions, as in R.";
     m.def(
         "dlaplace_log",
         [](Array q, Array mu, Array scale) {
@@ -280,4 +243,37 @@ PYBIND11_MODULE(_native_densities, m) {
             return elementwise<1>([](double v) { return greybox_nmath::gammafn(v); }, {x});
         },
         py::arg("x"), "R's gamma function.");
+    // R's noncentral t and chi-squared, elementwise over (x, df, ncp)
+    using Density = double (*)(double, double, double, int);
+    using Probability = double (*)(double, double, double, int, int);
+    const std::pair<const char*, Density> densities[] = {{"dnt", greybox_nmath::dnt},
+                                                         {"dnchisq", greybox_nmath::dnchisq}};
+    const std::pair<const char*, Probability> probabilities[] = {
+        {"pnt", greybox_nmath::pnt},
+        {"qnt", greybox_nmath::qnt},
+        {"pnchisq", greybox_nmath::pnchisq},
+        {"qnchisq", greybox_nmath::qnchisq}};
+    for (const auto& [name, density] : densities) {
+        m.def(
+            name,
+            [density](Array x, Array df, Array ncp, bool give_log) {
+                return elementwise<3>(
+                    [&](double v, double d, double n) { return density(v, d, n, give_log); },
+                    {x, df, ncp});
+            },
+            py::arg("x"), py::arg("df"), py::arg("ncp"), py::arg("give_log"));
+    }
+    for (const auto& [name, function] : probabilities) {
+        m.def(
+            name,
+            [function](Array x, Array df, Array ncp, bool lower_tail, bool log_p) {
+                return elementwise<3>(
+                    [&](double v, double d, double n) {
+                        return function(v, d, n, lower_tail, log_p);
+                    },
+                    {x, df, ncp});
+            },
+            py::arg("x"), py::arg("df"), py::arg("ncp"), py::arg("lower_tail"),
+            py::arg("log_p"));
+    }
 }

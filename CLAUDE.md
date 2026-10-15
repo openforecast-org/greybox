@@ -51,7 +51,7 @@ pytest tests/test_alm_distributions_compare.py
 
 - **`alm.py`** — Core `ALM` class (scikit-learn-style estimator). Supports 27 distributions and 7 loss functions. Uses `nlopt` for optimization (default: Nelder-Mead).
 - **`formula.py`** — R-style formula parser (`formula()`, `expand_formula()`). Supports `y ~ x1 + x2`, `y ~ 0 + x1` (no intercept), `log(y) ~ x`, `I(x+z)` (protected expressions), `trend` auto-generation.
-- **`fitters.py`** — Internal fitting machinery: `scaler_internal`, `fitter`, `fitter_recursive`. Wraps `cost_function.py`.
+- **`fitters.py`** — Internal fitting machinery: `scaler_internal`, `fitter`, `fitter_recursive`, and `_lm_fit` (R's `.lm.fit()`: LINPACK's dqrdc2/dqrsl, used wherever R takes `.lm.fit()` or `lm()`). Wraps `cost_function.py`.
 - **`cost_function.py`** — Loss functions: `likelihood`, `MSE`, `MAE`, `HAM`, `LASSO`, `RIDGE`, `ROLE`.
 - **`predict.py`** — `predict_basic()` returning `PredictionResult` dataclass with `.mean`, `.lower`, `.upper`.
 - **`distributions/`** — 27 distributions with d/p/q/r functions (density, CDF, quantile, random).

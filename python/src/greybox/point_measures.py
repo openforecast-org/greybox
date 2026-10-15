@@ -440,6 +440,7 @@ def mase(
     scale : float, optional
         Scale parameter. If None, uses mean absolute difference of consecutive
         holdout values (naive forecast error). Typical values include:
+
         - mean absolute deviation of in-sample one step ahead naive error
         - mean absolute value of the in-sample actuals
     na_rm : bool, default=True
@@ -1124,6 +1125,7 @@ def measures(
         Number of digits for rounding. If None, no rounding is done.
     benchmark : {"naive", "mean"}, default="naive"
         Benchmark method for relative measures:
+
         - "naive": Use last value repeated (random walk)
         - "mean": Use arithmetic mean of the series
 
@@ -1147,6 +1149,7 @@ def measures(
     References
     ----------
     See individual function references:
+
     - Hyndman & Koehler (2006) for MASE, RMSSE
     - Petropoulos & Kourentzes (2015) for sMSE, sCE, sPIS
     - Davydenko & Fildes (2013) for rMAE, rRMSE, rAME

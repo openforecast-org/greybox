@@ -11,6 +11,11 @@ import warnings
 import numpy as np
 from scipy import stats
 
+try:
+    from greybox import _native_densities  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover - the extension is built with the package
+    _native_densities = None
+
 
 def dchisq(x, df, ncp=0, log=False):
     """Chi-squared distribution density.
@@ -33,6 +38,15 @@ def dchisq(x, df, ncp=0, log=False):
     """
     x = np.asarray(x, dtype=float)
     central = np.all(np.asarray(ncp) == 0)
+    if not central and _native_densities is not None:
+        # R's nmath dnchisq()
+        x, df, ncp = np.broadcast_arrays(
+            *(np.asarray(v, dtype=float) for v in (x, df, ncp))
+        )
+        density = _native_densities.dnchisq(
+            x.ravel(), df.ravel(), ncp.ravel(), bool(log)
+        )
+        return density.reshape(x.shape)[()]
     family, args = (stats.chi2, (df,)) if central else (stats.ncx2, (df, ncp))
     with np.errstate(invalid="ignore"):
         result = (family.logpdf if log else family.pdf)(x, *args)
@@ -62,6 +76,15 @@ def pchisq(q, df, ncp=0, lower_tail=True, log_p=False):
         CDF values.
     """
     central = np.all(np.asarray(ncp) == 0)
+    if not central and _native_densities is not None:
+        # R's nmath pnchisq()
+        q, df, ncp = np.broadcast_arrays(
+            *(np.asarray(v, dtype=float) for v in (q, df, ncp))
+        )
+        probability = _native_densities.pnchisq(
+            q.ravel(), df.ravel(), ncp.ravel(), bool(lower_tail), bool(log_p)
+        )
+        return probability.reshape(q.shape)[()]
     family, args = (stats.chi2, (df,)) if central else (stats.ncx2, (df, ncp))
     method = ("log" if log_p else "") + ("cdf" if lower_tail else "sf")
     return getattr(family, method)(q, *args)
@@ -89,6 +112,15 @@ def qchisq(p, df, ncp=0, lower_tail=True, log_p=False):
         Quantile values.
     """
     central = np.all(np.asarray(ncp) == 0)
+    if not central and _native_densities is not None:
+        # R's nmath qnchisq()
+        p, df, ncp = np.broadcast_arrays(
+            *(np.asarray(v, dtype=float) for v in (p, df, ncp))
+        )
+        quantile = _native_densities.qnchisq(
+            p.ravel(), df.ravel(), ncp.ravel(), bool(lower_tail), bool(log_p)
+        )
+        return quantile.reshape(p.shape)[()]
     family, args = (stats.chi2, (df,)) if central else (stats.ncx2, (df, ncp))
     p = np.exp(p) if log_p else p
     return (family.ppf if lower_tail else family.isf)(p, *args)

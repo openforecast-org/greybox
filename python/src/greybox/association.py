@@ -14,12 +14,14 @@ import pandas as pd
 from pandas.api.types import is_numeric_dtype
 from scipy import linalg, stats
 
+from .fitters import _lm_fit
+
 
 @dataclass
 class McorResult:
     """Result of :func:`mcor`. Mirrors R's ``mcor`` S3 class.
 
-    Attributes
+    Parameters
     ----------
     value : float
         The multiple correlation coefficient.
@@ -51,7 +53,7 @@ class McorResult:
 class CramerResult:
     """Result of :func:`cramer`. Mirrors R's ``cramer`` S3 class.
 
-    Attributes
+    Parameters
     ----------
     value : float
         Cramer's V.
@@ -112,6 +114,7 @@ def pcor(
     -------
     dict
         Dictionary containing:
+
         - value: matrix of partial correlation coefficients (n_y x n_x if y is
           provided)
         - p.value: p-values for the coefficients
@@ -172,8 +175,7 @@ def pcor(
     for row, col, first, second in pairs:
         others = np.delete(data, [first, second], axis=1)
         pair = data[:, [first, second]]
-        coef = np.linalg.lstsq(others, pair, rcond=None)[0]
-        u, v = (pair - others @ coef).T
+        u, v = _lm_fit(others, pair)[1].T
         ties = min(np.unique(u).size, np.unique(v).size) < n_obs
 
         # The estimate and the p-value of R's cor.test()
@@ -319,8 +321,7 @@ def mcor(
         )
         y_matrix = pd.get_dummies(y_vector, dtype=float).to_numpy()
 
-    coef, _, rank, _ = np.linalg.lstsq(x_design, y_matrix, rcond=None)
-    residuals = y_matrix - x_design @ coef
+    _, residuals, rank = _lm_fit(x_design, y_matrix)
     df_residual = residuals.size - rank
     df = rank - 1
     # abs() as in R, against the rounding issues
@@ -573,6 +574,7 @@ def association(
     -------
     dict
         Dictionary containing:
+
         - value: matrix of association coefficients (n_y x n_x if y is
           provided)
         - p.value: p-values

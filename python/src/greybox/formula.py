@@ -14,8 +14,15 @@ import pandas as pd
 
 from .xreg import B  # re-exported for convenience
 
+# The logarithm of R, with its base: log10() and log2() for 10 and 2, as R
 TRANSFORMATIONS = {
-    "log": np.log,
+    "log": lambda x, base=np.e: (
+        np.log10(x)
+        if base == 10
+        else np.log2(x)
+        if base == 2
+        else np.log(x) / np.log(base)
+    ),
     "log10": np.log10,
     "log2": np.log2,
     "sqrt": np.sqrt,
@@ -78,7 +85,9 @@ def _apply_transformation(var_name, data_dict, n_obs, caller_globals=None):
             namespace[f"__data{i}__"] = np.asarray(data_dict[name], dtype=float)
 
     try:
-        return np.asarray(eval(expression.replace("^", "**"), namespace), dtype=float)
+        # A comparison stays logical, a factor of R's model.matrix()
+        result = np.asarray(eval(expression.replace("^", "**"), namespace))
+        return result if result.dtype == bool else result.astype(float)
     except NameError as error:
         if re.search(rf"\b{error.name}\s*\(", var_name):
             raise ValueError(
@@ -106,10 +115,14 @@ def formula(
     formula_str : str
         Formula string in R-style, e.g., "y ~ x1 + x2" or "~ x1 + x2" (no y).
         Supports "." (all the other columns of data), "- 1" and "0 +" (no
-        intercept), interactions "x:z" and "x * z", transformations log(x),
-        sqrt(x), x^2, etc. Use I() to protect expressions: I(x^2), I(x * z).
-        Categorical, object and string columns are factors, coded with the
-        treatment contrasts, as R does (the ordered ones as the unordered).
+        intercept), the operators of R's formulas ("+", "-", ":", "*", "/",
+        "%in%" and "^", e.g. "(x + z)^2" for x + z + x:z, so that "x^2" is x),
+        with brackets, offset() (not a column, as in R's model.matrix()) and
+        transformations log(x), log(x, 2), sqrt(x), etc. Use I() to protect
+        expressions: I(x^2), I(x * z). Categorical, object and string columns
+        are factors, coded with the treatment contrasts, as R does (the ordered
+        ones as the unordered); the logical ones are factors with the levels
+        FALSE and TRUE.
     data : dict or DataFrame
         Data containing variables. Can be dict, DataFrame, or dict of arrays.
     return_type : str, optional
@@ -136,7 +149,7 @@ def formula(
 
     >>> # With transformations: y is log-transformed, X has x and x^2
     >>> data_t = {'y': [1, 2, 3], 'x': [1, 2, 3]}
-    >>> y, X = formula("log(y) ~ x + x^2", data_t)
+    >>> y, X = formula("log(y) ~ x + I(x^2)", data_t)
 
     >>> # Return as DataFrames with column names
     >>> y, X = formula("y ~ x1 + x2", data, as_dataframe=True)
@@ -165,13 +178,23 @@ def formula(
     >>> # Custom function on LHS (response variable)
     >>> y, X = formula("my_transform(y) ~ x", data_t)
     """
-    formula_str = formula_str.strip()
+    # The formula as R deparses it: spaces around +, -, *, = and comparisons, except
+    # in the backquoted names
+    parts = formula_str.strip().split("`")
+    for pattern, replacement in (
+        (r"\s+", ""),
+        (r"(?<=[\w.)])([+*-])", r" \1 "),
+        (r"(==|!=|>=|<=|<|>|&|\|)", r" \1 "),
+        (r"(?<![=!<>])=(?!=)", " = "),
+        (r",", ", "),
+        (r"\bB\(([\w.]+), ", r"B(\1,"),
+    ):
+        parts[::2] = [re.sub(pattern, replacement, part) for part in parts[::2]]
+    formula_str = "`".join(parts)
 
     lhs = ""
     if "~" in formula_str:
         lhs, formula_str = (part.strip() for part in formula_str.split("~", 1))
-    if not formula_str:
-        formula_str = "1"
 
     if isinstance(data, dict):
         data_dict = {str(name): values for name, values in data.items()}
@@ -184,72 +207,66 @@ def formula(
     caller_globals = _get_caller_globals()
     n_obs = len(next(iter(data_dict.values())))
 
-    # The variables as R deparses them: spaces around +, -, * and comparisons
-    chunks = _parse_formula_terms(formula_str)
-    canonical: dict[str, str] = {}
-    for variable in [lhs] + [v for _, groups in chunks for g in groups for v in g]:
-        name = variable
-        for pattern, replacement in (
-            (r"\s+", ""),
-            (r"(?<=[\w.)])([+*-])", r" \1 "),
-            (r"(==|!=|>=|<=|<|>|&|\|)", r" \1 "),
-            (r",", ", "),
-            (r"\bB\(([\w.]+), ", r"B(\1,"),
-        ):
-            name = re.sub(pattern, replacement, name)
-        canonical[variable] = name
-    lhs = canonical[lhs]
+    # "." is all the other variables of the data, as a group
+    others = [
+        f"`{name}`"
+        for name in data_dict
+        if not re.search(rf"(?<![\w.]){re.escape(name)}(?![\w.(])", lhs)
+    ]
+    formula_str = re.sub(
+        r"(?<![\w.`])\.(?![\w.`])", f"({' + '.join(others)})", formula_str
+    )
 
-    # The terms, as R's terms(): left to right, then ordered by their degree
-    intercept = True
-    terms: list[frozenset[str]] = []
-    order = [lhs] if lhs else []
-    for negative, groups in chunks:
-        names = [[canonical[v] for v in group] for group in groups]
-        if names in ([["0"]], [["1"]]):
-            intercept = (names[0][0] == "1") != negative
-            continue
-        if names == [["."]]:
-            appearing = [
-                name
-                for name in data_dict
-                if not re.search(rf"(?<![\w.]){re.escape(name)}(?![\w.(])", lhs)
-            ]
-            new_terms = [frozenset([name]) for name in appearing]
-        else:
-            appearing = [v for group in names for v in group]
-            new_terms = [frozenset(names[0])]
-            for group in names[1:]:
-                new_terms += [frozenset(group)]
-                new_terms += [term | frozenset(group) for term in new_terms[:-1]]
-        order += [v for v in dict.fromkeys(appearing) if v not in order]
-        if negative:
-            terms = [term for term in terms if term not in new_terms]
-        else:
-            terms += [term for term in dict.fromkeys(new_terms) if term not in terms]
-    terms = sorted(terms, key=len)
+    # The terms, as R's terms(): left to right, then ordered by their degree, without
+    # the offsets, which are not the columns of R's model.matrix()
+    parsed_terms, parsed_intercept, order = _parse_formula_terms(formula_str)
+    intercept = parsed_intercept is not False
+    terms = sorted(
+        (term for term in parsed_terms if not any(v[:7] == "offset(" for v in term)),
+        key=len,
+    )
 
     if return_type == "terms":
         return [":".join(sorted(term, key=order.index)) for term in terms]
 
+    # The response is not needed for the design matrix of the new data
     y = None
-    if lhs:
+    if lhs and return_type in ("both", "y"):
         if lhs in data_dict:
             y = np.asarray(data_dict[lhs], dtype=float)
         else:
-            y = _apply_transformation(lhs, data_dict, n_obs, caller_globals)
+            y = _apply_transformation(lhs, data_dict, n_obs, caller_globals).astype(
+                float
+            )
 
     if return_type == "y":
         return y
 
-    # The columns of each variable: the dummies of all levels for the factors
+    # The columns of each variable: the dummies of all levels for the factors (the
+    # logical variables with the levels FALSE and TRUE), with the levels of the
+    # training data at the prediction, as R's xlevels
+    xlevels = getattr(data, "attrs", {}).get("_xlevels", {})
     blocks: dict[str, list[tuple[str, np.ndarray]]] = {}
-    factors: set[str] = set()
+    factors: dict[str, list] = {}
     for name in [v for v in order if any(v in term for term in terms)]:
-        values = pd.Series(data_dict.get(name, []))
-        if name in data_dict and (
-            isinstance(values.dtype, pd.CategoricalDtype)
-            or pd.api.types.is_string_dtype(values)
+        evaluated = name not in data_dict
+        values = pd.Series(
+            _apply_transformation(name, data_dict, n_obs, caller_globals)
+            if evaluated
+            else data_dict[name]
+        )
+        if pd.api.types.infer_dtype(values, skipna=True) == "boolean":
+            values = values.astype(pd.CategoricalDtype([False, True]))
+        if name in xlevels:
+            unseen = values[values.notna()]
+            unseen = unseen[~unseen.isin(xlevels[name])].unique()
+            if len(unseen):
+                raise ValueError(
+                    f"factor {name} has new levels {', '.join(map(str, unseen))}"
+                )
+            values = values.astype(pd.CategoricalDtype(xlevels[name]))
+        if isinstance(values.dtype, pd.CategoricalDtype) or (
+            not evaluated and pd.api.types.is_string_dtype(values)
         ):
             categories = values.astype("category").cat
             codes = categories.codes.to_numpy()
@@ -261,19 +278,17 @@ def formula(
                     + (
                         str(int(level))
                         if isinstance(level, float) and level.is_integer()
+                        else str(level).upper()
+                        if isinstance(level, (bool, np.bool_))
                         else str(level)
                     ),
                     dummies[:, i],
                 )
                 for i, level in enumerate(categories.categories)
             ]
-            factors.add(name)
-        elif name in data_dict:
-            blocks[name] = [(name, np.asarray(data_dict[name], dtype=float))]
+            factors[name] = list(categories.categories)
         else:
-            blocks[name] = [
-                (name, _apply_transformation(name, data_dict, n_obs, caller_globals))
-            ]
+            blocks[name] = [(name, values.to_numpy(dtype=float))]
 
     # R's model.matrix(): a factor is coded by contrasts if the term without it
     # is in a preceding term; without intercept, the first factor by dummies
@@ -310,6 +325,7 @@ def formula(
 
     if as_dataframe:
         X_df = pd.DataFrame(X, columns=var_names)
+        X_df.attrs["_xlevels"] = factors
 
         if return_type == "X":
             return X_df
@@ -328,34 +344,84 @@ def formula(
     return y, X
 
 
-def _parse_formula_terms(formula_str: str) -> list[tuple[bool, list[list[str]]]]:
-    """Split the right-hand side of a formula into its summands.
+def _parse_formula_terms(
+    formula_str: str,
+) -> tuple[list[frozenset[str]], bool | None, list[str]]:
+    """Expand the right-hand side of a formula into its terms, as R's terms.formula.
 
-    Returns, for each summand in its order, whether it is subtracted and its
-    variables, grouped by "*" and, inside the groups, by ":". The operators in
-    parentheses belong to the variables, e.g. log(x + 1), as does the minus of
-    a power, e.g. x^-1.
+    Returns the terms (the sets of their variables) in R's order before the
+    sorting by degree, the intercept set by "1" or "0" (None if neither) and
+    the variables in their order of appearance. The operators are those of R:
+    +, -, *, /, %in%, : and ^ (the power of a term is the term), with R's
+    precedence. The operators in calls belong to the variables, e.g. log(x + 1),
+    as do those in backquoted names.
     """
-    chunks: list[tuple[bool, list[list[str]]]] = []
-    negative = False
-    groups: list[list[str]] = [[]]
-    variable = ""
-    depth = 0
-    for char in formula_str + "+":
-        depth += (char == "(") - (char == ")")
-        if depth or char not in "+-*:" or variable.rstrip().endswith("^"):
-            variable += char
-            continue
-        groups[-1].append(variable.strip())
-        variable = ""
-        if char in "*:":
-            groups += [[]] if char == "*" else []
-            continue
-        if groups != [[""]]:
-            chunks.append((negative, groups))
-        negative, groups = char == "-", [[]]
+    text = formula_str.strip()
+    if not text:
+        return [], None, []
 
-    return chunks
+    # The binary operators outside calls, by precedence: + and -, * and /, %in%, :, ^
+    found: list[list[int]] = [[], [], [], [], []]
+    depth, quoted, operand = 0, False, False
+    for position, char in enumerate(text):
+        if quoted or depth or char in "()`":
+            quoted ^= char == "`"
+            depth += 0 if quoted else (char == "(") - (char == ")")
+            operand = True
+        elif char in "+-*/%:^":
+            if (operand or char not in "+-") and (
+                char != "%" or text.startswith("%in%", position)
+            ):
+                found[[0, 0, 1, 1, 2, 3, 4]["+-*/%:^".index(char)]].append(position)
+            operand = False
+        elif not char.isspace():
+            operand = True
+
+    kind = next((k for k, positions in enumerate(found) if positions), None)
+    if text[0] in "+-" and (kind is None or kind == 4):
+        terms, intercept, variables = _parse_formula_terms(text[1:])
+        if text[0] == "-":
+            terms, intercept = [], None if intercept is None else not intercept
+        return terms, intercept, variables
+    if kind is None and text[0] == "(":
+        return _parse_formula_terms(text[1:-1])
+    if kind is None:
+        if text in ("0", "1"):
+            return [], text == "1", []
+        name = text[1:-1] if text[0] == "`" else text
+        return [frozenset([name])], None, [name]
+
+    # Split at the last operator of the lowest precedence, at the first power
+    position = found[kind][0 if kind == 4 else -1]
+    operator = "%in%" if kind == 2 else text[position]
+    left, intercept, variables = _parse_formula_terms(text[:position])
+    right, right_intercept, right_variables = _parse_formula_terms(
+        "" if kind == 4 else text[position + len(operator) :]
+    )
+    variables += [v for v in right_variables if v not in variables]
+    if right_intercept is not None:
+        intercept = right_intercept if operator != "-" else not right_intercept
+
+    if operator == "-":
+        terms = [term for term in left if term not in right]
+    elif operator == "+":
+        terms = left + right
+    elif operator == "*":
+        terms = left + right + [a | b for a in left for b in right]
+    elif operator == ":":
+        terms = [a | b for a in left for b in right]
+    elif operator == "/":
+        terms = left + [frozenset().union(*left) | b for b in right]
+    elif operator == "%in%":
+        terms = [a | frozenset().union(*right) for a in left]
+    else:
+        power = text[position + 1 :].strip()
+        if not re.fullmatch(r"\d+(\.\d*)?", power) or float(power) < 2:
+            raise ValueError(f"Invalid power in formula: '{text}'")
+        terms = left
+        for _ in range(int(float(power)) - 1):
+            terms = list(dict.fromkeys(a | b for a in left for b in terms))
+    return list(dict.fromkeys(terms)), intercept, variables
 
 
 def expand_formula(formula_str):

@@ -214,6 +214,7 @@ def xreg_expander(
         won't print anything.
     gaps : str, default="auto"
         Defines how to fill in the gaps in the data:
+
         - "NAs": leave missing values
         - "zero": substitute them by zeroes
         - "naive": use the last / first actual value

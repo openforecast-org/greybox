@@ -4,10 +4,10 @@ This module provides prediction functionality similar to R's predict.greybox
 and predict.alm methods.
 """
 
-import numpy as np
-from scipy import stats
+import re
 
-from .fitters import scale_sd
+import numpy as np
+import pandas as pd
 
 
 def predict_basic(model, X, interval="none", level=0.95, side="both"):
@@ -55,7 +55,9 @@ def predict(
     model : ALM
         Fitted ALM model.
     newdata : dict, DataFrame, or np.ndarray, optional
-        New data for predictions. If None, uses training data.
+        New data for predictions: the variables of the formula of the model (its
+        factors with their levels in the training data), or its design matrix.
+        If None, the in-sample values, as R's ``newdata=NULL``.
     interval : str, optional
         Type of interval: "none", "confidence", or "prediction".
     level : float or list, optional
@@ -79,66 +81,35 @@ def predict(
     if side not in ("both", "upper", "lower"):
         raise ValueError("side must be 'both', 'upper', or 'lower'")
 
-    if isinstance(level, (int, float)):
-        level = [level]
-
-    n_levels = len(level)
-
-    if newdata is None:
-        X = model._X_train_
-    else:
+    X = newdata
+    if isinstance(newdata, dict) or hasattr(newdata, "to_dict"):
         from .formula import formula
 
-        if isinstance(newdata, dict):
-            if "y" in newdata:
-                _, X = formula("y ~ .", newdata)
-            else:
-                X = formula("~ .", newdata, return_type="X")
-        elif hasattr(newdata, "to_dict"):
-            data_dict = newdata.to_dict(orient="list")
-            if "y" in data_dict:
-                _, X = formula("y ~ .", data_dict)
-            else:
-                X = formula("~ .", data_dict, return_type="X")
-        elif isinstance(newdata, np.ndarray):
-            X = newdata
-        else:
-            raise ValueError("newdata must be dict, DataFrame, or numpy array")
+        # The design matrix of the formula of the model (the data without its
+        # response), with the levels of the factors of the training data and the
+        # trend after the in-sample one, as R's predict.greybox()
+        frame = pd.DataFrame(newdata)
+        frame.attrs["_xlevels"] = getattr(model, "_xlevels", None) or {}
+        formula_str = model._formula_ or ("y ~ ." if "y" in frame else "~ .")
+        if "trend" not in frame and re.search(
+            r"(?<![\w.])trend(?![\w.])", formula_str.split("~")[-1]
+        ):
+            frame["trend"] = len(model._y_train_) + np.arange(1.0, len(frame) + 1)
+        X = formula(formula_str, frame, return_type="X")
+    elif newdata is not None and not isinstance(newdata, np.ndarray):
+        raise ValueError("newdata must be dict, DataFrame, or numpy array")
 
-    X = np.asarray(X, dtype=float)
-    if X.ndim == 1:
-        X = X.reshape(1, -1)
+    if occurrence is not None and X is not None and len(occurrence) != len(X):
+        raise ValueError(
+            f"occurrence has {len(occurrence)} elements but newdata has {len(X)} rows"
+        )
 
-    result = predict_basic(model, X, interval, level, side)
-
-    h = X.shape[0]
-
-    if occurrence is not None:
-        occurrence = np.asarray(occurrence, dtype=float)
-        if len(occurrence) != h:
-            raise ValueError(
-                f"occurrence has {len(occurrence)} elements but newdata has {h} rows"
-            )
-
-    if interval != "none":
-        level_matrix = np.tile(level, (h, 1))
-
-        if side == "upper":
-            level_low = np.zeros((h, n_levels))
-            level_up = level_matrix
-        elif side == "lower":
-            level_low = 1 - level_matrix
-            level_up = np.ones((h, n_levels))
-        else:
-            level_low = (1 - level_matrix) / 2
-            level_up = (1 + level_matrix) / 2
-
-        level_low = np.clip(level_low, 0, 1)
-        level_up = np.clip(level_up, 0, 1)
-
-        if model.distribution == "dnorm" and result.lower is not None:
-            sd = scale_sd(model.distribution, model.scale)
-            result.lower = stats.norm.ppf(level_low, loc=result.mean, scale=sd)
-            result.upper = stats.norm.ppf(level_up, loc=result.mean, scale=sd)
-
-    return result
+    # ALM.predict() gives the intervals of all the distributions and the occurrence,
+    # as R's predict.alm()
+    return model.predict(
+        None if X is None else np.asarray(X, dtype=float),
+        interval=interval,
+        level=level,
+        side=side,
+        occurrence=occurrence,
+    )

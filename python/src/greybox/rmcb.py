@@ -40,6 +40,8 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from .fitters import _lm_fit
+
 # Colour palette shared with R's plot.rmcb for the "lines" plot.
 _LINE_COLOURS = (
     "#0DA0DC",
@@ -422,9 +424,8 @@ def _rank_rows(data: np.ndarray, na_last: bool, ties_method: str) -> np.ndarray:
 
 def _ols_fit(x: np.ndarray, y: np.ndarray, df_residual: int) -> dict:
     """Ordinary least squares fit returning the quantities rmcb needs."""
-    coef, _, _, _ = np.linalg.lstsq(x, y, rcond=None)
-    fitted = x @ coef
-    residuals = y - fitted
+    coef, residuals, _ = _lm_fit(x, y)
+    fitted = y - residuals
     ssr = float(residuals @ residuals)
     sigma2 = ssr / df_residual
     xtx = x.T @ x

@@ -40,9 +40,25 @@ X_R = "c(-Inf, -2, -1e-300, 0, 1e-300, 0.3, 0.5, 1, 2, Inf, NaN)"
 P_R = "c(-0.1, 0, 1e-300, 1e-17, 1e-10, 0.3, 0.5, 0.9, 1, 1.1, NaN)"
 CENTRAL_R = "c(1e-4, 0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99, 0.9999)"
 DEGENERATE = [(0.5, 0.0), (0.5, -1.0), (NAN, 1.0), (0.5, NAN), (0.5, INF)]
+# The far tails of the noncentral t and chi-squared: the arguments, the
+# probabilities and their logs, and the (df, ncp) pairs. R's qt() does not return
+# for a lower tail below 1e-100 at (df, ncp) = (1000, 10), so that pair is left out.
+T_TAIL = np.array([-40, -5, -1, -1e-5, -1e-300, 0, 1e-300, 1e-5, 0.5, 2, 10, 100])
+T_TAIL = np.r_[T_TAIL, 405.973, 1e5, 1e10]
+CHISQ_TAIL = np.array([0, 1e-300, 1e-10, 0.01, 0.5, 3, 10, 50, 100, 400, 1e3, 1e4, INF])
+P_TAIL = np.array([1e-300, 1e-100, 1e-20, 1e-10, 1e-4, 0.3, 0.9, 1 - 1e-10])
+LOG_P_TAIL = np.array([-1000, -300, -50, -10, -1e-5, -1e-20])
+T_TAIL_R, CHISQ_TAIL_R, P_TAIL_R, LOG_P_TAIL_R = (
+    "c(" + ", ".join(repr(float(v)).replace("inf", "Inf") for v in values) + ")"
+    for values in (T_TAIL, CHISQ_TAIL, P_TAIL, LOG_P_TAIL)
+)
+T_PARAMETERS = [(0.5, 1.2), (1, -2), (4.5, 1.2), (4.5, 10), (30, 39), (1e3, 50)]
+T_PARAMETERS += [(1e6, 1.2), (4.5, 500)]
+CHISQ_PARAMETERS = [(0, 1.2), (0.5, 1e-3), (1, 10), (3.5, 50), (30, 79.9), (30, 80)]
+CHISQ_PARAMETERS += [(1e3, 500), (1e5, 5000)]
 # The base wrappers with R's arguments: name, R's and Python's parameters, the
-# grid of x and q and the tolerance. R's noncentral t and chi-squared are series
-# accurate to about 1e-9..1e-12, as R documents, not to the last digit.
+# grid of x and q and the tolerance. The noncentral t and chi-squared are R's nmath
+# code, so they are held to the same tolerance as the others.
 BASE = [
     ("norm", "0.3, 1.2", (0.3, 1.2), {}, GRID, GRID_R, 1e-12),
     ("logis", "0.3, 1.2", (0.3, 1.2), {}, GRID, GRID_R, 1e-12),
@@ -50,9 +66,9 @@ BASE = [
     ("gamma", "2.5, scale=1.3", (2.5, 1.3), {}, POSITIVE, POSITIVE_R, 1e-12),
     ("invgauss", "1.7, dispersion=0.4", (1.7, 0.4), {}, POSITIVE, POSITIVE_R, 1e-12),
     ("t", "4.5", (4.5,), {}, GRID, GRID_R, 1e-12),
-    ("t", "4.5, 1.2", (4.5, 1.2), {}, GRID, GRID_R, 1e-8),
+    ("t", "4.5, 1.2", (4.5, 1.2), {}, GRID, GRID_R, 1e-12),
     ("chisq", "3.5", (3.5,), {}, POSITIVE, POSITIVE_R, 1e-12),
-    ("chisq", "3.5, 2", (3.5, 2), {}, POSITIVE, POSITIVE_R, 1e-8),
+    ("chisq", "3.5, 2", (3.5, 2), {}, POSITIVE, POSITIVE_R, 1e-12),
     ("beta", "2, 3", (2, 3), {}, CENTRAL, CENTRAL_R, 1e-12),
     ("exp", "0.6", (0.6,), {}, POSITIVE, POSITIVE_R, 1e-12),
     ("pois", "3.7", (3.7,), {}, POSITIVE, POSITIVE_R, 1e-12),
@@ -405,6 +421,65 @@ CASES = [
         )
         for ncp in (1.5, 30)
         for lt in (True, False)
+    ],
+    # 21. The noncentral t and chi-squared in the far tails, R's nmath to the bit:
+    # p down to 1e-300 and its log down to -1000, both tails, ncp up to 5000
+    *[
+        (
+            f"d{name}({x_r}, {df}, {ncp}, log={lg})",
+            lambda name=name, x=x, df=df, ncp=ncp, lg=lg: getattr(gd, "d" + name)(
+                x, df, ncp, log=lg == "TRUE"
+            ),
+        )
+        for name, x, x_r, parameters in (
+            ("t", T_TAIL, T_TAIL_R, T_PARAMETERS),
+            ("chisq", CHISQ_TAIL, CHISQ_TAIL_R, CHISQ_PARAMETERS),
+        )
+        for df, ncp in parameters
+        for lg in ("TRUE", "FALSE")
+    ],
+    *[
+        (
+            f"p{name}({x_r}, {df}, {ncp}, lower.tail={lt}, log.p={lg})",
+            lambda name=name, x=x, df=df, ncp=ncp, lt=lt, lg=lg: getattr(
+                gd, "p" + name
+            )(x, df, ncp, lower_tail=lt == "TRUE", log_p=lg == "TRUE"),
+        )
+        for name, x, x_r, parameters in (
+            ("t", T_TAIL, T_TAIL_R, T_PARAMETERS),
+            ("chisq", CHISQ_TAIL, CHISQ_TAIL_R, CHISQ_PARAMETERS),
+        )
+        for df, ncp in parameters
+        for lt in ("TRUE", "FALSE")
+        for lg in ("TRUE", "FALSE")
+    ],
+    *[
+        (
+            f"q{name}({p_r}, {df}, {ncp}, lower.tail={lt}, log.p={lg})",
+            lambda name=name, p=p, df=df, ncp=ncp, lt=lt, lg=lg: getattr(
+                gd, "q" + name
+            )(p, df, ncp, lower_tail=lt == "TRUE", log_p=lg == "TRUE"),
+        )
+        for name, parameters in (("t", T_PARAMETERS), ("chisq", CHISQ_PARAMETERS))
+        for df, ncp in parameters
+        for lt in ("TRUE", "FALSE")
+        for lg, p, p_r in (
+            ("FALSE", P_TAIL, P_TAIL_R),
+            ("TRUE", LOG_P_TAIL, LOG_P_TAIL_R),
+        )
+    ],
+    (
+        "qt(1e-10, 4.5, ncp=1.2, lower.tail=FALSE)",
+        lambda: gd.qt(1e-10, 4.5, 1.2, lower_tail=False),
+    ),
+    *[
+        (
+            f"{name}(0.5, c(1, 4.5, 30), c(1.2, 10, 0), lower.tail=FALSE)",
+            lambda name=name: getattr(gd, name)(
+                0.5, [1, 4.5, 30], [1.2, 10, 0], lower_tail=False
+            ),
+        )
+        for name in ("pt", "qt", "pchisq", "qchisq")
     ],
 ]
 

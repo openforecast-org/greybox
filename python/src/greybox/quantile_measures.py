@@ -48,6 +48,7 @@ def pinball(
         0.95 for 95th percentile).
     loss : float, default=1
         The power of the absolute errors:
+
         - 1: L1 loss (for quantiles)
         - 2: L2 loss (for expectiles)
     na_rm : bool, default=True

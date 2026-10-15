@@ -166,6 +166,8 @@ combinations (e.g. \code{loss="MSE"}, distribution="dnorm"),
 \item rank - rank of the model,
 \item data - data used for the model construction,
 \item terms - terms of the data. Needed for some additional methods to work,
+\item xlevels - the levels of the factors in the data, used by \code{predict()} for the
+new data, as in \link[stats]{lm},
 \item occurrence - the occurrence model used in the estimation,
 \item B - the value of the optimised parameters. Typically, this is a duplicate of coefficients,
 \item other - the list of all the other parameters either passed to the
@@ -234,17 +236,17 @@ mtcars2 <- within(mtcars, {
    carb <- factor(carb)
 })
 # The standard model with Log-Normal distribution
-ourModel <- alm(mpg~., mtcars2[1:30,], distribution="dlnorm")
+ourModel <- alm(mpg~., mtcars2[-c(1:2),], distribution="dlnorm")
 summary(ourModel)
 \donttest{plot(ourModel)}
 # Produce table based on the output for LaTeX
 xtable(summary(ourModel))
 
 # Produce predictions with the one sided interval (upper bound)
-predict(ourModel, mtcars2[-c(1:30),], interval="p", side="u")
+predict(ourModel, mtcars2[1:2,], interval="p", side="u")
 
 # Model with heteroscedasticity (scale changes with the change of qsec)
-\donttest{ourModel <- alm(mpg~., mtcars2[1:30,], scale=~qsec)}
+\donttest{ourModel <- alm(mpg~., mtcars2[-c(1:2),], scale=~qsec)}
 
 ### Artificial data for the other examples
 \donttest{xreg <- cbind(rlaplace(100,10,3),rnorm(100,50,5))

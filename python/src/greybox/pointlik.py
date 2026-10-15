@@ -156,7 +156,7 @@ def point_lik(
             prob=1 / (mu + 1),
             log=True,
         ),
-        "dchisq": lambda: stats.ncx2.logpdf(y, df=scale, nc=mu),
+        "dchisq": lambda: dist.dchisq(y, df=scale, ncp=mu, log=True),
         # The shapes of dbeta, whose mu and scale are its mean and variance
         "dbeta": lambda: dist.dbeta(
             y,

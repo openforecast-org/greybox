@@ -306,10 +306,16 @@ stepwise <- function(data, ic=c("AICc","AIC","BIC","BICc"), silent=TRUE, df=NULL
     m <- 2;
     # Start the loop
     while(bestICNotFound){
+        # Stop when all the variables are already in the model
+        variablesLeft <- !(variablesNames %in% all.vars(as.formula(bestFormula)));
+        if(!any(variablesLeft)){
+            bestICNotFound <- FALSE;
+            break;
+        }
         ourCorrelation <- assocFast();
 
         newElement <- variablesNames[which(abs(ourCorrelation)==
-                                               max(abs(ourCorrelation[!(variablesNames %in% all.vars(as.formula(bestFormula)))]),
+                                               max(abs(ourCorrelation[variablesLeft]),
                                                                     na.rm=TRUE))[1]];
         # If the newElement is the same as before, stop
         if(is.na(newElement) || any(newElement==all.vars(as.formula(bestFormula)))){
@@ -366,6 +372,8 @@ stepwise <- function(data, ic=c("AICc","AIC","BIC","BICc"), silent=TRUE, df=NULL
         bestModel <- do.call(lmCall,listToCall);
         # Expand the data from the final model
         bestModel$data <- cbind(listToCall$data[[1]],model.matrix(bestFormula,listToCall$data)[,-1]);
+        # The levels of the factors, for the new data of predict(), as alm()
+        bestModel$xlevels <- .getXlevels(terms(bestFormula), model.frame(bestFormula, listToCall$data));
         if(is.null(colnames(bestModel$data))){
             colnames(bestModel$data) <- c(responseName,varsNames);
         }

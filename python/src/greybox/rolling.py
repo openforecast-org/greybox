@@ -73,6 +73,7 @@ def _parse_call_result(result: Any, h_actual: int) -> dict:
     """Convert a call() return value to {field: array} dict.
 
     Supported return types:
+
     - np.ndarray or list           → {"mean": array}
     - dict with string keys        → one entry per key
     - object with .mean attr       → {"mean": arr, "lower": arr, ...}

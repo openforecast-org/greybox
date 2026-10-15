@@ -3868,7 +3868,8 @@ predict.greybox <- function(object, newdata=NULL, interval=c("none", "confidence
 
         testFormula[[2]] <- NULL;
         # Expand the data frame
-        newdataExpanded <- model.frame(testFormula, newdata);
+        # With the levels of the factors of the training data, as predict.lm()
+        newdataExpanded <- model.frame(testFormula, newdata, xlev=object$xlevels);
         interceptIsNeeded <- attr(terms(newdataExpanded),"intercept")!=0;
         matrixOfxreg <- model.matrix(newdataExpanded,data=newdataExpanded);
         matrixOfxreg <- matrixOfxreg[,variablesNames,drop=FALSE];
@@ -4059,7 +4060,7 @@ predict_almari <- function(object, newdata=NULL, interval=c("none", "confidence"
         testFormula <- formula(object);
         testFormula[[2]] <- NULL;
         # Expand the data frame
-        newdataExpanded <- model.frame(testFormula, newdata);
+        newdataExpanded <- model.frame(testFormula, newdata, xlev=object$xlevels);
         interceptIsNeeded <- attr(terms(newdataExpanded),"intercept")!=0;
         matrixOfxreg <- model.matrix(newdataExpanded,data=newdataExpanded);
 

@@ -15,7 +15,6 @@ import numpy as np
 import pandas as pd
 from numpy.typing import ArrayLike
 from scipy import stats
-from scipy.linalg import blas
 from scipy.special import comb
 from scipy.special import gamma as _sp_gamma
 
@@ -24,6 +23,7 @@ from .cost_function import cf
 from .fitters import (
     ARI_FILTER_DISTRIBUTIONS,
     VARIANCE_SCALE_DISTRIBUTIONS,
+    _lm_fit,
     alm_latent_variance,
     extractor_fitted,
     extractor_residuals,
@@ -365,6 +365,7 @@ class ALM:
         L2 regularization parameter for RIDGE.
     nlopt_kargs : dict, optional
         Dictionary of nlopt parameters. Options:
+
         - "algorithm": str, default="NLOPT_LN_NELDERMEAD"
         - "maxeval": int, default=40 per parameter (200 for LASSO / RIDGE and the
           ARI models)
@@ -523,6 +524,7 @@ class ALM:
         self._X_train_ = None
         self._y_train_ = None
         self._formula_ = None
+        self._xlevels = None
         self._feature_names = None
         self._response_name = None
         self._df_residual = None
@@ -605,6 +607,8 @@ class ALM:
             response_name = y.name
 
         self._formula_ = formula
+        # The levels of the factors of formula(), for the new data, as R's xlevels
+        self._xlevels = X.attrs.get("_xlevels") if X_is_dataframe else None
         self._feature_names = feature_names
         self._response_name = response_name
 
@@ -922,56 +926,10 @@ class ALM:
 
         # ── Step 2: per-distribution response transformation and OLS ──────────
         def _ols_init(Xd, yr):
-            # R's .lm.fit(), LINPACK's dqrdc2 and dqrsl with the same BLAS calls, so
-            # that the start is R's to the last bit: a column in a linear combination
-            # of the previous ones (relative tolerance 1e-7) goes to the end with a
-            # zero coefficient, and the coefficients stay in this pivoted order
-            x = np.array(Xd, dtype=float, order="F")
-            qty = np.array(yr, dtype=float)
-            n, p = x.shape
-            if n == 0 or not np.all(np.isfinite(x)) or not np.all(np.isfinite(qty)):
+            # R's .lm.fit(), which stops on non-finite values: the default start then
+            if not (np.all(np.isfinite(Xd)) and np.all(np.isfinite(yr))) or not len(yr):
                 return None
-            qraux = np.array([blas.dnrm2(x[:, j]) for j in range(p)])
-            norms = np.column_stack([qraux, np.where(qraux == 0, 1.0, qraux)])
-            k = p
-            for c in range(min(n, p)):
-                while c < k and qraux[c] < norms[c, 1] * 1e-7:
-                    order = np.r_[np.arange(c), np.arange(c + 1, p), c]
-                    x = np.asfortranarray(x[:, order])
-                    qraux, norms = qraux[order], norms[order]
-                    k -= 1
-                nrmxl = blas.dnrm2(x[c:, c]) if c < n - 1 else 0.0
-                if nrmxl == 0:
-                    continue
-                nrmxl = np.copysign(nrmxl, x[c, c]) if x[c, c] != 0 else nrmxl
-                x[c:, c] = blas.dscal(1.0 / nrmxl, x[c:, c])
-                x[c, c] = 1.0 + x[c, c]
-                for j in range(c + 1, p):
-                    t = -blas.ddot(x[c:, c], x[c:, j]) / x[c, c]
-                    x[c:, j] = blas.daxpy(x[c:, c], x[c:, j], a=t)
-                    if qraux[j] == 0:
-                        continue
-                    t = max(1.0 - (abs(x[c, j]) / qraux[j]) ** 2, 0.0)
-                    if t >= 1e-6:
-                        qraux[j] = qraux[j] * np.sqrt(t)
-                    else:
-                        qraux[j] = norms[j, 0] = blas.dnrm2(x[c + 1 :, j])
-                qraux[c], x[c, c] = x[c, c], -nrmxl
-            k = min(k, n)
-            # Q'y and the back-substitution of dqrsl
-            for j in range(min(k, n - 1)):
-                if qraux[j] != 0:
-                    diagonal, x[j, j] = x[j, j], qraux[j]
-                    t = -blas.ddot(x[j:, j], qty[j:]) / x[j, j]
-                    qty[j:] = blas.daxpy(x[j:, j], qty[j:], a=t)
-                    x[j, j] = diagonal
-            B = np.zeros(p)
-            B[:k] = qty[:k]
-            for j in range(k - 1, -1, -1):
-                B[j] = B[j] / x[j, j]
-                if j > 0:
-                    B[:j] = blas.daxpy(x[:j, j], B[:j], a=-B[j])
-            return B
+            return _lm_fit(Xd, yr)[0]
 
         B_ols = None
         if self.distribution in ("plogis", "pnorm"):
@@ -1708,6 +1666,7 @@ class ALM:
         """Calculate variance-covariance matrix of parameter estimates.
 
         Uses distribution-specific methods matching R's vcov.alm():
+
         - Normal-like + likelihood/MSE: sigma^2 * (X'X)^-1
         - Poisson + likelihood: inverse Fisher information
         - Everything else: inverse numerical Hessian of cost function
@@ -1965,6 +1924,7 @@ class ALM:
 
         Accepts the raw linear predictor (before back-transformation) and
         branches by distribution to match R's predict.alm() behaviour:
+
         - symmetric distributions: t-interval in LP space
         - log-link distributions: exponentiate t-bounds for CI, use
           distribution quantile for PI
@@ -2302,8 +2262,8 @@ class ALM:
                 lower[:, i] = lp_l**2
                 upper[:, i] = lp_u**2
                 if interval == "prediction":
-                    lower[:, i] = stats.ncx2.ppf(ll, df=self.other_, nc=linear_pred**2)
-                    upper[:, i] = stats.ncx2.ppf(lu, df=self.other_, nc=linear_pred**2)
+                    lower[:, i] = dist.qchisq(ll, df=self.other_, ncp=linear_pred**2)
+                    upper[:, i] = dist.qchisq(lu, df=self.other_, ncp=linear_pred**2)
 
             # ── Group G: link-function distributions (plogis/pnorm) ─────────
             elif d == "plogis":
@@ -2360,6 +2320,7 @@ class ALM:
             the in-sample values, as R's ``newdata=NULL``.
         interval : {"none", "confidence", "prediction"}, default="none"
             Type of interval to calculate:
+
             - "none": No intervals, return only point forecasts
             - "confidence": Confidence interval for the mean
             - "prediction": Prediction interval for new observations
@@ -2368,6 +2329,7 @@ class ALM:
             or a list of floats (e.g., [0.8, 0.9, 0.95]). Default is 0.95 (95%).
         side : {"both", "upper", "lower"}, default="both"
             Side of interval:
+
             - "both": Return both lower and upper bounds
             - "upper": Return only upper bounds
             - "lower": Return only lower bounds
@@ -2384,6 +2346,7 @@ class ALM:
         -------
         PredictionResult
             Object with the following attributes:
+
             - mean : np.ndarray - Predicted values (point forecasts)
             - lower : np.ndarray or None - Lower prediction bounds
             - upper : np.ndarray or None - Upper prediction bounds
@@ -2572,7 +2535,7 @@ class ALM:
         )
 
         variances = None
-        scale_values = None
+        scale_values: float | np.ndarray | None = None
         if interval == "none":
             lower = None
             upper = None

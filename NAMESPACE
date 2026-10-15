@@ -288,6 +288,7 @@ importFrom(statmod,
   qinvgauss
 )
 importFrom(stats,
+  .getXlevels,
   .lm.fit,
   AIC,
   BIC,

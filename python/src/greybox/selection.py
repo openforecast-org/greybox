@@ -14,9 +14,10 @@ from pandas import DataFrame
 from scipy import stats
 
 from .alm import ALM, PredictionResult
+from .fitters import _lm_fit
 from .formula import formula as formula_func
 from .methods.summary import DISTRIBUTION_NAMES
-from .transforms import bc_transform, bc_transform_inv
+from .transforms import bc_transform, bc_transform_inv, mean_fast
 
 
 class ModelInfo(TypedDict):
@@ -134,6 +135,8 @@ class CALMResult:
         self._actuals = kwargs.pop("actuals", None)
         self._X_train = kwargs.pop("X_train", None)
         self._formula = kwargs.pop("formula_str", None)
+        # The levels of the factors of the data, for the new data, as R's xlevels
+        self._xlevels: dict[str, list] = {}
         self._vcov_matrix = kwargs.pop("vcov", None)
         self._fitted = kwargs.pop("fitted", None)
         self._residuals = kwargs.pop("residuals", None)
@@ -451,30 +454,14 @@ class CALMResult:
         if X is None:
             X = self._X_train
 
-        # Handle dict or DataFrame input - convert to design matrix using stored formula
+        # The design matrix of all the variables of the new data, with the levels of
+        # the factors of the training data, and its columns of the parameters, as
+        # R's predict.greybox() of y ~ .
         if isinstance(X, (dict, DataFrame)):
-            # Get formula - use stored formula or build from coefficient names
-            formula_str = self._formula
-            if formula_str is None:
-                # Build formula from coefficient names if not stored
-                if hasattr(self, "coefficient_names") and self.coefficient_names:
-                    formula_str = "y ~ " + " + ".join(
-                        name for name in self.coefficient_names if name != "(Intercept)"
-                    )
-                else:
-                    raise ValueError(
-                        "Cannot convert dict/DataFrame to design "
-                        "matrix: no formula stored in model. "
-                        "Please pass a design matrix (np.ndarray)"
-                        " with intercept as first column."
-                    )
-
-            # Convert dict to the format expected by formula
-            data_dict = X if isinstance(X, dict) else X.to_dict(orient="list")
-            # Add a dummy y variable for formula parsing (will be ignored)
-            data_dict = {k: np.asarray(v) for k, v in data_dict.items()}
-            _, X_design = formula_func(formula_str, data_dict, as_dataframe=True)
-            X = np.asarray(X_design, dtype=float)
+            frame = DataFrame(X)
+            frame.attrs["_xlevels"] = self._xlevels
+            X = formula_func(f"`{self.y_variable}` ~ .", frame, return_type="X")
+            X = np.asarray(X[self.coefficient_names], dtype=float)
         else:
             X = np.asarray(X, dtype=float)
 
@@ -776,12 +763,12 @@ def _calculate_associations(
                     corr = np.corrcoef(residuals, values[:, 0])[0, 1]
             else:
                 design = np.column_stack([np.ones(len(residuals)), values])
-                fit = np.linalg.lstsq(design, residuals, rcond=None)[0]
+                fit_residuals = _lm_fit(design, residuals)[1]
                 corr = np.sqrt(
                     np.abs(
                         1
-                        - np.sum((residuals - design @ fit) ** 2)
-                        / np.sum((residuals - np.mean(residuals)) ** 2)
+                        - mean_fast(fit_residuals**2, 1)
+                        / mean_fast((residuals - np.mean(residuals)) ** 2, 1)
                     )
                 )
             associations[var] = float(corr)
@@ -943,16 +930,17 @@ def stepwise(
     # ones) and whether it is numeric and not binary, as in R
     blocks: dict[str, DataFrame] = {}
     numeric: dict[str, bool] = {}
+    xlevels: dict[str, list] = {}
     for var in x_vars:
         column = frame[var]
-        if pd.api.types.is_numeric_dtype(column):
+        if pd.api.types.is_numeric_dtype(column) and column.dtype.kind != "b":
             blocks[var] = column.astype(float).to_frame()
             subset_column = column[rows_selected]
             numeric[var] = bool(((subset_column != 0) & (subset_column != 1)).any())
         else:
-            blocks[var] = pd.get_dummies(
-                column, prefix=var, prefix_sep="", drop_first=True, dtype=float
-            )
+            design = formula_func(f"~ `{var}`", frame, return_type="X")
+            blocks[var] = design.iloc[:, 1:]
+            xlevels |= design.attrs["_xlevels"]
             numeric[var] = False
     blocks_selected = {var: block[rows_selected] for var, block in blocks.items()}
 
@@ -1063,6 +1051,7 @@ def stepwise(
         feature_names=feature_names_final,
     )
 
+    final_model._xlevels = xlevels
     final_model.ic_values = all_ics
     final_model.time_elapsed = time.time() - start_time
 
@@ -1284,13 +1273,14 @@ def CALM(
     CALMResult or ALM
         The fitted model of stepwise when it has the intercept only, as R.
         Otherwise a CALMResult containing:
+
         - coefficients: combined parameters
         - vcov: combined variance-covariance matrix
         - fitted: fitted values (on original scale)
         - residuals: residuals (distribution-specific)
         - mu: location parameter
         - scale: scale parameter
-        - other_: the combined extra parameter of the distribution (shape,
+        - ``other_``: the combined extra parameter of the distribution (shape,
           alpha, lambda of Box-Cox, nu or size), None for the others
         - distribution: distribution used
         - log_lik: combined log-likelihood
@@ -1349,17 +1339,9 @@ def CALM(
     # categorical variables, as R's model.matrix()
     frame = frame.loc[rows_selected].reset_index(drop=True)
     y = frame[y_var].to_numpy(dtype=float)
-    exogenous = pd.concat(
-        [
-            frame[var].astype(float).to_frame()
-            if pd.api.types.is_numeric_dtype(frame[var])
-            else pd.get_dummies(
-                frame[var], prefix=var, prefix_sep="", drop_first=True, dtype=float
-            )
-            for var in frame.columns[1:]
-        ],
-        axis=1,
-    )
+    exogenous = formula_func(f"`{y_var}` ~ .", frame, return_type="X")
+    xlevels = exogenous.attrs["_xlevels"]
+    exogenous = exogenous.drop(columns="(Intercept)")
     x_vars = [str(name) for name in exogenous.columns]
     n_vars = len(x_vars)
     n_obs = len(y)
@@ -1376,7 +1358,7 @@ def CALM(
 
         # If <14 params, recurse with bruteforce on selected vars
         if best_model.nparam < 14:
-            return CALM(
+            result = CALM(
                 DataFrame(
                     {y_var: y, **{name: exogenous[name] for name in selected_names}}
                 ),
@@ -1386,6 +1368,8 @@ def CALM(
                 distribution=distribution,
                 **kwargs,
             )
+            result._xlevels = xlevels
+            return result
 
         # Stress-testing mode: best model +/- each single variable
         best_vars = [name for name in selected_names if name in x_vars]
@@ -1453,8 +1437,8 @@ def CALM(
             # The least squares of R's lmGreybox: logLik with the scale, the
             # corrected ICs and the variance of the errors without it
             k = len(model_indices)
-            coef = np.linalg.lstsq(X_fit, y, rcond=None)[0]
-            sse = float(np.sum((y - X_fit @ coef) ** 2))
+            coef, fit_residuals, _ = _lm_fit(X_fit, y)
+            sse = mean_fast(fit_residuals**2, 1)
             ll = -n_obs / 2 * (np.log(2 * np.pi) + 1 + np.log(sse / n_obs))
             denominator = np.float64(n_obs - k - 1)
             with np.errstate(divide="ignore"):
@@ -1568,7 +1552,7 @@ def CALM(
 
     elapsed_time = time.time() - start_time
 
-    return CALMResult(
+    result = CALMResult(
         coefficients=combined_coef,
         coefficient_names=coefficient_names,
         vcov=vcov_combined,
@@ -1596,3 +1580,5 @@ def CALM(
         X_train=X_matrix,
         formula_str=f"{y_var} ~ " + " + ".join(x_vars),
     )
+    result._xlevels = xlevels
+    return result

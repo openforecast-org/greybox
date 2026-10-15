@@ -19,6 +19,8 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from .fitters import _lm_fit
+
 
 class StickResult:
     """Result of :func:`stick`. Mirrors R's ``stick`` S3 class.
@@ -193,13 +195,6 @@ class StickResult:
         return axes
 
 
-def _residual_sum_of_squares(y: np.ndarray, design: np.ndarray) -> float:
-    """Residual sum of squares of an OLS fit of ``y`` on ``design``."""
-    coef, _, _, _ = np.linalg.lstsq(design, y, rcond=None)
-    residuals = y - design @ coef
-    return float(residuals @ residuals)
-
-
 def _factor_dummies(codes: np.ndarray) -> np.ndarray:
     """Treatment-coded dummies for a factor (first level dropped)."""
     levels = np.unique(codes)
@@ -313,15 +308,15 @@ def stick(y, lags=None) -> StickResult:
     # freedom are the increments in the rank of the design, so the
     # (partially) aliased terms only get their new columns.
     design = np.ones((len(y_observed), 1))
-    rss_prev = _residual_sum_of_squares(y_observed, design)
-    rank_prev = 1
+    residuals = _lm_fit(design, y_observed)[1]
+    rss_prev, rank_prev = float(residuals @ residuals), 1
 
     df = []
     sum_sq = []
     for codes in term_codes:
         design = np.column_stack([design, _factor_dummies(codes)])
-        rss_curr = _residual_sum_of_squares(y_observed, design)
-        rank_curr = np.linalg.matrix_rank(design)
+        _, residuals, rank_curr = _lm_fit(design, y_observed)
+        rss_curr = float(residuals @ residuals)
         df.append(rank_curr - rank_prev)
         sum_sq.append(rss_prev - rss_curr)
         rss_prev, rank_prev = rss_curr, rank_curr
