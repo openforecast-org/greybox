@@ -223,3 +223,21 @@ class TestTrainingLevels:
         X = np.array([[1, 1.0, 0, 1, 1], [1, 2.0, 1, 0, 0]])
         assert model.coefficient_names == ["(Intercept)", "x", "gb", "gc", "lTRUE"]
         assert_allclose(model.predict(newdata).mean, model.predict(X).mean)
+
+
+@pytest.mark.parametrize(
+    ("locale", "expected"),
+    [
+        ("C", ["A", "B", "_x", "a", "b", "é"]),
+        ("C.UTF-8", ["_x", "a", "A", "b", "B", "é"]),
+        ("en_GB.UTF-8", ["_x", "a", "A", "b", "B", "é"]),
+    ],
+)
+def test_level_order_follows_locale(locale, expected, monkeypatch):
+    """Character levels in the order of R's factor(): the code points in the C
+    locale, the Unicode collation (ICU's, lowercase first) in the others."""
+    monkeypatch.delenv("LC_COLLATE", raising=False)
+    monkeypatch.setenv("LC_ALL", locale)
+    data = {"y": np.arange(6.0), "g": ["b", "A", "é", "a", "B", "_x"]}
+    columns = list(formula("y ~ 0 + g", data)[1].columns)
+    assert columns == ["g" + level for level in expected]

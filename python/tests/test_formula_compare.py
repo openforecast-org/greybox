@@ -1,5 +1,8 @@
 """Compare formula() with R's model.frame() and model.matrix()."""
 
+import os
+import subprocess
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -115,6 +118,39 @@ class TestFormulaCompare:
         labels = _r(f'attr(terms({formula_str}, data=formulaData), "term.labels")')
         assert formula(formula_str, data, return_type="terms") == list(labels)
 
+    LEVELS = [
+        "b",
+        "A",
+        "a",
+        "B",
+        "_x",
+        "x y",
+        "x-y",
+        "xy",
+        "10",
+        "1a",
+        "9",
+        "e",
+        "\u00e9",
+        "ea",
+        "\u00c9a",
+        "ae",
+        "\u00e6",
+        "\u00c6",
+        "ss",
+        "\u00df",
+        "o",
+        "\u00f6",
+        "\u00f8",
+        "a b",
+        "a_b",
+        "a.b",
+        "a1",
+        "A1",
+        "High",
+        "high",
+    ]
+
     def test_level_order(self):
         """The levels sorted as R in the C collation (that of R here), by codepoint."""
         assert _r('Sys.getlocale("LC_COLLATE")')[0] == "C"
@@ -123,6 +159,35 @@ class TestFormulaCompare:
         assert list(formula("y ~ g", data)[1].columns) == list(
             _r("colnames(model.matrix(y ~ g, caseData))")
         )
+
+    @pytest.mark.parametrize("locale", ["C", "C.UTF-8"])
+    def test_level_order_locale(self, locale, tmp_path, monkeypatch):
+        """The levels of a character column in the order of R's factor() in the
+        locale: the code points in C, the Unicode collation (ICU's) in C.UTF-8. R in
+        the C locale cannot represent the other characters (it sorts their escapes,
+        "<U+00C6>"), so that case takes the ASCII levels only."""
+        levels = [level for level in self.LEVELS if locale != "C" or level.isascii()]
+        path = tmp_path / "levels.txt"
+        path.write_text("\n".join(levels), encoding="utf-8")
+        result = subprocess.run(
+            [
+                "Rscript",
+                "-e",
+                f'cat(levels(factor(readLines("{path}", '
+                'encoding="UTF-8"))), sep="\\n")',
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+            env={**os.environ, "LC_ALL": locale},
+        )
+        monkeypatch.setenv("LC_ALL", locale)
+        data = {"y": np.arange(1.0, len(levels) + 1), "g": levels}
+        columns = list(formula("y ~ 0 + g", data)[1].columns)
+        assert columns == [
+            "g" + level for level in result.stdout.rstrip("\n").split("\n")
+        ]
 
     @pytest.mark.parametrize(
         "rows", [[2, 0], [3, 3, 1], [5, 0, 31, 2]], ids=["fewer", "reordered", "all"]

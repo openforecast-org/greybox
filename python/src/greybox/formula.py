@@ -6,7 +6,10 @@ them to the model fit method.
 """
 
 import inspect
+import os
 import re
+import sys
+import unicodedata
 from typing import Any
 
 import numpy as np
@@ -52,6 +55,66 @@ def _get_caller_globals():
         return {}
     finally:
         del frame
+
+
+# ICU's order (Unicode collation, CLDR root) of the space, the ASCII punctuation and
+# symbols, which precede the digits and the letters; of the accents; and of the
+# letters that are an expansion or a variant of others
+_COLLATION_PUNCTUATION = " _-,;:!?.'\"()[]{}@*/\\&#%`^+<=>|~$"
+_COLLATION_ACCENTS = (
+    "\u0301\u0300\u0306\u0302\u030c\u030a\u0308\u030b\u0303\u0307\u0338"
+)
+_COLLATION_EXPANSIONS = {
+    "\u00e6": "ae",
+    "\u00c6": "AE",
+    "\u0153": "oe",
+    "\u0152": "OE",
+    "\u00df": "ss",
+    "\u00f8": "o\u0338",
+    "\u00d8": "O\u0338",
+    "\u0142": "l\u0338",
+    "\u0141": "L\u0338",
+    "\u0111": "d\u0338",
+    "\u0110": "D\u0338",
+}
+
+
+def _collation_key(level) -> tuple:
+    """The order R gives the levels of a factor outside the C locale (ICU's).
+
+    A three-level Unicode collation key: the base characters (space < punctuation <
+    digits < letters, case and accents aside), then the accents, then the case
+    (lowercase first). Scripts other than Latin follow the Latin letters in the order
+    of their code points.
+    """
+    primary: list[int] = []
+    secondary: list[tuple[int, ...]] = []
+    tertiary: list[int] = []
+    for char in str(level):
+        expansion = _COLLATION_EXPANSIONS.get(char)
+        # A ligature (ae, oe, ss) differs from its letters after all the accents
+        ligature = expansion is not None and not expansion.endswith("\u0338")
+        for part in unicodedata.normalize("NFD", expansion or char):
+            if unicodedata.combining(part) and primary:
+                accent = _COLLATION_ACCENTS.find(part)
+                accent = (
+                    len(_COLLATION_ACCENTS) + 1 + ord(part) if accent < 0 else accent
+                )
+                secondary[-1] += (accent,)
+                continue
+            base = part.lower()
+            if part in _COLLATION_PUNCTUATION or part.isspace():
+                weight = 1 + max(_COLLATION_PUNCTUATION.find(part), 0)
+            elif part.isdigit():
+                weight = 100 + unicodedata.digit(part, 0)
+            elif "a" <= base <= "z":
+                weight = 200 + ord(base) - ord("a")
+            else:
+                weight = 300 + ord(base)
+            primary.append(weight)
+            secondary.append((len(_COLLATION_ACCENTS),) if ligature else ())
+            tertiary.append(int(part != base))
+    return (primary, secondary, tertiary)
 
 
 def _apply_transformation(var_name, data_dict, n_obs, caller_globals=None):
@@ -265,10 +328,29 @@ def formula(
                     f"factor {name} has new levels {', '.join(map(str, unseen))}"
                 )
             values = values.astype(pd.CategoricalDtype(xlevels[name]))
-        if isinstance(values.dtype, pd.CategoricalDtype) or (
-            not evaluated and pd.api.types.is_string_dtype(values)
+        if (
+            not evaluated
+            and not isinstance(values.dtype, pd.CategoricalDtype)
+            and pd.api.types.is_string_dtype(values)
         ):
-            categories = values.astype("category").cat
+            # The levels in the order of R's sort(): the code points in the C
+            # locale, the Unicode collation in the others (Windows: the system's)
+            locale_name = next(
+                (
+                    os.environ[variable]
+                    for variable in ("LC_ALL", "LC_COLLATE", "LANG")
+                    if os.environ.get(variable)
+                ),
+                "",
+            )
+            levels = sorted(values.dropna().unique())
+            if locale_name not in ("C", "POSIX") and (
+                locale_name or sys.platform == "win32"
+            ):
+                levels = sorted(levels, key=_collation_key)
+            values = values.astype(pd.CategoricalDtype(levels))
+        if isinstance(values.dtype, pd.CategoricalDtype):
+            categories = values.cat
             codes = categories.codes.to_numpy()
             dummies = (codes[:, None] == np.arange(len(categories.categories))) * 1.0
             dummies[codes < 0] = np.nan

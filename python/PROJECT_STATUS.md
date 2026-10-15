@@ -112,8 +112,11 @@ behaviour of one is made in the other in the same commit.
 - `qt()` with a large `ncp` hangs in R for some lower-tail probabilities below
   1e-100 (its bisection stops at a root of exactly 0); the port of R's `qnt`
   hangs the same way.
-- The levels of character factors are sorted by code point, as R in the C locale;
-  under a UTF-8 locale R sorts by ICU collation (`a A b B`).
+- The levels of character columns follow R's `factor()` in the locale named by
+  `LC_ALL` / `LC_COLLATE` / `LANG`: code points in the C locale, the Unicode
+  collation otherwise, implemented for Latin text, digits and ASCII punctuation;
+  other scripts follow the Latin letters in code-point order, as ICU's root order
+  does for the common ones.
 - On Windows built with MSVC, `long double` is double precision, so the last bits
   of the long double sums and of R's nmath code can differ from R's there.
 

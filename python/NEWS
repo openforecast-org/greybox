@@ -137,6 +137,10 @@ Changes:
   `a*(b+c)`), `%in%`, `offset()` (dropped, as by `alm()`), and calls with
   several arguments such as `log(x, base=10)`. Logical columns and comparisons
   are factors with the levels FALSE and TRUE (`amTRUE`, `x > 2TRUE`).
+* The levels of character columns are sorted as by R's `factor()`: by code point
+  in the C / POSIX locale, and by the Unicode collation (ICU's, as R) in the
+  others (`a A b B`, `e é f`, space < punctuation < digits < letters), the locale
+  taken from `LC_ALL`, `LC_COLLATE` or `LANG` as R takes it.
 * The prediction from new data takes the levels of the factors of the training
   data, as R's `xlevels`, in `predict()`, `CALM` and the scale model: new data
   with fewer or reordered levels give the same columns, and an unseen level is
