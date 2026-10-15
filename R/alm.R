@@ -718,6 +718,11 @@ alm <- function(formula, data, subset, na.action,
         }
         else{
             yFitted[] <- extractorFitted(distribution, fitterReturn$mu, fitterReturn$scale);
+            # LASSO / RIDGE work with the response in the space of the model
+            if(any(loss==c("LASSO","RIDGE")) &&
+               any(distribution==c("dlnorm","dllaplace","dls","dlgnorm","dlogitnorm","dbcnorm"))){
+                yFitted[] <- fitterReturn$mu;
+            }
 
             if(loss=="MSE"){
                 CFValue <- meanFast((y-yFitted)^2);
@@ -1400,7 +1405,9 @@ alm <- function(formula, data, subset, na.action,
                     yNew <- abs(fitted(arima(y, order=c(0,1,1))));
                 }
                 else{
-                    yNew <- as.vector(fitted(smooth::oes(y, occurrence="direct", model="MNN", h=1)));
+                    # The occurrence model of smooth: om(), or oes() in its older versions
+                    occurrenceFunction <- if(exists("om", envir=asNamespace("smooth"))) smooth::om else smooth::oes;
+                    yNew <- as.vector(fitted(occurrenceFunction(y, occurrence="direct", model="MNN", h=1)));
                 }
                 yNew[is.na(yNew)] <- min(yNew, na.rm=TRUE);
                 yNew[yNew==0] <- 1E-10;
@@ -1505,6 +1512,10 @@ alm <- function(formula, data, subset, na.action,
                     # This is inspired by GLM estimation
                     muInSample <- mean(y);
                     B <- c(solve(t(matrixXreg) %*% matrixXreg * muInSample) %*% t(matrixXreg) %*% (y-muInSample));
+                    # The Newton step goes from the log of the mean
+                    if(interceptIsNeeded){
+                        B[1] <- B[1] + log(muInSample);
+                    }
                 }
                 else if(distribution=="dbinom"){
                     # Smooth the original series
@@ -1575,7 +1586,8 @@ alm <- function(formula, data, subset, na.action,
                              differences=iOrder);
                     matrixXregForDiffs <- matrixXregForDiffs[-c(1:iOrder),,drop=FALSE];
                     matrixXregForDiffs[c(1:iOrder),nVariablesExo+c(1:arOrder)] <-
-                        colMeans(matrixXregForDiffs[,nVariablesExo+c(1:arOrder), drop=FALSE]);
+                        matrix(colMeans(matrixXregForDiffs[,nVariablesExo+c(1:arOrder), drop=FALSE]),
+                               iOrder, arOrder, byrow=TRUE);
                 }
                 else{
                     matrixXregForDiffs <- matrixXregForDiffs[-c(1:iOrder),,drop=FALSE];
@@ -1682,9 +1694,15 @@ alm <- function(formula, data, subset, na.action,
                 }
             }
             else if(any(distribution==c("dfnorm","drectnorm"))){
-                B <- c(sd(y),B);
-                BLower <- c(0,rep(-Inf,length(B)-1));
-                BUpper <- rep(Inf,length(B));
+                if(!aParameterProvided){
+                    B <- c(sd(y),B);
+                    BLower <- c(0,rep(-Inf,length(B)-1));
+                    BUpper <- rep(Inf,length(B));
+                }
+                else{
+                    BLower <- rep(-Inf,length(B));
+                    BUpper <- rep(Inf,length(B));
+                }
             }
             else if(any(distribution==c("dgnorm","dlgnorm"))){
                 if(!aParameterProvided){
@@ -1874,7 +1892,7 @@ alm <- function(formula, data, subset, na.action,
             if(interceptIsNeeded){
                 y[] <- y + yMean;
                 B <- c(yMean - sum(matrixXregMeans %*% B), B);
-                matrixXreg <- cbind(1,(matrixXreg %*% diag(1/denominator[-1],
+                matrixXreg <- cbind(1,(matrixXreg %*% diag(denominator[-1],
                                                            nrow=nVariables-1,
                                                            ncol=nVariables-1)) +
                                         matrix(matrixXregMeans, obsInsample, nVariables-1, byrow=TRUE));
@@ -1891,7 +1909,7 @@ alm <- function(formula, data, subset, na.action,
                           "dllaplace" =,
                           "dls" =,
                           "dlgnorm"=exp(y),
-                          "dlogitnorm"=exp(y)/(1-exp(y)),
+                          "dlogitnorm"=exp(y)/(1+exp(y)),
                           "dbcnorm" = bcTransformInv(y,lambdaBC),
                           y);
         }
@@ -1990,7 +2008,7 @@ alm <- function(formula, data, subset, na.action,
                               fitterRecursive(B, distribution, y, matrixXreg))$mu[otU]);
             }, B[BIndex]);
             # The variances of the scores: the scale with the filter after the latent sizes
-            scoreVariance <- 1 / (scale^2 * switch(recursiveModel+1, 1, fitterReturn$variance[otU]));
+            scoreVariance <- 1 / (fitterReturn$scale^2 * switch(recursiveModel+1, 1, fitterReturn$variance[otU]));
             if(distribution=="dalaplace"){
                 scoreVariance[] <- scoreVariance * fitterReturn$other * (1-fitterReturn$other);
             }
@@ -2154,10 +2172,11 @@ alm <- function(formula, data, subset, na.action,
         }
     }
     else if(distribution=="dbeta"){
-        nParam <- nVariables*2;
-        if(!FI){
+        # The provided parameters already have both shapes
+        if(nVariables<length(B)){
             nVariables <- nVariables*2;
         }
+        nParam <- nVariables;
     }
 
     # Do not count zero parameters in LASSO / RIDGE
@@ -2297,7 +2316,8 @@ alm <- function(formula, data, subset, na.action,
             # Update the formula, which is needed for the proper plots and outputs
             scale$formula <- update.formula(scaleFormula,paste0(responseName,"~."));
         }
-        nParam <- nParam + nparam(scale);
+        # The parameters of the scale model, without those of the occurrence model, which nparam() adds
+        nParam <- nParam + scale$df;
         # The scale model's likelihood is that of the non-zeroes: add the occurrence part
         logLik <- as.numeric(logLik(scale)) + ifelseFast(occurrenceModel, occurrence$logLik, 0);
     }

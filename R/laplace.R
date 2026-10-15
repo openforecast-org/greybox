@@ -74,7 +74,9 @@ dlaplace <- function(q, mu=0, scale=1, log=FALSE){
 #' @export plaplace
 #' @aliases plaplace
 plaplace <- function(q, mu=0, scale=1){
-    laplaceReturn <- 0.5 + 0.5*sign(q-mu)*(1-exp(-abs(q-mu)/scale));
+    # The tail is taken as exp() directly, without the cancellation of 1-exp()
+    laplaceReturn <- 0.5*(1+sign(q-mu)) - sign(q-mu)*0.5*exp(-abs(q-mu)/scale);
+    laplaceReturn[scale<0] <- NaN;
     return(laplaceReturn);
 }
 

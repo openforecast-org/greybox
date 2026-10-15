@@ -11,6 +11,8 @@ References
   102(477), 359-378.
 """
 
+import warnings
+
 import numpy as np
 
 
@@ -18,7 +20,7 @@ def pinball(
     holdout: np.ndarray,
     forecast: np.ndarray,
     level: float,
-    loss: int = 1,
+    loss: float = 1,
     na_rm: bool = True,
 ) -> float:
     """Pinball cost function.
@@ -32,7 +34,8 @@ def pinball(
     where e = holdout - forecast.
 
     For expectiles (loss=2):
-        Uses squared errors instead of absolute errors.
+        Uses squared errors instead of absolute errors. Any other power of the
+        absolute errors can be used as well.
 
     Parameters
     ----------
@@ -43,8 +46,8 @@ def pinball(
     level : float
         The level associated with the forecast (e.g., 0.5 for median,
         0.95 for 95th percentile).
-    loss : int, default=1
-        Loss function type:
+    loss : float, default=1
+        The power of the absolute errors:
         - 1: L1 loss (for quantiles)
         - 2: L2 loss (for expectiles)
     na_rm : bool, default=True
@@ -84,48 +87,38 @@ def pinball(
         forecast = forecast[mask]
 
     errors = holdout - forecast
-
-    if loss == 1:
-        below = errors <= 0
-        above = errors > 0
-        result = (1 - level) * np.sum(np.abs(errors) * below) + level * np.sum(
-            np.abs(errors) * above
-        )
-    elif loss == 2:
-        below = errors <= 0
-        above = errors > 0
-        result = (1 - level) * np.sum((errors**2) * below) + level * np.sum(
-            (errors**2) * above
-        )
-    else:
-        raise ValueError("loss must be 1 (L1/quantile) or 2 (L2/expectile)")
+    result = (1 - level) * np.sum(np.abs(errors) ** loss * (errors <= 0)) + level * (
+        np.sum(np.abs(errors) ** loss * (errors > 0))
+    )
 
     return result
 
 
 def mis(
-    actual: np.ndarray,
-    lower: np.ndarray,
-    upper: np.ndarray,
+    holdout: np.ndarray | None = None,
+    lower: np.ndarray | None = None,
+    upper: np.ndarray | None = None,
     level: float = 0.95,
     na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
 ) -> float:
     """Mean Interval Score (MIS).
 
     The MIS evaluates the quality of prediction intervals. It rewards
-    narrow intervals and penalizes misses (when actual is outside the interval).
+    narrow intervals and penalizes misses (holdout values outside the interval).
 
     Formula:
         MIS = (upper - lower)
-              + (2/alpha) * abs(lower - actual), for actual < lower
-              + (2/alpha) * abs(actual - upper), for actual > upper
+              + (2/alpha) * abs(lower - holdout), for holdout < lower
+              + (2/alpha) * abs(holdout - upper), for holdout > upper
 
         where alpha = 1 - level
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     lower : np.ndarray
         Lower bound of prediction interval.
     upper : np.ndarray
@@ -133,7 +126,11 @@ def mis(
     level : float, default=0.95
         Confidence level of the interval (e.g., 0.95 for 95% interval).
     na_rm : bool, default=True
-        Remove NA values.
+        Remove NA values from the penalties for the values outside the interval.
+        As in R, the widths of the interval are summed without removing NA values,
+        and the sum is divided by the length of ``holdout``.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -142,10 +139,10 @@ def mis(
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5])
+    >>> holdout = np.array([1, 2, 3, 4, 5])
     >>> lower = np.array([0.5, 1.5, 2.5, 3.5, 4.5])
     >>> upper = np.array([1.5, 2.5, 3.5, 4.5, 5.5])
-    >>> round(float(mis(actual, lower, upper, level=0.95)), 4)
+    >>> round(float(mis(holdout, lower, upper, level=0.95)), 4)
     1.0
 
     References
@@ -154,7 +151,15 @@ def mis(
     prediction, and estimation. Journal of the American Statistical Association,
     102(477), 359-378.
     """
-    actual = np.asarray(actual, dtype=float)
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
+
+    holdout = np.asarray(holdout, dtype=float)
     lower = np.asarray(lower, dtype=float)
     upper = np.asarray(upper, dtype=float)
 
@@ -162,36 +167,29 @@ def mis(
         level = level / 100
 
     alpha = 1 - level
-    lengths = [len(actual), len(lower), len(upper)]
+    lengths = [len(holdout), len(lower), len(upper)]
 
     if len(set(lengths)) > 1:
-        raise ValueError("Lengths of actual, lower, and upper must match")
+        raise ValueError("Lengths of holdout, lower, and upper must match")
 
-    if na_rm:
-        mask = ~(np.isnan(actual) | np.isnan(lower) | np.isnan(upper))
-        actual = actual[mask]
-        lower = lower[mask]
-        upper = upper[mask]
+    penalty_sum = np.nansum if na_rm else np.sum
+    mis_value = np.sum(upper - lower) + (2 / alpha) * (
+        penalty_sum((lower - holdout) * (holdout < lower))
+        + penalty_sum((holdout - upper) * (holdout > upper))
+    )
 
-    h = len(actual)
-    mis_value = np.sum(upper - lower)
-
-    below_lower = actual < lower
-    above_upper = actual > upper
-
-    mis_value += (2 / alpha) * np.sum(np.where(below_lower, lower - actual, 0))
-    mis_value += (2 / alpha) * np.sum(np.where(above_upper, actual - upper, 0))
-
-    return mis_value / h
+    return mis_value / len(holdout)
 
 
 def smis(
-    actual: np.ndarray,
-    lower: np.ndarray,
-    upper: np.ndarray,
-    scale: float | np.floating,
+    holdout: np.ndarray | None = None,
+    lower: np.ndarray | None = None,
+    upper: np.ndarray | None = None,
+    scale: float | np.floating | None = None,
     level: float = 0.95,
     na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
 ) -> float:
     """Scaled Mean Interval Score (sMIS).
 
@@ -202,8 +200,8 @@ def smis(
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     lower : np.ndarray
         Lower bound of prediction interval.
     upper : np.ndarray
@@ -214,6 +212,8 @@ def smis(
         Confidence level of the interval.
     na_rm : bool, default=True
         Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -222,30 +222,40 @@ def smis(
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5])
+    >>> holdout = np.array([1, 2, 3, 4, 5])
     >>> lower = np.array([0.5, 1.5, 2.5, 3.5, 4.5])
     >>> upper = np.array([1.5, 2.5, 3.5, 4.5, 5.5])
-    >>> round(float(smis(actual, lower, upper, scale=3.0)), 4)
+    >>> round(float(smis(holdout, lower, upper, scale=3.0)), 4)
     0.3333
 
     References
     ----------
     See Gneiting & Raftery (2007).
     """
-    if scale == 0:
-        return float(np.nan)
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
 
-    return float(mis(actual, lower, upper, level, na_rm) / scale)
+    if scale is None:
+        raise TypeError("smis() missing required argument: 'scale'")
+
+    return float(mis(holdout, lower, upper, level, na_rm) / scale)
 
 
 def rmis(
-    actual: np.ndarray,
-    lower: np.ndarray,
-    upper: np.ndarray,
-    benchmark_lower: np.ndarray,
-    benchmark_upper: np.ndarray,
+    holdout: np.ndarray | None = None,
+    lower: np.ndarray | None = None,
+    upper: np.ndarray | None = None,
+    benchmark_lower: np.ndarray | None = None,
+    benchmark_upper: np.ndarray | None = None,
     level: float = 0.95,
     na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
 ) -> float:
     """Relative Mean Interval Score (rMIS).
 
@@ -256,8 +266,8 @@ def rmis(
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     lower : np.ndarray
         Lower bound of prediction interval.
     upper : np.ndarray
@@ -270,6 +280,8 @@ def rmis(
         Confidence level of the interval.
     na_rm : bool, default=True
         Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -278,18 +290,26 @@ def rmis(
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5])
+    >>> holdout = np.array([1, 2, 3, 4, 5])
     >>> lower = np.array([0.5, 1.5, 2.5, 3.5, 4.5])
     >>> upper = np.array([1.5, 2.5, 3.5, 4.5, 5.5])
     >>> benchmark_lower = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
     >>> benchmark_upper = np.array([2.0, 3.0, 4.0, 5.0, 6.0])
-    >>> round(float(rmis(actual, lower, upper, benchmark_lower, benchmark_upper)), 4)
+    >>> round(float(rmis(holdout, lower, upper, benchmark_lower, benchmark_upper)), 4)
     0.5
 
     References
     ----------
     See Gneiting & Raftery (2007).
     """
-    return mis(actual, lower, upper, level, na_rm) / mis(
-        actual, benchmark_lower, benchmark_upper, level, na_rm
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
+
+    return mis(holdout, lower, upper, level, na_rm) / mis(
+        holdout, benchmark_lower, benchmark_upper, level, na_rm
     )

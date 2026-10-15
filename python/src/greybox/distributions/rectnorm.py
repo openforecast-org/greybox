@@ -2,110 +2,179 @@
 
 Density, cumulative distribution, quantile functions and random number
 generation for the Rectified Normal distribution.
-If x ~ N(loc, scale^2) then y = max(0, x) follows Rectified Normal distribution.
+If x ~ N(mu, sigma^2) then y = max(0, x) follows Rectified Normal distribution.
 """
+
+import warnings
 
 import numpy as np
 from scipy import stats
 
+from .helper import dnorm, pnorm, qnorm
 
-def drectnorm(q, loc=0, scale=1, log=False):
+
+def drectnorm(q, mu=0, sigma=1, log=False, *, loc=None, scale=None):
     """Rectified Normal distribution density.
 
-    f_y = I(x<=0) * F_x(loc, scale) + I(x>0) * f_x(x, loc, scale)
+    f_y = I(x<=0) * F_x(mu, sigma) + I(x>0) * f_x(x, mu, sigma)
 
     Parameters
     ----------
     q : array_like
         Quantiles.
-    loc : float
+    mu : float
         Location parameter.
-    scale : float
+    sigma : float
         Scale parameter.
     log : bool
         If True, return log-density.
+    loc : float, optional
+        Deprecated alias of ``mu``, kept for one release.
+    scale : float, optional
+        Deprecated alias of ``sigma``, kept for one release.
 
     Returns
     -------
     array
         Density values.
     """
-    q = np.asarray(q)
-    is_positive = q > 0
+    if loc is not None:
+        warnings.warn(
+            "'loc' is deprecated, use 'mu' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        mu = loc
+    if scale is not None:
+        warnings.warn(
+            "'scale' is deprecated, use 'sigma' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        sigma = scale
+    q = np.asarray(q, dtype=float)
     if log:
         log_density = np.where(
-            is_positive,
-            stats.norm.logpdf(q, loc=loc, scale=scale),
-            stats.norm.logcdf(0, loc=loc, scale=scale),
+            q > 0, dnorm(q, mu, sigma, log=True), pnorm(0, mu, sigma, log_p=True)
         )
-        return log_density
-    indicator = is_positive.astype(float)
-    density = indicator * stats.norm.pdf(q, loc=loc, scale=scale) + (
-        1 - indicator
-    ) * stats.norm.cdf(0, loc=loc, scale=scale)
-    return density
+        return np.where(np.isnan(q), np.nan, log_density)[()]
+    # As R, (q>0)*dnorm + (q<=0)*pnorm, with NaN where q is NaN
+    indicator = np.where(np.isnan(q), np.nan, q > 0)
+    density = indicator * dnorm(q, mu, sigma) + (1 - indicator) * pnorm(0, mu, sigma)
+    return density[()]
 
 
-def prectnorm(q, loc=0, scale=1):
+def prectnorm(q, mu=0, sigma=1, *, loc=None, scale=None):
     """Rectified Normal distribution CDF.
 
     Parameters
     ----------
     q : array_like
         Quantiles.
-    loc : float
+    mu : float
         Location parameter.
-    scale : float
+    sigma : float
         Scale parameter.
+    loc : float, optional
+        Deprecated alias of ``mu``, kept for one release.
+    scale : float, optional
+        Deprecated alias of ``sigma``, kept for one release.
 
     Returns
     -------
     array
         CDF values.
     """
-    q = np.asarray(q)
-    indicator = (q > 0).astype(float)
-    return indicator * stats.norm.cdf(q, loc=loc, scale=scale) + (
-        1 - indicator
-    ) * stats.norm.cdf(0, loc=loc, scale=scale)
+    if loc is not None:
+        warnings.warn(
+            "'loc' is deprecated, use 'mu' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        mu = loc
+    if scale is not None:
+        warnings.warn(
+            "'scale' is deprecated, use 'sigma' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        sigma = scale
+    q = np.asarray(q, dtype=float)
+    indicator = np.where(np.isnan(q), np.nan, q > 0)
+    return (indicator * pnorm(q, mu, sigma) + (1 - indicator) * pnorm(0, mu, sigma))[()]
 
 
-def qrectnorm(p, loc=0, scale=1):
+def qrectnorm(p, mu=0, sigma=1, *, loc=None, scale=None):
     """Rectified Normal distribution quantile function.
 
     Parameters
     ----------
     p : array_like
         Probabilities.
-    loc : float
+    mu : float
         Location parameter.
-    scale : float
+    sigma : float
         Scale parameter.
+    loc : float, optional
+        Deprecated alias of ``mu``, kept for one release.
+    scale : float, optional
+        Deprecated alias of ``sigma``, kept for one release.
 
     Returns
     -------
     array
         Quantile values.
     """
-    p = np.asarray(p)
-    return np.maximum(stats.norm.ppf(p, loc=loc, scale=scale), 0)
+    if loc is not None:
+        warnings.warn(
+            "'loc' is deprecated, use 'mu' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        mu = loc
+    if scale is not None:
+        warnings.warn(
+            "'scale' is deprecated, use 'sigma' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        sigma = scale
+    return np.maximum(qnorm(p, mu, sigma), 0)[()]
 
 
-def rrectnorm(n, loc=0, scale=1):
+def rrectnorm(n=1, mu=0, sigma=1, *, loc=None, scale=None):
     """Rectified Normal distribution random number generation.
 
     Parameters
     ----------
     n : int
         Number of observations.
-    loc : float
+    mu : float
         Location parameter.
-    scale : float
+    sigma : float
         Scale parameter.
+    loc : float, optional
+        Deprecated alias of ``mu``, kept for one release.
+    scale : float, optional
+        Deprecated alias of ``sigma``, kept for one release.
 
     Returns
     -------
     array
         Random values.
     """
-    return np.maximum(stats.norm.rvs(loc=loc, scale=scale, size=n), 0)
+    if loc is not None:
+        warnings.warn(
+            "'loc' is deprecated, use 'mu' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        mu = loc
+    if scale is not None:
+        warnings.warn(
+            "'scale' is deprecated, use 'sigma' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        sigma = scale
+    return np.maximum(stats.norm.rvs(loc=mu, scale=sigma, size=n), 0)

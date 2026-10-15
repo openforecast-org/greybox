@@ -126,26 +126,22 @@ def _get_ic(model: ALM, ic_name: str) -> float:
     return float(value)
 
 
-def _fit_alm(formula_str: str, data: dict, **alm_kwargs) -> ALM | None:
-    """Fit an ALM via the formula interface, returning None on failure.
+def _fit_alm(formula_str: str, data: dict, **alm_kwargs) -> ALM:
+    """Fit an ALM via the formula interface.
 
-    Mirrors R's ``suppressWarnings(alm(...))`` and the subsequent
-    null-dropping at aid()'s line 307.
+    Mirrors R's ``suppressWarnings(alm(...))``: an error is raised, as in R.
     """
     nlopt_kargs = alm_kwargs.pop("nlopt_kargs", None)
     maxeval = alm_kwargs.pop("maxeval", None)
     if maxeval is not None:
         nlopt_kargs = dict(nlopt_kargs or {})
         nlopt_kargs["maxeval"] = maxeval
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            y_vec, X = build_formula(formula_str, data)
-            model = ALM(nlopt_kargs=nlopt_kargs, **alm_kwargs)
-            model.fit(X, y_vec, formula=formula_str)
-        return model
-    except Exception:  # noqa: BLE001
-        return None
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        y_vec, X = build_formula(formula_str, data)
+        model = ALM(nlopt_kargs=nlopt_kargs, **alm_kwargs)
+        model.fit(X, y_vec, formula=formula_str)
+    return model
 
 
 def _interp_rule2(x_indexed: np.ndarray) -> np.ndarray:
@@ -317,9 +313,10 @@ class AidCatResult:
 
     Attributes
     ----------
-    categories : pandas.Categorical
-        Categorical vector of demand types, one entry per input series,
-        with the six possible levels: ``regular count``,
+    categories : pandas.Series
+        Categorical series of demand types, one entry per input series,
+        indexed by the series names (dict keys, DataFrame columns) when
+        the input has them, with the six possible levels: ``regular count``,
         ``smooth intermittent count``, ``lumpy intermittent count``,
         ``regular fractional``, ``smooth intermittent fractional``,
         ``lumpy intermittent fractional``.
@@ -339,7 +336,7 @@ class AidCatResult:
 
     def __init__(
         self,
-        categories: pd.Categorical,
+        categories: pd.Series,
         types: pd.DataFrame,
         anomalies: pd.Series,
         results: list[AidResult] | None = None,
@@ -584,8 +581,6 @@ def aid(
             loss=loss,
             **alm_kwargs,
         )
-        if stockout_model is None:
-            raise RuntimeError("Stockout model failed to fit.")
         probabilities = point_lik_cumulative(stockout_model)
 
         # R: productNew if first interval > 1.
@@ -612,13 +607,19 @@ def aid(
                 loss=loss,
                 **alm_kwargs,
             )
-            if stockout_model is None:
-                raise RuntimeError("Trimmed stockout model failed to fit.")
             probs_trim = point_lik_cumulative(stockout_model)
             # R: pad probabilities with 0 sentinels at head/tail.
             head_pad = [0.0] if product_new else []
             tail_pad = [0.0] if product_obsolete else []
             probabilities = np.concatenate([head_pad, probs_trim, tail_pad])
+            # R: 100 is arbitrary, just big, not to flag the head and the tail
+            stockout_model.mu_ = np.concatenate(
+                [
+                    [100.0] * product_new,
+                    np.asarray(stockout_model.mu_),
+                    [100.0] * product_obsolete,
+                ]
+            )
         else:
             y_intervals_ids = list(range(n_int))
 
@@ -753,11 +754,7 @@ def aid(
                 loss=loss,
                 **alm_kwargs,
             )
-            if (
-                model_occ_fixed is not None
-                and model_occurrence is not None
-                and _get_ic(model_occ_fixed, ic) < _get_ic(model_occurrence, ic)
-            ):
+            if _get_ic(model_occ_fixed, ic) < _get_ic(model_occurrence, ic):
                 model_occurrence = model_occ_fixed
 
         # Main data for size models.
@@ -795,15 +792,14 @@ def aid(
             id_type_detailed["type1"] = "count"
         else:
             # Model 2: lumpy intermittent fractional (mixture).
-            if model_occurrence is not None:
-                id_models["lumpy intermittent fractional"] = _fit_alm(
-                    size_formula,
-                    main_data,
-                    distribution="dnorm",
-                    occurrence=model_occurrence,
-                    loss=loss,
-                    **alm_kwargs,
-                )
+            id_models["lumpy intermittent fractional"] = _fit_alm(
+                size_formula,
+                main_data,
+                distribution="dnorm",
+                occurrence=model_occurrence,
+                loss=loss,
+                **alm_kwargs,
+            )
 
         if data_is_integer and not y_is_binary:
             # Model 3: smooth intermittent count via dnbinom.
@@ -853,16 +849,15 @@ def aid(
                     id_models["smooth intermittent count"] = alt
 
             # Model 4: lumpy intermittent count via dnbinom + occurrence.
-            if model_occurrence is not None:
-                id_models["lumpy intermittent count"] = _fit_alm(
-                    size_formula,
-                    main_data,
-                    distribution="dnbinom",
-                    occurrence=model_occurrence,
-                    loss=loss,
-                    maxeval=500,
-                    **alm_kwargs,
-                )
+            id_models["lumpy intermittent count"] = _fit_alm(
+                size_formula,
+                main_data,
+                distribution="dnbinom",
+                occurrence=model_occurrence,
+                loss=loss,
+                maxeval=500,
+                **alm_kwargs,
+            )
     else:
         # No zeroes left: regular fractional vs regular count.
         if has_x:
@@ -889,13 +884,10 @@ def aid(
                 **alm_kwargs,
             )
 
-    # Drop None / failed models (R 307).
+    # Drop the models not fitted (R 307).
     id_models_fit: dict[str, ALM] = {
         k: v for k, v in id_models.items() if v is not None
     }
-
-    if not id_models_fit:
-        raise RuntimeError("All candidate models failed to fit.")
 
     # R 312-326: pick best by IC unless binary.
     if not y_is_binary:
@@ -914,7 +906,7 @@ def aid(
             id_type_detailed["type2a"] = None
 
     # R 329-331: attach stockout model if there were any zeros.
-    if has_zeros and stockout_model is not None:
+    if stockout_model is not None:
         id_models_fit["stockout"] = stockout_model
 
     # ---------- Output dummies (R 333-349) ----------
@@ -980,8 +972,8 @@ def aid_cat(data, **aid_kwargs: Any) -> AidCatResult:
 
     Parameters
     ----------
-    data : dict, pandas.DataFrame, or 2-D numpy.ndarray
-        The series to categorise. Each column / dict entry is one
+    data : dict, list, pandas.DataFrame, or 2-D numpy.ndarray
+        The series to categorise. Each column / dict or list entry is one
         series.
     **aid_kwargs
         Keyword arguments forwarded to :func:`aid` (for example
@@ -1014,24 +1006,32 @@ def aid_cat(data, **aid_kwargs: Any) -> AidCatResult:
     --------
     aid : Apply the classification to a single series.
     """
+    # The series names, as R, for the named columns and entries only
+    names: list | None = None
     if isinstance(data, pd.DataFrame):
-        series = {col: data[col].to_numpy(dtype=float) for col in data.columns}
+        names = list(data.columns)
+        series = [data[col].to_numpy(dtype=float) for col in data.columns]
     elif isinstance(data, dict):
-        series = {k: np.asarray(v, dtype=float) for k, v in data.items()}
+        names = list(data.keys())
+        series = [np.asarray(v, dtype=float) for v in data.values()]
+    elif isinstance(data, list):
+        series = [np.asarray(v, dtype=float) for v in data]
     elif isinstance(data, np.ndarray):
         if data.ndim != 2:
             raise ValueError("data must be 2-D when passed as ndarray")
-        series = {f"V{i + 1}": data[:, i].astype(float) for i in range(data.shape[1])}
+        series = [data[:, i].astype(float) for i in range(data.shape[1])]
     else:
-        raise TypeError("data must be a DataFrame, dict of arrays, or 2-D ndarray")
+        raise TypeError(
+            "data must be a DataFrame, dict or list of arrays, or 2-D ndarray"
+        )
 
-    results: list[AidResult] = []
-    for name, vec in series.items():
-        result = aid(vec, **aid_kwargs)
-        results.append(result)
+    results = [aid(vec, **aid_kwargs) for vec in series]
 
     cat_names = [r.name for r in results]
-    categories = pd.Categorical(cat_names, categories=_CATEGORY_LEVELS, ordered=False)
+    categories = pd.Series(
+        pd.Categorical(cat_names, categories=_CATEGORY_LEVELS, ordered=False),
+        index=names,
+    )
 
     # 2x3 types matrix matching R's print.aidCat.
     columns = ["Regular", "Smooth Intermittent", "Lumpy Intermittent"]

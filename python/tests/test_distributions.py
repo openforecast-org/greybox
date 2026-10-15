@@ -1,38 +1,53 @@
 """Tests for custom distribution functions."""
 
+import warnings
+
 import numpy as np
+import pytest
+
+import greybox.distributions as gd
 from greybox.distributions import (
-    ds,
-    ps,
-    qs,
-    rs,
     dalaplace,
-    palaplace,
-    qalaplace,
-    ralaplace,
     dbcnorm,
-    pbcnorm,
-    qbcnorm,
-    rbcnorm,
     dfnorm,
-    pfnorm,
-    qfnorm,
-    rfnorm,
-    dlogitnorm,
-    plogitnorm,
-    qlogitnorm,
-    rlogitnorm,
-    drectnorm,
-    prectnorm,
-    qrectnorm,
-    rrectnorm,
     dgnorm,
+    dlaplace,
+    dlgnorm,
+    dllaplace,
+    dlogitnorm,
+    dls,
+    drectnorm,
+    ds,
+    palaplace,
+    pbcnorm,
+    pfnorm,
     pgnorm,
-    qgnorm,
-    rgnorm,
+    plaplace,
     plogis,
+    plogitnorm,
     pnorm,
+    prectnorm,
+    ps,
+    qalaplace,
+    qbcnorm,
+    qfnorm,
+    qgnorm,
+    qlaplace,
+    qlgnorm,
+    qllaplace,
+    qlogitnorm,
+    qls,
     qnorm,
+    qrectnorm,
+    qs,
+    ralaplace,
+    rbcnorm,
+    rfnorm,
+    rgnorm,
+    rlaplace,
+    rlogitnorm,
+    rrectnorm,
+    rs,
 )
 
 
@@ -42,37 +57,37 @@ class TestS:
     def test_ds_basic(self):
         """Test basic density calculation."""
         y = np.array([0.0, 1.0, 2.0])
-        result = ds(y, loc=1.0, scale=1.0)
+        result = ds(y, mu=1.0, scale=1.0)
         assert result.shape == y.shape
         assert np.all(result >= 0)
 
     def test_ds_log_false(self):
         """Test log=False returns density."""
         y = np.array([1.0])
-        result = ds(y, loc=1.0, scale=1.0, log=False)
+        result = ds(y, mu=1.0, scale=1.0, log=False)
         assert result[0] >= 0
 
     def test_ds_log_true(self):
         """Test log=True returns log-density."""
         y = np.array([1.0])
-        result = ds(y, loc=1.0, scale=1.0, log=True)
+        result = ds(y, mu=1.0, scale=1.0, log=True)
         assert np.isfinite(result[0])
 
     def test_ps_basic(self):
         """Test CDF."""
         y = np.array([0.0])
-        result = ps(y, loc=0.0, scale=1.0)
+        result = ps(y, mu=0.0, scale=1.0)
         assert 0 <= result[0] <= 1
 
     def test_qs_basic(self):
         """Test quantile function."""
         p = np.array([0.5])
-        result = qs(p, loc=0.0, scale=1.0)
+        result = qs(p, mu=0.0, scale=1.0)
         assert np.isfinite(result[0])
 
     def test_rs_basic(self):
         """Test random generation."""
-        result = rs(5, loc=0.0, scale=1.0)
+        result = rs(5, mu=0.0, scale=1.0)
         assert len(result) == 5
 
 
@@ -82,31 +97,31 @@ class TestGnorm:
     def test_dgnorm_basic(self):
         """Test basic density calculation."""
         y = np.array([0.0, 1.0, 2.0])
-        result = dgnorm(y, loc=1.0, scale=1.0, shape=2.0)
+        result = dgnorm(y, mu=1.0, scale=1.0, shape=2.0)
         assert result.shape == y.shape
         assert np.all(result >= 0)
 
     def test_dgnorm_shape_one(self):
         """Test shape=1 (Laplace)."""
         y = np.array([0.0])
-        result = dgnorm(y, loc=0.0, scale=1.0, shape=1.0)
+        result = dgnorm(y, mu=0.0, scale=1.0, shape=1.0)
         assert result[0] > 0
 
     def test_pgnorm_basic(self):
         """Test CDF."""
         y = np.array([0.0])
-        result = pgnorm(y, loc=0.0, scale=1.0, shape=2.0)
+        result = pgnorm(y, mu=0.0, scale=1.0, shape=2.0)
         assert 0 <= result[0] <= 1
 
     def test_qgnorm_basic(self):
         """Test quantile function."""
         p = np.array([0.5])
-        result = qgnorm(p, loc=0.0, scale=1.0, shape=2.0)
+        result = qgnorm(p, mu=0.0, scale=1.0, shape=2.0)
         assert np.isfinite(result[0])
 
     def test_rgnorm_basic(self):
         """Test random generation."""
-        result = rgnorm(5, loc=0.0, scale=1.0, shape=2.0)
+        result = rgnorm(5, mu=0.0, scale=1.0, shape=2.0)
         assert len(result) == 5
 
 
@@ -116,52 +131,52 @@ class TestALaplace:
     def test_dalaplace_basic(self):
         """Test basic density calculation."""
         y = np.array([0.0, 1.0, 2.0])
-        result = dalaplace(y, loc=1.0, scale=1.0)
+        result = dalaplace(y, mu=1.0, scale=1.0)
         assert result.shape == y.shape
         assert np.all(result >= 0)
 
     def test_dalaplace_default_alpha(self):
         """Test default alpha=0.5."""
         y = np.array([1.0])
-        result = dalaplace(y, loc=1.0, scale=1.0, alpha=0.5)
+        result = dalaplace(y, mu=1.0, scale=1.0, alpha=0.5)
         assert result[0] > 0
 
     def test_dalaplace_asymmetric(self):
         """Test asymmetric alpha values."""
         y = np.array([1.0, 2.0])
-        result_low = dalaplace(y, loc=1.0, scale=1.0, alpha=0.25)
-        result_high = dalaplace(y, loc=1.0, scale=1.0, alpha=0.75)
+        result_low = dalaplace(y, mu=1.0, scale=1.0, alpha=0.25)
+        result_high = dalaplace(y, mu=1.0, scale=1.0, alpha=0.75)
         assert not np.array_equal(result_low, result_high)
 
     def test_palaplace_basic(self):
         """Test CDF."""
         y = np.array([0.0, 1.0, 2.0])
-        result = palaplace(y, loc=1.0, scale=1.0)
+        result = palaplace(y, mu=1.0, scale=1.0)
         assert np.all(result >= 0)
         assert np.all(result <= 1)
 
     def test_palaplace_at_mu(self):
         """Test CDF at mu equals alpha."""
         y = np.array([1.0])
-        result = palaplace(y, loc=1.0, scale=1.0, alpha=0.5)
+        result = palaplace(y, mu=1.0, scale=1.0, alpha=0.5)
         assert result[0] == 0.5
 
     def test_qalaplace_basic(self):
         """Test quantile function."""
         p = np.array([0.25, 0.5, 0.75])
-        result = qalaplace(p, loc=0.0, scale=1.0, alpha=0.5)
+        result = qalaplace(p, mu=0.0, scale=1.0, alpha=0.5)
         assert result.shape == p.shape
 
     def test_qalaplace_bounds(self):
         """Test quantile at bounds."""
-        result_0 = qalaplace(0.0, loc=0.0, scale=1.0, alpha=0.5)
-        result_1 = qalaplace(1.0, loc=0.0, scale=1.0, alpha=0.5)
+        result_0 = qalaplace(0.0, mu=0.0, scale=1.0, alpha=0.5)
+        result_1 = qalaplace(1.0, mu=0.0, scale=1.0, alpha=0.5)
         assert np.isinf(result_1)
         assert result_0 == -np.inf
 
     def test_ralaplace_basic(self):
         """Test random generation."""
-        result = ralaplace(5, loc=0.0, scale=1.0, alpha=0.5)
+        result = ralaplace(5, mu=0.0, scale=1.0, alpha=0.5)
         assert len(result) == 5
 
 
@@ -171,52 +186,53 @@ class TestBcnorm:
     def test_dbcnorm_basic(self):
         """Test basic density calculation."""
         y = np.array([1.0, 2.0, 3.0])
-        result = dbcnorm(y, loc=0.0, scale=1.0, lambda_bc=0.5)
+        result = dbcnorm(y, mu=0.0, sigma=1.0, lambda_bc=0.5)
         assert result.shape == y.shape
         assert np.all(result >= 0)
 
     def test_dbcnorm_lambda_zero(self):
         """Test lambda=0 (log-normal case)."""
         y = np.array([1.0, 2.0, 3.0])
-        result = dbcnorm(y, loc=0.0, scale=1.0, lambda_bc=0.0)
+        result = dbcnorm(y, mu=0.0, sigma=1.0, lambda_bc=0.0)
         assert result.shape == y.shape
         assert np.all(result >= 0)
 
     def test_dbcnorm_lambda_one(self):
         """Test lambda=1 (normal case)."""
         y = np.array([1.0, 2.0, 3.0])
-        result = dbcnorm(y, loc=0.0, scale=1.0, lambda_bc=1.0)
+        result = dbcnorm(y, mu=0.0, sigma=1.0, lambda_bc=1.0)
         assert result.shape == y.shape
 
     def test_dbcnorm_log(self):
         """Test log=True returns log-density."""
         y = np.array([1.0, 2.0])
-        result = dbcnorm(y, loc=0.0, scale=1.0, lambda_bc=0.5, log=True)
+        result = dbcnorm(y, mu=0.0, sigma=1.0, lambda_bc=0.5, log=True)
         assert np.all(np.isfinite(result))
 
     def test_pbcnorm_basic(self):
         """Test CDF."""
         y = np.array([1.0, 2.0, 3.0])
-        result = pbcnorm(y, loc=0.0, scale=1.0, lambda_bc=0.5)
+        result = pbcnorm(y, mu=0.0, sigma=1.0, lambda_bc=0.5)
         assert np.all(result >= 0)
         assert np.all(result <= 1)
 
     def test_pbcnorm_zero(self):
-        """Test CDF at zero."""
+        """Test CDF at zero: as R, q=0 maps onto -1/lambda for lambda>0."""
         y = np.array([0.0])
-        result = pbcnorm(y, loc=0.0, scale=1.0, lambda_bc=0.5)
-        assert result[0] == 0
+        result = pbcnorm(y, mu=0.0, sigma=1.0, lambda_bc=0.5)
+        assert result[0] == pnorm(-2.0)
+        assert pbcnorm(y, mu=0.0, sigma=1.0, lambda_bc=-0.5)[0] == 0
 
     def test_qbcnorm_basic(self):
         """Test quantile function."""
         p = np.array([0.25, 0.5, 0.75])
-        result = qbcnorm(p, loc=0.0, scale=1.0, lambda_bc=0.5)
+        result = qbcnorm(p, mu=0.0, sigma=1.0, lambda_bc=0.5)
         assert result.shape == p.shape
         assert np.all(result >= 0)
 
     def test_rbcnorm_basic(self):
         """Test random generation."""
-        result = rbcnorm(5, loc=0.0, scale=1.0, lambda_bc=0.5)
+        result = rbcnorm(5, mu=0.0, sigma=1.0, lambda_bc=0.5)
         assert len(result) == 5
         assert np.all(result >= 0)
 
@@ -227,52 +243,52 @@ class TestFnorm:
     def test_dfnorm_basic(self):
         """Test basic density calculation."""
         y = np.array([0.0, 1.0, 2.0])
-        result = dfnorm(y, loc=1.0, scale=1.0)
+        result = dfnorm(y, mu=1.0, sigma=1.0)
         assert result.shape == y.shape
         assert np.all(result >= 0)
 
     def test_dfnorm_negative_input(self):
         """Test negative input returns 0."""
         y = np.array([-1.0])
-        result = dfnorm(y, loc=1.0, scale=1.0)
+        result = dfnorm(y, mu=1.0, sigma=1.0)
         assert result[0] == 0
 
     def test_dfnorm_at_zero(self):
         """Test at y=0."""
         y = np.array([0.0])
-        result = dfnorm(y, loc=1.0, scale=1.0)
+        result = dfnorm(y, mu=1.0, sigma=1.0)
         assert result[0] >= 0
 
     def test_pfnorm_basic(self):
         """Test CDF."""
         y = np.array([0.0, 1.0, 2.0])
-        result = pfnorm(y, loc=1.0, scale=1.0)
+        result = pfnorm(y, mu=1.0, sigma=1.0)
         assert np.all(result >= 0)
         assert np.all(result <= 1)
 
     def test_pfnorm_negative(self):
         """Test CDF for negative values."""
         y = np.array([-1.0])
-        result = pfnorm(y, loc=1.0, scale=1.0)
+        result = pfnorm(y, mu=1.0, sigma=1.0)
         assert result[0] == 0
 
     def test_qfnorm_basic(self):
         """Test quantile function."""
         p = np.array([0.25, 0.5, 0.75])
-        result = qfnorm(p, loc=1.0, scale=1.0)
+        result = qfnorm(p, mu=1.0, sigma=1.0)
         assert result.shape == p.shape
         assert np.all(result >= 0)
 
     def test_qfnorm_at_bounds(self):
         """Test quantile at bounds."""
-        result_0 = qfnorm(0.0, loc=1.0, scale=1.0)
-        result_1 = qfnorm(1.0, loc=1.0, scale=1.0)
+        result_0 = qfnorm(0.0, mu=1.0, sigma=1.0)
+        result_1 = qfnorm(1.0, mu=1.0, sigma=1.0)
         assert result_0 == 0
         assert np.isinf(result_1)
 
     def test_rfnorm_basic(self):
         """Test random generation."""
-        result = rfnorm(5, loc=1.0, scale=1.0)
+        result = rfnorm(5, mu=1.0, sigma=1.0)
         assert len(result) == 5
         assert np.all(result >= 0)
 
@@ -283,26 +299,26 @@ class TestLogitnorm:
     def test_dlogitnorm_basic(self):
         """Test basic density calculation."""
         y = np.array([0.1, 0.3, 0.5, 0.7, 0.9])
-        result = dlogitnorm(y, loc=0.0, scale=1.0)
+        result = dlogitnorm(y, mu=0.0, sigma=1.0)
         assert result.shape == y.shape
         assert np.all(result >= 0)
 
     def test_dlogitnorm_log(self):
         """Test log=True returns log-density."""
         y = np.array([0.3, 0.5, 0.7])
-        result = dlogitnorm(y, loc=0.0, scale=1.0, log=True)
+        result = dlogitnorm(y, mu=0.0, sigma=1.0, log=True)
         assert np.all(np.isfinite(result))
 
     def test_dlogitnorm_at_extremes(self):
         """Test at extreme values."""
         y = np.array([0.001, 0.999])
-        result = dlogitnorm(y, loc=0.0, scale=1.0)
+        result = dlogitnorm(y, mu=0.0, sigma=1.0)
         assert np.all(result >= 0)
 
     def test_plogitnorm_basic(self):
         """Test CDF."""
         y = np.array([0.1, 0.5, 0.9])
-        result = plogitnorm(y, loc=0.0, scale=1.0)
+        result = plogitnorm(y, mu=0.0, sigma=1.0)
         assert np.all(result >= 0)
         assert np.all(result <= 1)
 
@@ -310,22 +326,22 @@ class TestLogitnorm:
         """Test CDF at bounds."""
         y_low = np.array([-0.1])
         y_high = np.array([1.1])
-        result_low = plogitnorm(y_low, loc=0.0, scale=1.0)
-        result_high = plogitnorm(y_high, loc=0.0, scale=1.0)
+        result_low = plogitnorm(y_low, mu=0.0, sigma=1.0)
+        result_high = plogitnorm(y_high, mu=0.0, sigma=1.0)
         assert result_low[0] == 0
         assert result_high[0] == 1
 
     def test_qlogitnorm_basic(self):
         """Test quantile function."""
         p = np.array([0.25, 0.5, 0.75])
-        result = qlogitnorm(p, loc=0.0, scale=1.0)
+        result = qlogitnorm(p, mu=0.0, sigma=1.0)
         assert result.shape == p.shape
         assert np.all(result > 0)
         assert np.all(result < 1)
 
     def test_rlogitnorm_basic(self):
         """Test random generation."""
-        result = rlogitnorm(5, loc=0.0, scale=1.0)
+        result = rlogitnorm(5, mu=0.0, sigma=1.0)
         assert len(result) == 5
         assert np.all(result > 0)
         assert np.all(result < 1)
@@ -337,45 +353,45 @@ class TestRectnorm:
     def test_drectnorm_basic(self):
         """Test basic density calculation."""
         y = np.array([-1.0, 0.0, 1.0])
-        result = drectnorm(y, loc=1.0, scale=1.0)
+        result = drectnorm(y, mu=1.0, sigma=1.0)
         assert result.shape == y.shape
         assert np.all(result >= 0)
 
     def test_drectnorm_positive_only(self):
         """Test that output is non-negative."""
         y = np.array([-5.0, -1.0, 0.0, 1.0, 5.0])
-        result = drectnorm(y, loc=1.0, scale=1.0)
+        result = drectnorm(y, mu=1.0, sigma=1.0)
         assert np.all(result >= 0)
 
     def test_drectnorm_at_zero(self):
         """Test at y=0."""
         y = np.array([0.0])
-        result = drectnorm(y, loc=1.0, scale=1.0)
+        result = drectnorm(y, mu=1.0, sigma=1.0)
         assert result[0] >= 0
 
     def test_prectnorm_basic(self):
         """Test CDF."""
         y = np.array([-1.0, 0.0, 1.0])
-        result = prectnorm(y, loc=1.0, scale=1.0)
+        result = prectnorm(y, mu=1.0, sigma=1.0)
         assert np.all(result >= 0)
         assert np.all(result <= 1)
 
     def test_prectnorm_at_zero(self):
         """Test CDF at zero."""
         y = np.array([0.0])
-        result = prectnorm(y, loc=1.0, scale=1.0)
+        result = prectnorm(y, mu=1.0, sigma=1.0)
         assert result[0] > 0
 
     def test_qrectnorm_basic(self):
         """Test quantile function."""
         p = np.array([0.25, 0.5, 0.75])
-        result = qrectnorm(p, loc=1.0, scale=1.0)
+        result = qrectnorm(p, mu=1.0, sigma=1.0)
         assert result.shape == p.shape
         assert np.all(result >= 0)
 
     def test_rrectnorm_basic(self):
         """Test random generation."""
-        result = rrectnorm(5, loc=1.0, scale=1.0)
+        result = rrectnorm(5, mu=1.0, sigma=1.0)
         assert len(result) == 5
         assert np.all(result >= 0)
 
@@ -386,26 +402,306 @@ class TestHelperFunctions:
     def test_plogis(self):
         """Test logistic CDF."""
         y = np.array([0.0])
-        result = plogis(y, loc=0.0, scale=1.0)
+        result = plogis(y, location=0.0, scale=1.0)
         assert result[0] == 0.5
 
     def test_pnorm(self):
         """Test normal CDF."""
         y = np.array([0.0])
-        result = pnorm(y, loc=0.0, scale=1.0)
+        result = pnorm(y, mean=0.0, sd=1.0)
         assert result[0] == 0.5
 
     def test_pnorm_lower_tail_false(self):
         """Test upper tail."""
         y = np.array([0.0])
-        result = pnorm(y, loc=0.0, scale=1.0, lower_tail=False)
+        result = pnorm(y, mean=0.0, sd=1.0, lower_tail=False)
         assert result[0] == 0.5
 
     def test_qnorm(self):
         """Test normal quantile function."""
         p = np.array([0.5])
-        result = qnorm(p, loc=0.0, scale=1.0)
+        result = qnorm(p, mean=0.0, sd=1.0)
         np.testing.assert_array_almost_equal(result, np.array([0.0]))
+
+    def test_degenerate_scales_as_r(self):
+        """A zero scale is a step / point mass, a negative one NaN, as R."""
+        x = np.array([-1.0, 0.5, 2.0, np.nan])
+        np.testing.assert_array_equal(pnorm(x, 0.5, 0.0), [0, 1, 1, np.nan])
+        np.testing.assert_array_equal(
+            pnorm(x, 0.5, 0.0, lower_tail=False), [1, 0, 0, np.nan]
+        )
+        np.testing.assert_array_equal(pnorm(x, 0.5, -1.0), [np.nan] * 4)
+        p = np.array([0.0, 0.3, 1.0, 1.1, np.nan])
+        np.testing.assert_array_equal(
+            qnorm(p, 0.5, 0.0), [-np.inf, 0.5, np.inf, np.nan, np.nan]
+        )
+        np.testing.assert_array_equal(
+            qnorm(p, 0.5, -1.0), [-np.inf, np.nan, np.inf, np.nan, np.nan]
+        )
+
+    def test_upper_tails_are_not_one_minus_the_cdf(self):
+        """The upper tails do not cancel to zero."""
+        assert pnorm(30.0, lower_tail=False) == pnorm(-30.0) > 0
+        assert plogis(40.0, lower_tail=False) == plogis(-40.0) > 0
+
+
+class TestShapesAndLists:
+    """Lists are accepted, and scalars give scalars, as np.float64."""
+
+    functions = (
+        (ds, {}),
+        (ps, {}),
+        (qs, {}),
+        (dalaplace, {}),
+        (palaplace, {}),
+        (qalaplace, {}),
+        (dbcnorm, {"lambda_bc": 0.5}),
+        (pbcnorm, {"lambda_bc": 0.5}),
+        (qbcnorm, {"lambda_bc": 0.5}),
+        (dfnorm, {}),
+        (pfnorm, {}),
+        (qfnorm, {}),
+        (dlogitnorm, {}),
+        (plogitnorm, {}),
+        (qlogitnorm, {}),
+        (drectnorm, {}),
+        (prectnorm, {}),
+        (qrectnorm, {}),
+        (dgnorm, {"shape": 2.0}),
+        (pgnorm, {"shape": 2.0}),
+        (qgnorm, {"shape": 2.0}),
+    )
+
+    def test_scalars_and_lists(self):
+        for function, kwargs in self.functions:
+            value = function(0.3, mu=0.1, **kwargs)
+            assert isinstance(value, np.float64), function.__name__
+            listed = function([0.3, 0.6], mu=0.1, **kwargs)
+            assert listed.shape == (2,), function.__name__
+            assert listed[0] == value, function.__name__
+
+    def test_scalar_q_with_vector_loc(self):
+        mu = np.array([0.1, 0.5, 1.0])
+        for function, kwargs in self.functions:
+            result = function(0.3, mu=mu, **kwargs)
+            assert result.shape == (3,), function.__name__
+
+
+class TestDeprecatedAliases:
+    """R's argument names, with the old Python names as deprecated aliases."""
+
+    location = (ds, ps, qs, dalaplace, palaplace, qalaplace, dlaplace, plaplace)
+    location += (qlaplace, dgnorm, pgnorm, qgnorm, dllaplace, qllaplace, dls, qls)
+    location += (dlgnorm, qlgnorm)
+    sigma = (dbcnorm, pbcnorm, qbcnorm, dfnorm, pfnorm, qfnorm, dlogitnorm)
+    sigma += (plogitnorm, qlogitnorm, drectnorm, prectnorm, qrectnorm)
+    random_location = (rs, ralaplace, rlaplace, rgnorm)
+    random_sigma = (rbcnorm, rfnorm, rlogitnorm, rrectnorm)
+
+    def test_new_names_do_not_warn(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            for function in self.location:
+                function(0.3, mu=0.1, scale=1.2)
+            for function in self.sigma:
+                function(0.3, mu=0.1, sigma=1.2)
+            for function in self.random_location:
+                function(2, mu=0.1, scale=1.2)
+            for function in self.random_sigma:
+                function(2, mu=0.1, sigma=1.2)
+            pgnorm(0.3, log_p=True)
+            qgnorm(np.log(0.3), log_p=True)
+
+    def test_old_names_warn_and_match(self):
+        for function in self.location:
+            with pytest.warns(DeprecationWarning, match="'loc'") as record:
+                old = function(0.3, loc=0.1, scale=1.2)
+            assert len(record) == 1 and record[0].filename == __file__
+            assert old == function(0.3, mu=0.1, scale=1.2), function.__name__
+        for function in self.sigma:
+            with pytest.warns(DeprecationWarning) as record:
+                old = function(0.3, loc=0.1, scale=1.2)
+            assert len(record) == 2 and record[1].filename == __file__
+            assert old == function(0.3, mu=0.1, sigma=1.2), function.__name__
+        for function, x in ((pgnorm, 0.3), (qgnorm, np.log(0.3))):
+            with pytest.warns(DeprecationWarning, match="'log'"):
+                old = function(x, log=True)
+            assert old == function(x, log_p=True), function.__name__
+
+    def test_old_names_in_random_generation(self):
+        old_sigma, new_sigma = {"loc": 0.1, "scale": 1.2}, {"mu": 0.1, "sigma": 1.2}
+        for functions, old, new in (
+            (self.random_location, {"loc": 0.1}, {"mu": 0.1}),
+            (self.random_sigma, old_sigma, new_sigma),
+        ):
+            for function in functions:
+                np.random.seed(41)
+                with pytest.warns(DeprecationWarning):
+                    drawn = function(3, **old)
+                np.random.seed(41)
+                assert np.array_equal(drawn, function(3, **new)), function.__name__
+
+    def test_typo_raises(self):
+        with pytest.raises(TypeError):
+            ds(0.3, mu_=0.1)
+        with pytest.raises(TypeError):
+            dfnorm(0.3, sd=1.2)
+
+    def test_n_defaults_to_one(self):
+        for function in (
+            rs,
+            ralaplace,
+            rlaplace,
+            rbcnorm,
+            rfnorm,
+            rlogitnorm,
+            rrectnorm,
+        ):
+            assert np.shape(function()) == (1,), function.__name__
+
+
+class TestBaseDeprecatedAliases:
+    """R's stats (and statmod) names in the base wrappers, the old as aliases."""
+
+    cases = (
+        (
+            "dnorm",
+            {"q": 0.3, "loc": 0.1, "scale": 1.2},
+            {"x": 0.3, "mean": 0.1, "sd": 1.2},
+        ),
+        (
+            "pnorm",
+            {"y": 0.3, "loc": 0.1, "scale": 1.2, "log": True},
+            {"q": 0.3, "mean": 0.1, "sd": 1.2, "log_p": True},
+        ),
+        (
+            "qnorm",
+            {"p": 0.3, "loc": 0.1, "scale": 1.2},
+            {"p": 0.3, "mean": 0.1, "sd": 1.2},
+        ),
+        (
+            "plogis",
+            {"y": 0.3, "loc": 0.1, "log": True},
+            {"q": 0.3, "location": 0.1, "log_p": True},
+        ),
+        ("dlogis", {"q": 0.3, "loc": 0.1}, {"x": 0.3, "location": 0.1}),
+        ("qlogis", {"p": 0.3, "loc": 0.1}, {"p": 0.3, "location": 0.1}),
+        (
+            "dlnorm",
+            {"q": 0.3, "loc": 0.1, "scale": 1.2},
+            {"x": 0.3, "meanlog": 0.1, "sdlog": 1.2},
+        ),
+        (
+            "plnorm",
+            {"q": 0.3, "loc": 0.1, "scale": 1.2},
+            {"q": 0.3, "meanlog": 0.1, "sdlog": 1.2},
+        ),
+        (
+            "qlnorm",
+            {"p": 0.3, "loc": 0.1, "scale": 1.2},
+            {"p": 0.3, "meanlog": 0.1, "sdlog": 1.2},
+        ),
+        ("dgamma", {"q": 0.3, "shape": 2}, {"x": 0.3, "shape": 2}),
+        (
+            "dinvgauss",
+            {"q": 0.3, "loc": 1.1, "scale": 0.4},
+            {"x": 0.3, "mean": 1.1, "dispersion": 0.4},
+        ),
+        (
+            "pinvgauss",
+            {"q": 0.3, "loc": 1.1, "scale": 0.4},
+            {"q": 0.3, "mean": 1.1, "dispersion": 0.4},
+        ),
+        (
+            "qinvgauss",
+            {"p": 0.3, "loc": 1.1, "scale": 0.4},
+            {"p": 0.3, "mean": 1.1, "dispersion": 0.4},
+        ),
+        ("dt", {"q": 0.3, "df": 4}, {"x": 0.3, "df": 4}),
+        ("dbeta", {"q": 0.3, "a": 2, "b": 3}, {"x": 0.3, "shape1": 2, "shape2": 3}),
+        ("pbeta", {"q": 0.3, "a": 2, "b": 3}, {"q": 0.3, "shape1": 2, "shape2": 3}),
+        ("qbeta", {"p": 0.3, "a": 2, "b": 3}, {"p": 0.3, "shape1": 2, "shape2": 3}),
+        ("dpois", {"q": 2, "loc": 3.7}, {"x": 2, "lambda_": 3.7}),
+        ("ppois", {"q": 2, "loc": 3.7}, {"q": 2, "lambda_": 3.7}),
+        ("qpois", {"p": 0.3, "loc": 3.7}, {"p": 0.3, "lambda_": 3.7}),
+        (
+            "dnbinom",
+            {"q": 2, "loc": 3.7, "size": 1.3},
+            {"x": 2, "mu": 3.7, "size": 1.3},
+        ),
+        (
+            "pnbinom",
+            {"q": 2, "loc": 3.7, "size": 1.3},
+            {"q": 2, "mu": 3.7, "size": 1.3},
+        ),
+        (
+            "qnbinom",
+            {"p": 0.3, "loc": 3.7, "size": 1.3},
+            {"p": 0.3, "mu": 3.7, "size": 1.3},
+        ),
+        (
+            "dbinom",
+            {"q": 2, "size": 10, "prob": 0.3},
+            {"x": 2, "size": 10, "prob": 0.3},
+        ),
+        ("dgeom", {"q": 2, "prob": 0.3}, {"x": 2, "prob": 0.3}),
+        ("dexp", {"q": 0.3, "scale": 2.0}, {"x": 0.3, "rate": 0.5}),
+        ("pexp", {"q": 0.3, "scale": 2.0}, {"q": 0.3, "rate": 0.5}),
+        ("qexp", {"p": 0.3, "scale": 2.0}, {"p": 0.3, "rate": 0.5}),
+    )
+    random_cases = (
+        ("rlogis", {"loc": 0.1}, {"location": 0.1}),
+        ("rinvgauss", {"loc": 1.1, "scale": 0.4}, {"mean": 1.1, "dispersion": 0.4}),
+        ("rbeta", {"a": 2, "b": 3}, {"shape1": 2, "shape2": 3}),
+        ("rpois", {"loc": 3.7}, {"lambda_": 3.7}),
+        ("rnbinom", {"loc": 3.7, "size": 1.3}, {"mu": 3.7, "size": 1.3}),
+        ("rexp", {"scale": 2.0}, {"rate": 0.5}),
+    )
+
+    def test_old_names_warn_and_match(self):
+        for name, old, new in self.cases:
+            function = getattr(gd, name)
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
+                expected = function(**new)
+            with pytest.warns(DeprecationWarning) as record:
+                result = function(**old)
+            assert len(record) == len(set(old) - set(new)), name
+            assert all(warning.filename == __file__ for warning in record), name
+            assert result == expected, name
+
+    def test_old_names_in_random_generation(self):
+        for name, old, new in self.random_cases:
+            np.random.seed(41)
+            with pytest.warns(DeprecationWarning):
+                drawn = getattr(gd, name)(3, **old)
+            np.random.seed(41)
+            assert np.array_equal(drawn, getattr(gd, name)(3, **new)), name
+
+    def test_chi2_names_are_deprecated(self):
+        for old, new, value in (
+            ("dchi2", "dchisq", 0.3),
+            ("pchi2", "pchisq", 0.3),
+            ("qchi2", "qchisq", 0.3),
+        ):
+            with pytest.warns(DeprecationWarning, match=f"'{old}'"):
+                result = getattr(gd, old)(value, 3)
+            assert result == getattr(gd, new)(value, 3), old
+        np.random.seed(41)
+        with pytest.warns(DeprecationWarning, match="'rchi2'"):
+            drawn = gd.rchi2(3, 3)
+        np.random.seed(41)
+        assert np.array_equal(drawn, gd.rchisq(3, 3))
+
+    def test_typo_and_missing_raise(self):
+        with pytest.raises(TypeError):
+            gd.dnorm(0.3, mn=0.1)
+        with pytest.raises(TypeError):
+            gd.pnorm(0.3, lg=True)
+        with pytest.raises(TypeError):
+            gd.dnorm()
+        with pytest.raises(ValueError):
+            gd.dnbinom(2, mu=3.7, prob=0.3)
 
 
 class TestDgammaAccuracy:
@@ -425,8 +721,12 @@ class TestDgammaAccuracy:
         from greybox import dgamma
 
         expected = np.array(
-            [-1.8374107301096074, -1.4775968828829953,
-             -1.5613061510088402, -5.1750117898889494]
+            [
+                -1.8374107301096074,
+                -1.4775968828829953,
+                -1.5613061510088402,
+                -5.1750117898889494,
+            ]
         )
         got = dgamma(self.Q, shape=2.0, scale=1.5, log=True)
         np.testing.assert_allclose(got, expected, rtol=1e-13)
@@ -441,8 +741,13 @@ class TestDgammaAccuracy:
         q = np.array([9.0, 9.5, 10.0, 10.5, 11.0])
         # R 4.6.1: dgamma(q, shape=10000, scale=0.001, log=TRUE)
         expected = np.array(
-            [-52.116157836149142, -11.498012354661739, 1.3836382264560427,
-             -10.763510243393359, -45.60987391009968]
+            [
+                -52.116157836149142,
+                -11.498012354661739,
+                1.3836382264560427,
+                -10.763510243393359,
+                -45.60987391009968,
+            ]
         )
         saddle = dgamma(q, shape=shape, scale=scale, log=True)
         direct = stats.gamma.logpdf(q, a=shape, scale=scale)
@@ -555,20 +860,30 @@ class TestNormalRParity:
 
         q = np.array([-3.0, -1.0, 0.0, 0.5, 2.0])
         expected = np.array(
-            [-3.4495667842668429, -1.7886671302876045, -1.4772484451664971,
-             -1.4512968880730717, -1.8924733586613067]
+            [
+                -3.4495667842668429,
+                -1.7886671302876045,
+                -1.4772484451664971,
+                -1.4512968880730717,
+                -1.8924733586613067,
+            ]
         )
-        _assert_within_ulps(dnorm(q, loc=0.4, scale=1.7, log=True), expected)
+        _assert_within_ulps(dnorm(q, mean=0.4, sd=1.7, log=True), expected)
 
     def test_dnorm_density_matches_r(self):
         from greybox import dnorm
 
         q = np.array([-3.0, -1.0, 0.0, 0.5, 2.0])
         expected = np.array(
-            [0.031759392066581217, 0.16718285419212844, 0.22826490848509695,
-             0.234266273863697, 0.15069861577989621]
+            [
+                0.031759392066581217,
+                0.16718285419212844,
+                0.22826490848509695,
+                0.234266273863697,
+                0.15069861577989621,
+            ]
         )
-        _assert_within_ulps(dnorm(q, loc=0.4, scale=1.7), expected)
+        _assert_within_ulps(dnorm(q, mean=0.4, sd=1.7), expected)
 
     def test_dnorm_density_uses_rs_split_in_the_tail(self):
         """Past |z| = 5 R splits z so that z1*z1 is exact, and regroups the
@@ -578,21 +893,24 @@ class TestNormalRParity:
 
         q = np.array([6.0, 12.0, 20.0, 37.0, 38.5])
         expected = np.array(
-            [6.0758828498232861e-09, 2.1463837356630605e-32,
-             5.5209483621597635e-88, 2.1200065515246056e-298,
-             5.434722104253712e-323]
+            [
+                6.0758828498232861e-09,
+                2.1463837356630605e-32,
+                5.5209483621597635e-88,
+                2.1200065515246056e-298,
+                5.434722104253712e-323,
+            ]
         )
-        _assert_within_ulps(dnorm(q, loc=0.0, scale=1.0), expected)
+        _assert_within_ulps(dnorm(q, mean=0.0, sd=1.0), expected)
 
     def test_dnorm_density_across_the_branch_boundary(self):
         from greybox import dnorm
 
         q = np.array([4.999, 5.0, 5.001])
         expected = np.array(
-            [1.4941709802283082e-06, 1.4867195147342977e-06,
-             1.4793037305678625e-06]
+            [1.4941709802283082e-06, 1.4867195147342977e-06, 1.4793037305678625e-06]
         )
-        _assert_within_ulps(dnorm(q, loc=0.0, scale=1.0), expected)
+        _assert_within_ulps(dnorm(q, mean=0.0, sd=1.0), expected)
 
     def test_dnorm_degenerate_scale(self):
         """No transcendental involved, so these are exact everywhere."""
@@ -610,12 +928,20 @@ class TestNormalRParity:
 
         q = np.array([0.25, 1.0, 3.0, 10.0])
         expected_log = np.array(
-            [-0.95041934582064536, -1.1880656455541829,
-             -2.3242948342724565, -4.5320788696191849]
+            [
+                -0.95041934582064536,
+                -1.1880656455541829,
+                -2.3242948342724565,
+                -4.5320788696191849,
+            ]
         )
         expected_lin = np.array(
-            [0.38657887922227269, 0.30481030534500203,
-             0.097852421902366177, 0.010758287732064791]
+            [
+                0.38657887922227269,
+                0.30481030534500203,
+                0.097852421902366177,
+                0.010758287732064791,
+            ]
         )
         _assert_within_ulps(dlnorm(q, 0.5, 1.2, log=True), expected_log)
         _assert_within_ulps(dlnorm(q, 0.5, 1.2), expected_lin)
@@ -654,7 +980,7 @@ class TestNormalRParity:
         from greybox import dlnorm, dnorm
 
         q = np.array([0.5, 1.0])
-        vec = dnorm(q, loc=np.array([0.0, 1.0]), scale=np.array([1.0, 2.0]), log=True)
+        vec = dnorm(q, mean=np.array([0.0, 1.0]), sd=np.array([1.0, 2.0]), log=True)
         one_by_one = [
             float(dnorm(0.5, 0.0, 1.0, log=True)),
             float(dnorm(1.0, 1.0, 2.0, log=True)),
@@ -691,8 +1017,26 @@ class TestLowessRParity:
     References are from R 4.6.1, printed at %.17g.
     """
 
-    Y = np.array([5.1, 4.8, 6.2, 7.9, 7.1, 8.8, 10.2, 9.6,
-                  11.4, 12.9, 12.1, 14.0, 15.5, 14.8, 16.9, 18.2])
+    Y = np.array(
+        [
+            5.1,
+            4.8,
+            6.2,
+            7.9,
+            7.1,
+            8.8,
+            10.2,
+            9.6,
+            11.4,
+            12.9,
+            12.1,
+            14.0,
+            15.5,
+            14.8,
+            16.9,
+            18.2,
+        ]
+    )
 
     def _x(self):
         return np.arange(1.0, len(self.Y) + 1.0)
@@ -705,42 +1049,78 @@ class TestLowessRParity:
         from greybox import lowess
 
         expected = np.array(
-            [4.6715846859949828, 5.4766143531910245, 6.278192991455807,
-             7.0785680313896782, 7.896077046191186, 8.7372497920341914,
-             9.5847045956795291, 10.413092474799761, 11.27456246249208,
-             12.147983145150626, 13.012681177911269, 13.911005042037619,
-             14.871039162529485, 15.844363967124965, 16.818381444194451,
-             17.801322159803576]
+            [
+                4.6715846859949828,
+                5.4766143531910245,
+                6.278192991455807,
+                7.0785680313896782,
+                7.896077046191186,
+                8.7372497920341914,
+                9.5847045956795291,
+                10.413092474799761,
+                11.27456246249208,
+                12.147983145150626,
+                13.012681177911269,
+                13.911005042037619,
+                14.871039162529485,
+                15.844363967124965,
+                16.818381444194451,
+                17.801322159803576,
+            ]
         )
-        got = lowess(self._x(), self.Y, f=2/3, iter=0, delta=self._delta())["y"]
+        got = lowess(self._x(), self.Y, f=2 / 3, iter=0, delta=self._delta())["y"]
         np.testing.assert_array_equal(np.asarray(got), expected)
 
     def test_default_three_iterations(self):
         from greybox import lowess
 
         expected = np.array(
-            [4.6736695720586283, 5.4787720012611922, 6.2810512300883161,
-             7.0823228757198766, 7.9002527146868431, 8.7441363954588969,
-             9.5942741821776458, 10.42702057289198, 11.290899664578474,
-             12.166894360977235, 13.036632830275117, 13.940673027826001,
-             14.903211047241335, 15.877531413209672, 16.85284976726447,
-             17.836426270928342]
+            [
+                4.6736695720586283,
+                5.4787720012611922,
+                6.2810512300883161,
+                7.0823228757198766,
+                7.9002527146868431,
+                8.7441363954588969,
+                9.5942741821776458,
+                10.42702057289198,
+                11.290899664578474,
+                12.166894360977235,
+                13.036632830275117,
+                13.940673027826001,
+                14.903211047241335,
+                15.877531413209672,
+                16.85284976726447,
+                17.836426270928342,
+            ]
         )
-        got = lowess(self._x(), self.Y, f=2/3, iter=3, delta=self._delta())["y"]
+        got = lowess(self._x(), self.Y, f=2 / 3, iter=3, delta=self._delta())["y"]
         np.testing.assert_array_equal(np.asarray(got), expected)
 
     def test_narrow_span(self):
         from greybox import lowess
 
         expected = np.array(
-            [4.7149069883293819, 5.4459005914617764, 6.283216773102807,
-             7.1720583949760561, 7.8279406037621406, 8.7165361945696205,
-             9.6245320867987676, 10.301809787621997, 11.316739293994434,
-             12.236605419802359, 12.893682742910295, 13.889333119839559,
-             14.868530157563477, 15.627248681780996, 16.805347858648197,
-             18.124370015834334]
+            [
+                4.7149069883293819,
+                5.4459005914617764,
+                6.283216773102807,
+                7.1720583949760561,
+                7.8279406037621406,
+                8.7165361945696205,
+                9.6245320867987676,
+                10.301809787621997,
+                11.316739293994434,
+                12.236605419802359,
+                12.893682742910295,
+                13.889333119839559,
+                14.868530157563477,
+                15.627248681780996,
+                16.805347858648197,
+                18.124370015834334,
+            ]
         )
-        got = lowess(self._x(), self.Y, f=1/3, iter=3, delta=self._delta())["y"]
+        got = lowess(self._x(), self.Y, f=1 / 3, iter=3, delta=self._delta())["y"]
         np.testing.assert_array_equal(np.asarray(got), expected)
 
     def test_outlier_exercises_the_robustness_weights(self):
@@ -751,12 +1131,24 @@ class TestLowessRParity:
         y = self.Y.copy()
         y[7] = 40.0
         expected = np.array(
-            [4.6314979540192045, 5.4595173828137336, 6.2905313311696069,
-             7.1292107670736655, 7.9987799363845831, 8.9034231880395414,
-             9.7795461258959868, 10.609614376301353, 11.479182767447702,
-             12.338730291926391, 13.143947808875069, 13.982013806048878,
-             14.929947528711777, 15.894570954810234, 16.86257337469636,
-             17.839954009219824]
+            [
+                4.6314979540192045,
+                5.4595173828137336,
+                6.2905313311696069,
+                7.1292107670736655,
+                7.9987799363845831,
+                8.9034231880395414,
+                9.7795461258959868,
+                10.609614376301353,
+                11.479182767447702,
+                12.338730291926391,
+                13.143947808875069,
+                13.982013806048878,
+                14.929947528711777,
+                15.894570954810234,
+                16.86257337469636,
+                17.839954009219824,
+            ]
         )
-        got = lowess(self._x(), y, f=2/3, iter=3, delta=self._delta())["y"]
+        got = lowess(self._x(), y, f=2 / 3, iter=3, delta=self._delta())["y"]
         np.testing.assert_array_equal(np.asarray(got), expected)

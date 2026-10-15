@@ -72,7 +72,10 @@ ds <- function(q, mu=0, scale=1, log=FALSE){
 #' @export ps
 #' @aliases ps
 ps <- function(q, mu=0, scale=1){
-    svetReturn <- 0.5+0.5*sign(q-mu)*(1-1/scale*(sqrt(abs(mu-q))+scale)*exp(-sqrt(abs(mu-q))/scale))
+    # The tail is taken as exp() directly, without the cancellation of 1-exp()
+    svetReturn <- (0.5*(1+sign(q-mu)) -
+                       sign(q-mu)*0.5*(1/scale*(sqrt(abs(mu-q))+scale)*exp(-sqrt(abs(mu-q))/scale)));
+    svetReturn[scale<0] <- NaN;
     return(svetReturn);
 }
 

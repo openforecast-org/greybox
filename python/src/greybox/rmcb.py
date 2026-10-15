@@ -635,6 +635,8 @@ def rmcb(
         model = full
         lm_coefs = np.concatenate([[full.intercept_], full.coef])
         lm_se = float(np.sqrt(full.vcov()[0, 0]))
+        # R uses alm's df.residual, which counts the scale as a parameter
+        df_residual = full.nobs - full.nparam
         log_lik_full = full.log_lik
         log_lik_null = null.log_lik
 

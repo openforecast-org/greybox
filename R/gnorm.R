@@ -117,24 +117,23 @@ pgnorm <- function(q, mu = 0, scale = 1, shape = 1,
     shape[is.na(shape)] <- 0
   }
 
+  p <- suppressWarnings(1/2 + sign(q - mu)* pgamma(abs(q - mu)^shape, shape = 1/shape, rate = (1/scale)^shape)/2)
   # Failsafe mechanism. If shape is too high, switch to uniform
-  if(shape>100){
-    return(punif(q, min=mu-scale, mu+scale, lower.tail=lower.tail, log.p=log.p))
+  if(any(shape>100)){
+    shapeHigh <- rep_len(shape>100, length(p));
+    p[shapeHigh] <- rep_len(punif(q, min=mu-scale, max=mu+scale), length(p))[shapeHigh];
   }
-  else{
-    p <- (1/2 + sign(q - mu[])* pgamma(abs(q - mu)^shape, shape = 1/shape, rate = (1/scale)^shape)/2)
-    if (lower.tail) {
-      if (!log.p) {
-        return(p)
-      } else {
-        return(log(p))
-      }
-    } else if (!lower.tail) {
-      if (!log.p) {
-        return(1 - p)
-      } else {
-        return(log(1 - p))
-      }
+  if (lower.tail) {
+    if (!log.p) {
+      return(p)
+    } else {
+      return(log(p))
+    }
+  } else {
+    if (!log.p) {
+      return(1 - p)
+    } else {
+      return(log(1 - p))
     }
   }
 }
@@ -167,10 +166,12 @@ qgnorm <- function(p, mu = 0, scale = 1, shape = 1,
   } else if (!lower.tail & !log.p) {
     p <- 1 - p
   } else {
-    p <- log(1 - p)
+    p <- 1 - exp(p)
   }
 
   # Failsafe mechanism. If shape is too high, switch to uniform
+  # Otherwise the upper tail of the gamma is taken from the smaller of p and 1-p:
+  # abs(p-0.5)*2 cancels near p=0
   if(all(shape>100)){
     gnormValues <- qunif(p, min=mu-scale, mu+scale);
   }
@@ -178,11 +179,13 @@ qgnorm <- function(p, mu = 0, scale = 1, shape = 1,
   else if(any((1/scale)^shape<1e-300)){
     lambdaScale <- ceiling(scale) / 10
     lambda <- (scale/lambdaScale)^(shape)
-    gnormValues <- (sign(p-0.5)*(qgamma(abs(p - 0.5)*2, shape = 1/shape, scale = lambda))^(1/shape)*lambdaScale + mu)
+    gnormValues <- (sign(p-0.5)*(qgamma(2*pmin(p, 1-p), shape = 1/shape, scale = lambda,
+                                        lower.tail = FALSE))^(1/shape)*lambdaScale + mu)
   }
   else{
     lambda <- scale^(shape)
-    gnormValues <- (sign(p-0.5)*qgamma(abs(p - 0.5)*2, shape = 1/shape, scale = lambda)^(1/shape) + mu)
+    gnormValues <- (sign(p-0.5)*qgamma(2*pmin(p, 1-p), shape = 1/shape, scale = lambda,
+                                       lower.tail = FALSE)^(1/shape) + mu)
   }
 
   return(gnormValues)

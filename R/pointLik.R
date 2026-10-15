@@ -48,6 +48,10 @@ pointLik.default <- function(object, log=TRUE, ...){
 
 #' @export
 pointLik.alm <- function(object, log=TRUE, ...){
+    # The likelihoods are the exponents of the log-likelihoods, which add those of the occurrence
+    if(!log){
+        return(exp(pointLik.alm(object, log=TRUE, ...)));
+    }
     distribution <- object$distribution;
     y <- actuals(object);
     ot <- y!=0;
@@ -102,11 +106,12 @@ pointLik.alm <- function(object, log=TRUE, ...){
                              "dnbinom" = dnbinom(y, mu=mu, size=object$other$size, log=log),
                              "dbinom" = dbinom(y-occurrenceModel*1, prob=1/(mu+1), size=object$other$size, log=log),
                              "dchisq" = dchisq(y, df=object$other$nu, ncp=mu, log=log),
-                             "dbeta" = dbeta(y, shape1=mu, shape2=scale, log=log),
-                             "plogis" = c(plogis(mu[ot], location=0, scale=1, log.p=TRUE),
-                                          plogis(mu[!ot], location=0, scale=1, lower.tail=FALSE, log.p=TRUE)),
-                             "pnorm" = c(pnorm(mu[ot], mean=0, sd=1, log.p=TRUE),
-                                         pnorm(mu[!ot], mean=0, sd=1, lower.tail=FALSE, log.p=TRUE)),
+                             "dbeta" = dbeta(y, shape1=object$other$shape1[otU], shape2=object$other$shape2[otU], log=log),
+                             # The probability of the observed outcome of each observation
+                             "plogis" = ifelse(ot, plogis(mu, location=0, scale=1, log.p=log),
+                                               plogis(mu, location=0, scale=1, lower.tail=FALSE, log.p=log)),
+                             "pnorm" = ifelse(ot, pnorm(mu, mean=0, sd=1, log.p=log),
+                                              pnorm(mu, mean=0, sd=1, lower.tail=FALSE, log.p=log)),
                              0
     );
     if(any(distribution==c("dllaplace","dls","dlgnorm"))){

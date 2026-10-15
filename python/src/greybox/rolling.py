@@ -163,7 +163,8 @@ def rolling_origin(
 
         Return value can be:
 
-        - ``np.ndarray`` of length h → stored as ``result.mean``
+        - ``np.ndarray`` of length h → stored as ``result.mean``; a matrix
+          of shape ``(h, k)`` is stored as an array ``(h, origins, k)``
         - ``dict`` with string keys → one attribute per key
         - object with ``.mean`` / ``.lower`` / ``.upper`` attributes
         - 3-tuple ``(mean, lower, upper)``
@@ -286,27 +287,26 @@ def rolling_origin(
         if _wants_countf:
             extra_kwargs["countf"] = countf
 
-        try:
-            raw = call(train_data, h_actual, **extra_kwargs)
-        except Exception as e:  # noqa: BLE001 - any model failure ends the loop
-            if not silent:
-                print(f"Origin {i + 1}/{origins} failed: {e}")
-            break
+        # A failure of the call is an error, as in R
+        raw = call(train_data, h_actual, **extra_kwargs)
 
         parsed = _parse_call_result(raw, h_actual)
 
-        # Ensure all arrays have length h_actual; pad to h with NaN
+        # Pad the arrays to h with NaN; a one-column matrix is a vector, as in R
         for key, arr in parsed.items():
-            if len(arr) < h:
-                padded = np.full(h, np.nan)
-                padded[: len(arr)] = arr[:h_actual]
-                parsed[key] = padded
-            else:
-                parsed[key] = arr[:h]
+            if arr.ndim == 2 and arr.shape[1] == 1:
+                arr = arr[:, 0]
+            padded = np.full((h, *arr.shape[1:]), np.nan)
+            padded[: min(len(arr), h)] = arr[:h]
+            parsed[key] = padded
 
-        # Initialise forecast matrices on first successful call
+        # Initialise forecast matrices on first call: (h, origins) for vectors,
+        # (h, origins, k) for the matrices with k columns, as R's arrays
         if fields_data is None:
-            fields_data = {k: np.full((h, origins), np.nan) for k in parsed}
+            fields_data = {
+                k: np.full((h, origins, *arr.shape[1:]), np.nan)
+                for k, arr in parsed.items()
+            }
 
         for key, arr in parsed.items():
             if key in fields_data:

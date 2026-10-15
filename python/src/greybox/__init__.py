@@ -37,7 +37,20 @@ from .aid import AidCatResult, AidResult, AidType, Stockouts, aid, aid_cat
 from .alm import ALM, PredictionResult
 
 # Association / correlation
-from .association import association, determination, mcor, pcor
+from .association import (
+    CramerResult,
+    McorResult,
+    assoc,
+    association,
+    cramer,
+    determ,
+    determination,
+    mcor,
+    pcor,
+)
+
+# Bootstrap of the parameters
+from .bootstrap import BootstrapResult, coefbootstrap
 
 # Datasets
 from .data import mtcars
@@ -56,6 +69,9 @@ from .formula import expand_formula, formula
 
 # Half-moment measures
 from .hm import asymmetry, cextremity, extremity, ham, hm, mre
+
+# Plots
+from .plots import graphmaker, spread, tableplot
 
 # Point accuracy measures
 from .point_measures import (
@@ -93,6 +109,9 @@ from .rolling import RollingOriginResult, rolling_origin
 # Model selection
 from .selection import CALM, CALMResult, stepwise
 
+# Scale model
+from .sm import ScaleModel, implant, sm
+
 # Smoothers
 from .smoothers import lowess, supsmu
 
@@ -127,6 +146,10 @@ __all__ = [
     # Formula
     "formula",
     "expand_formula",
+    # Scale model
+    "sm",
+    "implant",
+    "ScaleModel",
     # Selection
     "stepwise",
     "CALM",
@@ -163,8 +186,13 @@ __all__ = [
     # Association
     "pcor",
     "mcor",
+    "McorResult",
+    "cramer",
+    "CramerResult",
     "association",
+    "assoc",
     "determination",
+    "determ",
     # Half-moments
     "hm",
     "ham",
@@ -195,6 +223,9 @@ __all__ = [
     "mis",
     "smis",
     "rmis",
+    # Bootstrap
+    "coefbootstrap",
+    "BootstrapResult",
     # Diagnostics
     "outlier_dummy",
     "OutlierResult",
@@ -202,4 +233,8 @@ __all__ = [
     "StickResult",
     "rmcb",
     "RMCBResult",
+    # Plots
+    "spread",
+    "graphmaker",
+    "tableplot",
 ] + list(_distribution_names)

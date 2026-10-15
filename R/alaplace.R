@@ -78,10 +78,11 @@
 #' @export dalaplace
 #' @aliases ALaplace dalaplace
 dalaplace <- function(q, mu=0, scale=1, alpha=0.5, log=FALSE){
-    alaplaceReturn <- alpha * (1-alpha) / scale * exp(-(q-mu)/scale * (alpha - (q<=mu)*1));
+    # The log is taken analytically: the log of the density underflows in the tails
     if(log){
-        alaplaceReturn[] <- log(alaplaceReturn);
+        return(log(alpha * (1-alpha) / scale) - (q-mu)/scale * (alpha - (q<=mu)*1));
     }
+    alaplaceReturn <- alpha * (1-alpha) / scale * exp(-(q-mu)/scale * (alpha - (q<=mu)*1));
     return(alaplaceReturn);
 }
 
@@ -126,10 +127,10 @@ qalaplace <- function(p, mu=0, scale=1, alpha=0.5){
     else{
         Ie <- (p<=alpha)*1;
         alaplaceReturn <- mu + scale / (Ie - alpha) * log((1-Ie-p)/(1-Ie-alpha));
-        if(any(p==0)){
+        if(any(p==0, na.rm=TRUE)){
             alaplaceReturn[p==0] <- -Inf;
         }
-        if(any(p==1)){
+        if(any(p==1, na.rm=TRUE)){
             alaplaceReturn[p==1] <- Inf;
         }
     }

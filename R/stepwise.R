@@ -209,14 +209,14 @@ stepwise <- function(data, ic=c("AICc","AIC","BIC","BICc"), silent=TRUE, df=NULL
     if(is.data.frame(data)){
         noVariability[1] <- FALSE;
         for(i in 1:nVariables){
-            noVariability[i+1] <- length(unique(data[[i]]))<=1;
+            noVariability[i+1] <- length(unique(data[[i+1]]))<=1;
         }
         # noVariability[] <- c(FALSE,sapply(apply(data[,-1],2,unique),length)<=1);
     }
     else{
         noVariability[1] <- FALSE;
         for(i in 1:nVariables){
-            noVariability[i+1] <- length(unique(data[,i]))<=1;
+            noVariability[i+1] <- length(unique(data[,i+1]))<=1;
         }
         # noVariability[] <- c(FALSE,sapply(as.data.frame(apply(data[,-1],2,unique)),length)<=1);
     }

@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+from scipy import stats
 
 from greybox import rmcb, RMCBResult
 
@@ -224,3 +225,15 @@ def test_correction_hac_autocorrelated(distribution):
 def test_correction_invalid_raises(separated_data):
     with pytest.raises(ValueError):
         rmcb(separated_data, correction="foo")
+
+
+def test_general_distribution_df_residual(positive_data):
+    # As R, the t quantile uses alm's df.residual, which counts the scale
+    result = rmcb(positive_data, distribution="dlaplace")
+    df_residual = positive_data.size - positive_data.shape[1] - 1
+    half_width = stats.t.ppf(0.975, df_residual) * np.sqrt(result.model.vcov()[0, 0])
+    np.testing.assert_allclose(
+        (result.interval.iloc[:, 1] - result.interval.iloc[:, 0]).to_numpy() / 2,
+        half_width,
+        rtol=1e-10,
+    )

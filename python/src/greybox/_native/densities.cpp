@@ -1,5 +1,6 @@
-// The densities and log-densities of the Laplace, S and Generalised Normal
-// distributions as R's greybox computes them, the log-densities of their
+// The log-density of the Beta and the densities and log-densities of the logistic
+// distributions as R's nmath computes them, those of the Laplace, S and Generalised
+// Normal distributions as R's greybox computes them, the log-densities of their
 // log-variants as R's alm() computes them, and R's gamma function.
 //
 // Everything is in R's order of operations and through libm, as R evaluates
@@ -13,6 +14,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cfloat>
 #include <cmath>
 #include <cstddef>
 #include <stdexcept>
@@ -40,6 +42,95 @@ inline double ds_log_one(double q, double mu, double scale) {
 inline double dgnorm_log_one(double q, double mu, double scale, double shape) {
     return std::log(shape) - std::log(2 * scale) - greybox_nmath::lgammafn(1 / shape) -
            greybox_nmath::r_pow(std::fabs(q - mu) / scale, shape);
+}
+
+// R's nmath dlogis(): x = |q-location|/scale, -(x + log(scale*(1+exp(-x))^2))
+inline double dlogis_log_one(double q, double location, double scale) {
+    double x = std::fabs((q - location) / scale);
+    double f = 1.0 + std::exp(-x);
+    return -(x + std::log(scale * f * f));
+}
+
+inline double dlogis_one(double q, double location, double scale) {
+    double x = std::fabs((q - location) / scale);
+    double e = std::exp(-x);
+    double f = 1.0 + e;
+    return e / (scale * f * f);
+}
+
+// R's nmath bd0(), dbinom_raw(log=TRUE), lbeta() and dbeta(), of R 4.3.3
+inline double bd0(double x, double np) {
+    if (!std::isfinite(x) || !std::isfinite(np) || np == 0.0) return NAN;
+    if (std::fabs(x - np) < 0.1 * (x + np)) {
+        double v = (x - np) / (x + np);
+        double s = (x - np) * v;
+        if (std::fabs(s) < DBL_MIN) return s;
+        double ej = 2 * x * v;
+        v *= v;
+        for (int j = 1; j < 1000; j++) {
+            ej *= v;
+            double s_ = s;
+            s += ej / ((j << 1) + 1);
+            if (s == s_) return s;
+        }
+    }
+    return x * std::log(x / np) + np - x;
+}
+
+inline double dbinom_raw_log(double x, double n, double p, double q) {
+    if (p == 0) return x == 0 ? 0.0 : -INFINITY;
+    if (q == 0) return x == n ? 0.0 : -INFINITY;
+    if (x == 0) {
+        if (n == 0) return 0.0;
+        return p < 0.1 ? -bd0(n, n * q) - n * p : n * std::log(q);
+    }
+    if (x == n) return q < 0.1 ? -bd0(n, n * p) - n * q : n * std::log(p);
+    if (x < 0 || x > n) return -INFINITY;
+    double lc = greybox_nmath::stirlerr(n) - greybox_nmath::stirlerr(x) -
+                greybox_nmath::stirlerr(n - x) - bd0(x, n * p) - bd0(n - x, n * q);
+    double lf = 1.837877066409345483560659472811 + std::log(x) + std::log1p(-x / n);
+    return lc - 0.5 * lf;
+}
+
+inline double lbeta(double a, double b) {
+    if (std::isnan(a) || std::isnan(b)) return a + b;
+    double p = std::min(a, b), q = std::max(a, b);
+    if (p < 0) return NAN;
+    if (p == 0) return INFINITY;
+    if (!std::isfinite(q)) return -INFINITY;
+    if (p >= 10) {
+        double corr = greybox_nmath::lgammacor(p) + greybox_nmath::lgammacor(q) -
+                      greybox_nmath::lgammacor(p + q);
+        return std::log(q) * -0.5 + 0.918938533204672741780329736406 + corr +
+               (p - 0.5) * std::log(p / (p + q)) + q * std::log1p(-p / (p + q));
+    }
+    if (q >= 10) {
+        double corr = greybox_nmath::lgammacor(q) - greybox_nmath::lgammacor(p + q);
+        return greybox_nmath::lgammafn(p) + corr + p - p * std::log(p + q) +
+               (q - 0.5) * std::log1p(-p / (p + q));
+    }
+    if (p < 1e-306) {
+        return greybox_nmath::lgammafn(p) +
+               (greybox_nmath::lgammafn(q) - greybox_nmath::lgammafn(p + q));
+    }
+    return std::log(greybox_nmath::gammafn(p) *
+                    (greybox_nmath::gammafn(q) / greybox_nmath::gammafn(p + q)));
+}
+
+inline double dbeta_log_one(double x, double a, double b) {
+    if (std::isnan(x) || std::isnan(a) || std::isnan(b)) return x + a + b;
+    if (a < 0 || b < 0) return NAN;
+    if (x < 0 || x > 1) return -INFINITY;
+    if (a == 0 || b == 0 || !std::isfinite(a) || !std::isfinite(b)) {
+        if (a == 0 && b == 0) return (x == 0 || x == 1) ? INFINITY : -INFINITY;
+        if (a == 0 || a / b == 0) return x == 0 ? INFINITY : -INFINITY;
+        if (b == 0 || b / a == 0) return x == 1 ? INFINITY : -INFINITY;
+        return x == 0.5 ? INFINITY : -INFINITY;
+    }
+    if (x == 0) return a > 1 ? -INFINITY : (a < 1 ? INFINITY : std::log(b));
+    if (x == 1) return b > 1 ? -INFINITY : (b < 1 ? INFINITY : std::log(a));
+    if (a <= 2 || b <= 2) return (a - 1) * std::log(x) + (b - 1) * std::log1p(-x) - lbeta(a, b);
+    return std::log(a + b - 1) + dbinom_raw_log(a - 1, a + b - 2, x, 1 - x);
 }
 
 // 1/(2*scale)*exp(-abs(mu-q)/scale)
@@ -129,6 +220,24 @@ PYBIND11_MODULE(_native_densities, m) {
             return elementwise<4>(dgnorm_log_one, {q, mu, scale, shape});
         },
         py::arg("q"), py::arg("mu"), py::arg("scale"), py::arg("shape"));
+    m.def(
+        "dlogis_log",
+        [](Array q, Array location, Array scale) {
+            return elementwise<3>(dlogis_log_one, {q, location, scale});
+        },
+        py::arg("q"), py::arg("location"), py::arg("scale"));
+    m.def(
+        "dlogis",
+        [](Array q, Array location, Array scale) {
+            return elementwise<3>(dlogis_one, {q, location, scale});
+        },
+        py::arg("q"), py::arg("location"), py::arg("scale"));
+    m.def(
+        "dbeta_log",
+        [](Array x, Array shape1, Array shape2) {
+            return elementwise<3>(dbeta_log_one, {x, shape1, shape2});
+        },
+        py::arg("x"), py::arg("shape1"), py::arg("shape2"));
     m.def(
         "dlaplace",
         [](Array q, Array mu, Array scale) {

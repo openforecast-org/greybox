@@ -5,6 +5,8 @@ in alm.R: scalerInternal, extractorFitted, extractorResiduals, fitter,
 fitterRecursive, and the cost function (cf).
 """
 
+import math
+
 import numpy as np
 from numpy.typing import ArrayLike
 
@@ -97,7 +99,7 @@ def scaler_internal(
     trim: float = 0.0,
     side: str = "both",
     variance: np.ndarray | None = None,
-) -> float:
+) -> float | np.ndarray:
     """Calculate scale parameter based on distribution.
 
     Parameters
@@ -129,15 +131,17 @@ def scaler_internal(
 
     Returns
     -------
-    float
-        Scale parameter value.
+    float or np.ndarray
+        Scale parameter value (one per observation for dbeta and dpois).
     """
     y_otU = y[otU]
     mu_otU = mu[otU]
     error_scale = np.sqrt(variance[otU]) if variance is not None else 1.0
 
     if distribution == "dbeta":
-        return np.exp(matrix_xreg @ B[-len(B) // 2 :])
+        # The second shape, through libm and in R's order of the product
+        shape2 = np.asfortranarray(matrix_xreg) @ B[-len(B) // 2 :]
+        return np.fromiter(map(math.exp, shape2), float, shape2.size)
 
     elif distribution == "dnorm":
         return np.sqrt(mean_fast(((y_otU - mu_otU) / error_scale) ** 2, df, trim, side))
@@ -253,12 +257,12 @@ def extractor_fitted(
     """
     if distribution == "dfnorm":
         return np.sqrt(2 / np.pi) * scale * np.exp(-(mu**2) / (2 * scale**2)) + mu * (
-            1 - 2 * dist.pnorm(-mu / scale, loc=0, scale=1)
+            1 - 2 * dist.pnorm(-mu / scale, mean=0, sd=1)
         )
 
     elif distribution == "drectnorm":
-        return mu * (1 - dist.pnorm(0, loc=mu, scale=scale)) + scale * dist.dnorm(
-            0, loc=mu, scale=scale
+        return mu * (1 - dist.pnorm(0, mean=mu, sd=scale)) + scale * dist.dnorm(
+            0, mean=mu, sd=scale
         )
 
     elif distribution in (
@@ -297,10 +301,10 @@ def extractor_fitted(
         return mu / (mu + scale)
 
     elif distribution == "pnorm":
-        return dist.pnorm(mu, loc=0, scale=1)
+        return dist.pnorm(mu, mean=0, sd=1)
 
     elif distribution == "plogis":
-        return dist.plogis(mu, loc=0, scale=1)
+        return dist.plogis(mu, location=0, scale=1)
 
     else:
         return mu
@@ -472,7 +476,8 @@ def fitter(
 
         if poly1 is not None and ar_order > 0:
             poly1[1:] = -B[-ar_order:]
-            if n_variables > ar_order:
+            # R compares its count of the variables with the AR ones with the AR order
+            if n_variables > 0:
                 B = np.concatenate(
                     [B[: len(B) - ar_order], -np.convolve(poly2, poly1)[1:]]
                 )
@@ -480,12 +485,17 @@ def fitter(
                 B = -np.convolve(poly2, poly1)[1:]
         elif i_order > 0:
             B = np.concatenate([B, -poly2[1:]])
+        else:
+            poly1 = np.concatenate([[1.0], -B[-ar_order:]])
 
     if loss in ("LASSO", "RIDGE") and lambda_val == 1.0:
         B[1:] = 0
 
     mu = np.zeros_like(y, dtype=float)
+    # Column-major, as R's matrices: BLAS then accumulates the product in R's order
+    matrix_xreg = np.asfortranarray(matrix_xreg)
 
+    mu = matrix_xreg @ (B[: len(B) // 2] if distribution == "dbeta" else B)
     if distribution in (
         "dinvgauss",
         "dgamma",
@@ -494,16 +504,12 @@ def fitter(
         "dnbinom",
         "dbinom",
         "dgeom",
+        "dbeta",
     ):
-        mu = np.exp(matrix_xreg @ B)
+        # Through libm, as R's exp(): NumPy's kernel rounds differently in the last bit
+        mu = np.fromiter(map(math.exp, mu), float, mu.size)
     elif distribution == "dchisq":
-        linear_pred = matrix_xreg @ B
-        mu = np.where(linear_pred < 0, 1e100, linear_pred**2)
-    elif distribution == "dbeta":
-        half_len = len(B) // 2
-        mu = np.exp(matrix_xreg @ B[:half_len])
-    else:
-        mu = matrix_xreg @ B
+        mu = np.where(mu < 0, 1e100, mu**2)
 
     # The scale is estimated on the non-zeroes of an occurrence model, as in R
     if otU is None:
@@ -598,6 +604,22 @@ def fitter_recursive(
         a_parameter_provided=a_parameter_provided,
         **kwargs,
     )
+    # plogis / pnorm: the lags are the locations of the model, as R
+    if latent.get("cdf"):
+        matrix_xreg = matrix_xreg.copy()
+        for i in range(1, latent["ari_order"] + 1):
+            matrix_xreg[i:, latent["n_exo"] + i - 1] = fitter_return["mu"][:-i]
+        fitter_return = fitter(
+            B,
+            distribution,
+            y,
+            matrix_xreg,
+            other=other,
+            a_parameter_provided=a_parameter_provided,
+            **kwargs,
+        )
+        fitter_return["matrix_xreg"] = matrix_xreg
+        return fitter_return
     b_location = fitter_return["B"]
     if distribution == "dbeta":
         b_location = b_location[: len(b_location) // 2]

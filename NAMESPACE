@@ -280,6 +280,7 @@ importFrom(graphics,
 )
 importFrom(methods,setMethod)
 importFrom(nloptr,nloptr)
+importFrom(Rcpp,evalCpp)
 importFrom(pracma,hessian)
 importFrom(pracma,jacobian)
 importFrom(statmod,
@@ -302,6 +303,7 @@ importFrom(stats,
   cor,
   cor.test,
   cov,
+  cycle,
   dbeta,
   dbinom,
   dchisq,
@@ -382,6 +384,7 @@ importFrom(stats,
   terms,
   time,
   ts,
+  uniroot,
   update.formula,
   var,
   vcov

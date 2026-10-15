@@ -1,10 +1,11 @@
 """Tests for greybox.selection module."""
 
 import numpy as np
-import pytest
 import pandas as pd
+import pytest
 
-from greybox.selection import stepwise, CALM, CALMResult
+from greybox.alm import ALM
+from greybox.selection import CALM, CALMResult, stepwise
 
 
 class TestStepwise:
@@ -748,7 +749,7 @@ class TestCALMALMCompat:
 
         # With intervals
         pred = result.predict(X[:5], interval="prediction", level=0.90)
-        assert pred.level == [0.9]
+        assert pred.level == 0.9  # as ALM.predict
         assert pred.variances is not None
         assert pred.variances.shape == (5,)
         assert np.all(pred.variances > 0)
@@ -864,9 +865,15 @@ class TestCALMALMCompat:
         np.testing.assert_array_equal(result.actuals, y)
 
     def test_data_property(self, setup):
-        """data returns same as actuals."""
+        """data has the response and the regressors, as R's $data."""
         result, X, y, x1, x2 = setup
-        np.testing.assert_array_equal(result.data, result.actuals)
+        np.testing.assert_array_equal(result.data[:, 0], result.actuals)
+        np.testing.assert_array_equal(result.data[:, 1:], result._X_train[:, 1:])
+
+    def test_rank_property(self, setup):
+        """rank_ is the number of the combined parameters, as R's $rank."""
+        result, X, y, x1, x2 = setup
+        assert result.rank_ == len(result.coefficients)
 
     def test_formula_property(self, setup):
         """formula returns a formula string."""
@@ -1017,41 +1024,38 @@ class TestCALMRComparison:
         np.testing.assert_allclose(
             py_result["coefficients"],
             r_result["coefficients"],
-            rtol=0.05,
-            atol=0.5,
+            rtol=1e-6,
         )
 
         # Importance
         np.testing.assert_allclose(
             py_result["importance"],
             r_result["importance"],
-            rtol=0.05,
-            atol=0.05,
+            rtol=1e-6,
         )
 
         # IC (weighted average)
         np.testing.assert_allclose(
             py_result["IC"],
             r_result["IC"],
-            rtol=0.05,
+            rtol=1e-6,
         )
 
         # Fitted values
         np.testing.assert_allclose(
             py_result["fitted"],
             r_result["fitted"],
-            rtol=0.05,
-            atol=1.0,
+            rtol=1e-6,
         )
 
-        # vcov shape and approximate values
-        assert py_result["vcov"].shape == r_result["vcov"].shape
+        # vcov
+        np.testing.assert_allclose(py_result["vcov"], r_result["vcov"], rtol=1e-6)
 
         # df_residual
         np.testing.assert_allclose(
             py_result["df_residual"],
             r_result["df_residual"],
-            rtol=0.05,
+            rtol=1e-6,
         )
 
     def test_compare_dnorm_3vars(self):
@@ -1076,16 +1080,14 @@ class TestCALMRComparison:
         np.testing.assert_allclose(
             py_result["coefficients"],
             r_result["coefficients"],
-            rtol=0.05,
-            atol=0.3,
+            rtol=1e-6,
         )
 
         # Importance
         np.testing.assert_allclose(
             py_result["importance"],
             r_result["importance"],
-            rtol=0.1,
-            atol=0.05,
+            rtol=1e-6,
         )
 
         # x3 (noise) should have lower importance than x1 and x2
@@ -1111,13 +1113,12 @@ class TestCALMRComparison:
         np.testing.assert_allclose(
             py_result["coefficients"],
             r_result["coefficients"],
-            rtol=0.05,
-            atol=0.1,
+            rtol=1e-6,
         )
         np.testing.assert_allclose(
             py_result["importance"],
             r_result["importance"],
-            rtol=0.05,
+            rtol=1e-6,
         )
 
     def test_compare_bic(self):
@@ -1137,14 +1138,12 @@ class TestCALMRComparison:
         np.testing.assert_allclose(
             py_result["coefficients"],
             r_result["coefficients"],
-            rtol=0.05,
-            atol=0.3,
+            rtol=1e-6,
         )
         np.testing.assert_allclose(
             py_result["importance"],
             r_result["importance"],
-            rtol=0.1,
-            atol=0.05,
+            rtol=1e-6,
         )
 
     def test_compare_bruteforce_false(self):
@@ -1166,23 +1165,21 @@ class TestCALMRComparison:
         np.testing.assert_allclose(
             py_result["coefficients"],
             r_result["coefficients"],
-            rtol=0.05,
-            atol=0.5,
+            rtol=1e-6,
         )
 
         # Importance
         np.testing.assert_allclose(
             py_result["importance"],
             r_result["importance"],
-            rtol=0.05,
-            atol=0.05,
+            rtol=1e-6,
         )
 
         # IC (weighted average)
         np.testing.assert_allclose(
             py_result["IC"],
             r_result["IC"],
-            rtol=0.05,
+            rtol=1e-6,
         )
 
 
@@ -1203,3 +1200,85 @@ class TestCALM:
         assert hasattr(result, "coefficients")
         assert hasattr(result, "importance")
 
+
+class TestSelectionRBehaviour:
+    """Behaviour of stepwise and CALM that follows R."""
+
+    @pytest.fixture
+    def data(self):
+        rng = np.random.default_rng(7)
+        x = rng.normal(size=(60, 3))
+        y = 2 + 1.5 * x[:, 0] - x[:, 1] + rng.normal(size=60)
+        return pd.DataFrame({"y": y, "x1": x[:, 0], "x2": x[:, 1], "x3": x[:, 2]})
+
+    def test_summary_labels_follow_level(self, data):
+        text = str(CALM(data, bruteforce=True).summary(level=0.9))
+        assert "Lower 5.0%" in text
+        assert "Upper 95.0%" in text
+
+    def test_bicc(self, data):
+        result = CALM(data, bruteforce=True)
+        k, n = result.nparam, result.nobs
+        expected = -2 * result.log_lik + k * np.log(n) * n / (n - k - 1)
+        np.testing.assert_allclose(result.bicc, expected)
+        np.testing.assert_allclose(result.summary().bicc, expected)
+
+    def test_intercept_only_returns_alm(self):
+        from greybox.alm import ALM
+
+        rng = np.random.default_rng(0)
+        data = pd.DataFrame(rng.normal(size=(30, 3)), columns=["y", "x1", "x2"])
+        result = CALM(data)
+        assert isinstance(result, ALM)
+        assert len(result.coefficients) == 1
+
+    def test_many_variables_warning(self):
+        rng = np.random.default_rng(1)
+        data = pd.DataFrame(rng.normal(size=(40, 15)))
+        data.columns = ["y"] + [f"x{i}" for i in range(1, 15)]
+        with pytest.warns(UserWarning, match="more than 14 variables"):
+            result = CALM(data, bruteforce=True)
+        assert len(result.combination) == 2**14
+
+    def test_missing_values_dropped(self, data):
+        data = data.copy()
+        data.loc[[3, 10], "x2"] = np.nan
+        assert stepwise(data).nobs == 58
+        assert CALM(data, bruteforce=True).nobs == 58
+
+    def test_plogis_response_binarised(self, data):
+        data = data.assign(y=np.maximum(data["y"] - 2, 0))
+        model = stepwise(data, distribution="plogis")
+        np.testing.assert_array_equal(model.actuals, (data["y"] != 0) * 1.0)
+
+    def test_occurrence_model(self, data):
+        data = data.assign(y=np.where(data["x3"] > 0, np.exp(data["y"] / 4), 0))
+        model = stepwise(data, distribution="dlnorm", occurrence="plogis")
+        assert isinstance(model.occurrence, ALM)
+        assert model.occurrence.distribution == "plogis"
+
+    def test_combinations_in_binary_order(self, data):
+        result = CALM(data, bruteforce=True)
+        np.testing.assert_array_equal(
+            result.combination[:, :3],
+            [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]]
+            + [[0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]],
+        )
+
+    @pytest.mark.parametrize("distribution", ["dbcnorm", "dgnorm", "dalaplace"])
+    def test_other_combined(self, data, distribution):
+        """other_ is the weighted extra parameter, which the predictions use."""
+        data = data.assign(y=np.exp(data["y"] / 4))
+        result = CALM(data[["y", "x1"]], bruteforce=True, distribution=distribution)
+        if distribution == "dalaplace":
+            assert result.other_ == 0.5
+        else:
+            others = [
+                ALM(distribution=distribution)
+                .fit(result._X_train[:, : 1 + j], result.actuals)
+                .other_
+                for j in range(2)
+            ]
+            np.testing.assert_allclose(result.other_, result.weights @ others)
+        prediction = result.predict(interval="prediction")
+        assert np.all(prediction.lower < prediction.upper)

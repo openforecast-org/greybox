@@ -60,10 +60,13 @@ pytest tests/test_alm_distributions_compare.py
 - **`point_measures.py`** — 20+ accuracy metrics (MAE, MSE, RMSE, MAPE, MASE, etc.).
 - **`xreg.py`** — Variable processing: lag/lead expansion, transformations, temporal dummies.
 - **`rolling.py`** — `rolling_origin()` cross-validation with `RollingOriginResult`.
-- **`association.py`** — `pcor()`, `mcor()`, `association()`, `determination()` (partial/multiple correlations).
+- **`association.py`** — `pcor()`, `mcor()`, `cramer()`, `association()` / `assoc()`, `determination()` / `determ()` (partial/multiple correlations, Cramer's V).
 - **`hm.py`** — Half-moment measures: `hm()`, `ham()`, `asymmetry()`, `extremity()`, `mre()`.
 - **`quantile_measures.py`** — `pinball()` quantile/expectile scoring, `MIS`.
 - **`diagnostics.py`** — `outlier_dummy()` with `OutlierResult`.
+- **`sm.py`** — Scale model: `sm()`, `implant()`, `ScaleModel` (R's `scaler.R`); `ALM(scale_formula=...)` fits it.
+- **`bootstrap.py`** — `coefbootstrap()` with `BootstrapResult` (R's "cr" and "dsr").
+- **`plots.py`** — `spread()`, `graphmaker()`, `tableplot()`, and the plots behind `ALM.plot()` / `PredictionResult.plot()`.
 - **`stick.py`** — `stick()` (Seasonality, Trend, Irregular contribution via ANOVA) with `StickResult` (`.strength`, `.anova`, `.plot()`).
 - **`transforms.py`** — `bc_transform()`, `bc_transform_inv()`, `mean_fast()`.
 - **`smoothers.py`** — `lowess()` and `supsmu()`, thin wrappers over the native extensions below.

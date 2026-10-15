@@ -4,6 +4,8 @@ Density, cumulative distribution, quantile functions and random number
 generation for the Gamma distribution.
 """
 
+import warnings
+
 import numpy as np
 from scipy import stats
 
@@ -13,7 +15,7 @@ except ImportError:  # pragma: no cover - source checkout without the extension
     _dgamma_native = None
 
 
-def dgamma(q, shape=1, scale=1, log=False):
+def dgamma(x=None, shape=1, scale=1, log=False, *, q=None):
     """Gamma distribution density.
 
     Matches R's :func:`stats::dgamma`. The log-density is computed by Loader's
@@ -25,7 +27,7 @@ def dgamma(q, shape=1, scale=1, log=False):
 
     Parameters
     ----------
-    q : array_like
+    x : array_like
         Quantiles (must be positive).
     shape : float or array_like
         Shape parameter (alpha). May vary per observation.
@@ -33,19 +35,30 @@ def dgamma(q, shape=1, scale=1, log=False):
         Scale parameter (theta). May vary per observation.
     log : bool
         If True, return log-density.
+    q : array_like, optional
+        Deprecated alias of ``x``, kept for one release.
 
     Returns
     -------
     array
         Density values.
     """
+    if q is not None:
+        warnings.warn(
+            "'q' is deprecated, use 'x' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        x = q
+    if x is None:
+        raise TypeError("dgamma() missing required argument: 'x'")
     if _dgamma_native is None:  # pragma: no cover - fallback path
         if log:
-            return stats.gamma.logpdf(q, a=shape, scale=scale)
-        return stats.gamma.pdf(q, a=shape, scale=scale)
+            return stats.gamma.logpdf(x, a=shape, scale=scale)
+        return stats.gamma.pdf(x, a=shape, scale=scale)
 
     args = (
-        np.asarray(q, dtype=float),
+        np.asarray(x, dtype=float),
         np.atleast_1d(np.asarray(shape, dtype=float)),
         np.atleast_1d(np.asarray(scale, dtype=float)),
     )
@@ -54,7 +67,7 @@ def dgamma(q, shape=1, scale=1, log=False):
     return _dgamma_native.dgamma(*args)
 
 
-def pgamma(q, shape=1, scale=1):
+def pgamma(q, shape=1, scale=1, lower_tail=True, log_p=False):
     """Gamma distribution CDF.
 
     Parameters
@@ -65,16 +78,21 @@ def pgamma(q, shape=1, scale=1):
         Shape parameter.
     scale : float
         Scale parameter.
+    lower_tail : bool
+        If True, return lower tail probability.
+    log_p : bool
+        If True, return log-CDF.
 
     Returns
     -------
     array
         CDF values.
     """
-    return stats.gamma.cdf(q, a=shape, scale=scale)
+    method = ("log" if log_p else "") + ("cdf" if lower_tail else "sf")
+    return getattr(stats.gamma, method)(q, a=shape, scale=scale)
 
 
-def qgamma(p, shape=1, scale=1):
+def qgamma(p, shape=1, scale=1, lower_tail=True, log_p=False):
     """Gamma distribution quantile function.
 
     Parameters
@@ -85,13 +103,19 @@ def qgamma(p, shape=1, scale=1):
         Shape parameter.
     scale : float
         Scale parameter.
+    lower_tail : bool
+        If True, probabilities are P[X <= x], otherwise P[X > x].
+    log_p : bool
+        If True, probabilities are given as log(p).
 
     Returns
     -------
     array
         Quantile values.
     """
-    return stats.gamma.ppf(p, a=shape, scale=scale)
+    p = np.exp(p) if log_p else p
+    method = stats.gamma.ppf if lower_tail else stats.gamma.isf
+    return method(p, a=shape, scale=scale)
 
 
 def rgamma(n, shape=1, scale=1):

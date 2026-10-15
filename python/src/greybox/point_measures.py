@@ -47,6 +47,7 @@ References
   and estimation. Journal of the American Statistical Association, 102(477), 359-378.
 """
 
+import warnings
 from typing import Any, Literal
 
 import numpy as np
@@ -55,24 +56,30 @@ from .hm import asymmetry
 
 
 def _validate_inputs(
-    actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True
+    holdout: np.ndarray | None, forecast: np.ndarray | None, na_rm: bool = True
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Validate and clean actual and forecast inputs."""
-    actual = np.asarray(actual, dtype=float)
+    """Validate and clean holdout and forecast inputs."""
+    holdout = np.asarray(holdout, dtype=float)
     forecast = np.asarray(forecast, dtype=float)
 
-    if len(actual) != len(forecast):
-        raise ValueError("Lengths of actual and forecast must match")
+    if len(holdout) != len(forecast):
+        raise ValueError("Lengths of holdout and forecast must match")
 
     if na_rm:
-        mask = ~(np.isnan(actual) | np.isnan(forecast))
-        actual = actual[mask]
+        mask = ~(np.isnan(holdout) | np.isnan(forecast))
+        holdout = holdout[mask]
         forecast = forecast[mask]
 
-    return actual, forecast
+    return holdout, forecast
 
 
-def me(actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True) -> float:
+def me(
+    holdout: np.ndarray | None = None,
+    forecast: np.ndarray | None = None,
+    na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
+) -> float:
     """Mean Error (ME).
 
     The ME measures the average bias in forecasts. A positive value indicates
@@ -80,16 +87,18 @@ def me(actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True) -> float:
     value indicates forecasts are on average too low (under-forecasting).
 
     Formula:
-        ME = mean(actual - forecast)
+        ME = mean(holdout - forecast)
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
     na_rm : bool, default=True
         Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -98,20 +107,34 @@ def me(actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True) -> float:
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5])
+    >>> holdout = np.array([1, 2, 3, 4, 5])
     >>> forecast = np.array([1.1, 2.0, 3.2, 3.9, 5.1])
-    >>> round(float(me(actual, forecast)), 2)
+    >>> round(float(me(holdout, forecast)), 2)
     -0.06
 
     References
     ----------
     Basic measure, see e.g. Hyndman & Koehler (2006).
     """
-    actual, forecast = _validate_inputs(actual, forecast, na_rm)
-    return np.mean(actual - forecast)
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
+
+    holdout, forecast = _validate_inputs(holdout, forecast, na_rm)
+    return np.mean(holdout - forecast)
 
 
-def mae(actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True) -> float:
+def mae(
+    holdout: np.ndarray | None = None,
+    forecast: np.ndarray | None = None,
+    na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
+) -> float:
     """Mean Absolute Error (MAE).
 
     The MAE measures the average magnitude of errors without considering
@@ -119,16 +142,18 @@ def mae(actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True) -> float:
     in the same units as the data.
 
     Formula:
-        ``MAE = mean(|actual - forecast|)``
+        ``MAE = mean(|holdout - forecast|)``
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
     na_rm : bool, default=True
         Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -137,36 +162,52 @@ def mae(actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True) -> float:
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5])
+    >>> holdout = np.array([1, 2, 3, 4, 5])
     >>> forecast = np.array([1.1, 2.0, 3.2, 3.9, 5.1])
-    >>> round(float(mae(actual, forecast)), 2)
+    >>> round(float(mae(holdout, forecast)), 2)
     0.1
 
     References
     ----------
     See e.g. Hyndman & Koehler (2006).
     """
-    actual, forecast = _validate_inputs(actual, forecast, na_rm)
-    return np.mean(np.abs(actual - forecast))
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
+
+    holdout, forecast = _validate_inputs(holdout, forecast, na_rm)
+    return np.mean(np.abs(holdout - forecast))
 
 
-def mse(actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True) -> float:
+def mse(
+    holdout: np.ndarray | None = None,
+    forecast: np.ndarray | None = None,
+    na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
+) -> float:
     """Mean Squared Error (MSE).
 
-    The MSE measures the average squared difference between actual and forecast.
+    The MSE measures the average squared difference between holdout and forecast.
     It penalizes larger errors more heavily than MAE.
 
     Formula:
-        MSE = mean((actual - forecast)^2)
+        MSE = mean((holdout - forecast)^2)
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
     na_rm : bool, default=True
         Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -175,36 +216,52 @@ def mse(actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True) -> float:
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5])
+    >>> holdout = np.array([1, 2, 3, 4, 5])
     >>> forecast = np.array([1.1, 2.0, 3.2, 3.9, 5.1])
-    >>> round(float(mse(actual, forecast)), 3)
+    >>> round(float(mse(holdout, forecast)), 3)
     0.014
 
     References
     ----------
     See e.g. Hyndman & Koehler (2006).
     """
-    actual, forecast = _validate_inputs(actual, forecast, na_rm)
-    return np.mean((actual - forecast) ** 2)
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
+
+    holdout, forecast = _validate_inputs(holdout, forecast, na_rm)
+    return np.mean((holdout - forecast) ** 2)
 
 
-def rmse(actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True) -> float:
+def rmse(
+    holdout: np.ndarray | None = None,
+    forecast: np.ndarray | None = None,
+    na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
+) -> float:
     """Root Mean Squared Error (RMSE).
 
     The RMSE is the square root of MSE. It is in the same units as the data,
     making it more interpretable than MSE while still penalizing larger errors.
 
     Formula:
-        RMSE = sqrt(MSE) = sqrt(mean((actual - forecast)^2))
+        RMSE = sqrt(MSE) = sqrt(mean((holdout - forecast)^2))
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
     na_rm : bool, default=True
         Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -213,36 +270,52 @@ def rmse(actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True) -> float:
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5])
+    >>> holdout = np.array([1, 2, 3, 4, 5])
     >>> forecast = np.array([1.1, 2.0, 3.2, 3.9, 5.1])
-    >>> round(float(rmse(actual, forecast)), 4)
+    >>> round(float(rmse(holdout, forecast)), 4)
     0.1183
 
     References
     ----------
     See e.g. Hyndman & Koehler (2006).
     """
-    return np.sqrt(mse(actual, forecast, na_rm))
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
+
+    return np.sqrt(mse(holdout, forecast, na_rm))
 
 
-def mpe(actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True) -> float:
+def mpe(
+    holdout: np.ndarray | None = None,
+    forecast: np.ndarray | None = None,
+    na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
+) -> float:
     """Mean Percentage Error (MPE).
 
     The MPE measures the average percentage error. Like ME, it can detect
     bias but expresses it as a fraction. However, it is undefined when
-    actual values are zero.
+    holdout values are zero.
 
     Formula:
-        MPE = mean((actual - forecast) / actual)
+        MPE = mean((holdout - forecast) / holdout)
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
     na_rm : bool, default=True
-        Remove NA values and zero actuals.
+        Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -251,48 +324,59 @@ def mpe(actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True) -> float:
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5])
+    >>> holdout = np.array([1, 2, 3, 4, 5])
     >>> forecast = np.array([1.1, 2.0, 3.2, 3.9, 5.1])
-    >>> round(float(mpe(actual, forecast)), 4)
+    >>> round(float(mpe(holdout, forecast)), 4)
     -0.0323
 
     References
     ----------
     See e.g. Hyndman & Koehler (2006).
     """
-    actual = np.asarray(actual, dtype=float)
-    forecast = np.asarray(forecast, dtype=float)
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
 
-    if len(actual) != len(forecast):
-        raise ValueError("Lengths of actual and forecast must match")
-
+    holdout, forecast = _validate_inputs(holdout, forecast, na_rm=False)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratios = (holdout - forecast) / holdout
     if na_rm:
-        mask = ~(np.isnan(actual) | np.isnan(forecast) | (actual == 0))
-        actual = actual[mask]
-        forecast = forecast[mask]
+        ratios = ratios[~np.isnan(ratios)]
 
-    return np.mean((actual - forecast) / actual)
+    return np.mean(ratios)
 
 
-def mape(actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True) -> float:
+def mape(
+    holdout: np.ndarray | None = None,
+    forecast: np.ndarray | None = None,
+    na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
+) -> float:
     """Mean Absolute Percentage Error (MAPE).
 
     The MAPE measures the average absolute percentage error. It is scale-independent
     and expressed as a fraction, making it easy to interpret across different
-    contexts. However, it is undefined when actual values are zero and can be
-    heavily influenced by small actual values.
+    contexts. However, it is undefined when holdout values are zero and can be
+    heavily influenced by small holdout values.
 
     Formula:
-        ``MAPE = mean(|actual - forecast| / actual)``
+        ``MAPE = mean(|holdout - forecast| / holdout)``
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
     na_rm : bool, default=True
-        Remove NA values and zero actuals.
+        Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -301,9 +385,9 @@ def mape(actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True) -> float:
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5])
+    >>> holdout = np.array([1, 2, 3, 4, 5])
     >>> forecast = np.array([1.1, 2.0, 3.2, 3.9, 5.1])
-    >>> round(float(mape(actual, forecast)), 4)
+    >>> round(float(mape(holdout, forecast)), 4)
     0.0423
 
     References
@@ -311,25 +395,30 @@ def mape(actual: np.ndarray, forecast: np.ndarray, na_rm: bool = True) -> float:
     See Svetunkov, I. (2017) for a critique of MAPE:
     https://openforecast.org/2017/07/29/naughty-apes-and-the-quest-for-the-holy-grail/
     """
-    actual = np.asarray(actual, dtype=float)
-    forecast = np.asarray(forecast, dtype=float)
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
 
-    if len(actual) != len(forecast):
-        raise ValueError("Lengths of actual and forecast must match")
-
+    holdout, forecast = _validate_inputs(holdout, forecast, na_rm=False)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratios = np.abs((holdout - forecast) / holdout)
     if na_rm:
-        mask = ~(np.isnan(actual) | np.isnan(forecast) | (actual == 0))
-        actual = actual[mask]
-        forecast = forecast[mask]
+        ratios = ratios[~np.isnan(ratios)]
 
-    return np.mean(np.abs((actual - forecast) / actual))
+    return np.mean(ratios)
 
 
 def mase(
-    actual: np.ndarray,
-    forecast: np.ndarray,
+    holdout: np.ndarray | None = None,
+    forecast: np.ndarray | None = None,
     scale: float | np.floating[Any] | None = None,
     na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
 ) -> float:
     """Mean Absolute Scaled Error (MASE).
 
@@ -340,21 +429,23 @@ def mase(
 
     Formula:
         MASE = MAE / scale
-        where ``scale = mean(|actual[t] - actual[t-1]|)`` by default
+        where ``scale = mean(|holdout[t] - holdout[t-1]|)`` by default
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
     scale : float, optional
         Scale parameter. If None, uses mean absolute difference of consecutive
-        actual values (naive forecast error). Typical values include:
+        holdout values (naive forecast error). Typical values include:
         - mean absolute deviation of in-sample one step ahead naive error
         - mean absolute value of the in-sample actuals
     na_rm : bool, default=True
         Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -363,13 +454,13 @@ def mase(
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    >>> holdout = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     >>> forecast = np.array([1.1, 2.2, 3.2, 3.9, 5.1,
     ...                      6.2, 7.1, 8.2, 9.2, 10.1])
-    >>> round(float(mase(actual, forecast)), 2)
+    >>> round(float(mase(holdout, forecast)), 2)
     0.15
     >>> # With custom scale
-    >>> round(float(mase(actual, forecast, scale=1.0)), 2)
+    >>> round(float(mase(holdout, forecast, scale=1.0)), 2)
     0.15
 
     References
@@ -377,22 +468,29 @@ def mase(
     Hyndman R.J., Koehler A.B. (2006). Another look at measures of forecast accuracy.
     International Journal of Forecasting, 22, pp.679-688.
     """
-    actual, forecast = _validate_inputs(actual, forecast, na_rm)
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
+
+    holdout, forecast = _validate_inputs(holdout, forecast, na_rm)
 
     if scale is None:
-        scale = np.mean(np.abs(np.diff(actual)))
+        scale = np.mean(np.abs(np.diff(holdout)))
 
-    if scale == 0:
-        return np.nan
-
-    return np.mean(np.abs(actual - forecast)) / scale
+    return np.mean(np.abs(holdout - forecast)) / scale
 
 
 def rmsse(
-    actual: np.ndarray,
-    forecast: np.ndarray,
+    holdout: np.ndarray | None = None,
+    forecast: np.ndarray | None = None,
     scale: float | np.floating[Any] | None = None,
     na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
 ) -> float:
     """Root Mean Squared Scaled Error (RMSSE).
 
@@ -404,15 +502,17 @@ def rmsse(
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
     scale : float, optional
         Scale parameter. If None, uses mean squared difference of consecutive
-        actual values. Typical value: mean(diff(actual)^2).
+        holdout values. Typical value: mean(diff(holdout)^2).
     na_rm : bool, default=True
         Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -421,32 +521,39 @@ def rmsse(
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    >>> holdout = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     >>> forecast = np.array([1.1, 2.2, 3.2, 3.9, 5.1,
     ...                      6.2, 7.1, 8.2, 9.2, 10.1])
-    >>> round(float(rmsse(actual, forecast)), 4)
+    >>> round(float(rmsse(holdout, forecast)), 4)
     0.1581
 
     References
     ----------
     Used in M5 Competition.
     """
-    actual, forecast = _validate_inputs(actual, forecast, na_rm)
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
+
+    holdout, forecast = _validate_inputs(holdout, forecast, na_rm)
 
     if scale is None:
-        scale = np.mean(np.diff(actual) ** 2)
+        scale = np.mean(np.diff(holdout) ** 2)
 
-    if scale == 0:
-        return np.nan
-
-    return np.sqrt(np.mean((actual - forecast) ** 2) / scale)
+    return np.sqrt(np.mean((holdout - forecast) ** 2) / scale)
 
 
 def same(
-    actual: np.ndarray,
-    forecast: np.ndarray,
+    holdout: np.ndarray | None = None,
+    forecast: np.ndarray | None = None,
     scale: float | np.floating[Any] | None = None,
     na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
 ) -> float:
     """Scaled Absolute Mean Error (SAME).
 
@@ -458,15 +565,17 @@ def same(
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
     scale : float, optional
         Scale parameter. If None, uses mean absolute difference of consecutive
-        actual values.
+        holdout values.
     na_rm : bool, default=True
         Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -475,32 +584,39 @@ def same(
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    >>> holdout = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     >>> forecast = np.array([1.1, 2.2, 3.2, 3.9, 5.1,
     ...                      6.2, 7.1, 8.2, 9.2, 10.1])
-    >>> round(float(same(actual, forecast)), 2)
+    >>> round(float(same(holdout, forecast)), 2)
     0.13
 
     References
     ----------
     See Petropoulos & Kourentzes (2015).
     """
-    actual, forecast = _validate_inputs(actual, forecast, na_rm)
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
+
+    holdout, forecast = _validate_inputs(holdout, forecast, na_rm)
 
     if scale is None:
-        scale = np.mean(np.abs(np.diff(actual)))
+        scale = np.mean(np.abs(np.diff(holdout)))
 
-    if scale == 0:
-        return np.nan
-
-    return np.abs(np.mean(actual - forecast)) / scale
+    return np.abs(np.mean(holdout - forecast)) / scale
 
 
 def rmae(
-    actual: np.ndarray,
-    forecast: np.ndarray,
-    benchmark: np.ndarray,
+    holdout: np.ndarray | None = None,
+    forecast: np.ndarray | None = None,
+    benchmark: np.ndarray | None = None,
     na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
 ) -> float:
     """Relative Mean Absolute Error (rMAE).
 
@@ -513,14 +629,16 @@ def rmae(
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
     benchmark : np.ndarray
         Benchmark forecast values (e.g., naive or mean forecast).
     na_rm : bool, default=True
         Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -529,12 +647,12 @@ def rmae(
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    >>> holdout = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     >>> forecast = np.array([1.1, 2.2, 3.2, 3.9, 5.1,
     ...                      6.2, 7.1, 8.2, 9.2, 10.1])
     >>> benchmark = np.array([0.5, 1.5, 2.5, 3.5, 4.5,
     ...                      5.5, 6.5, 7.5, 8.5, 9.5])
-    >>> round(float(rmae(actual, forecast, benchmark)), 2)
+    >>> round(float(rmae(holdout, forecast, benchmark)), 2)
     0.3
 
     References
@@ -543,31 +661,41 @@ def rmae(
     The Case Of Judgmental Adjustments To Sku-Level Demand Forecasts.
     International Journal of Forecasting, 29(3), 510-522.
     """
-    actual = np.asarray(actual, dtype=float)
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
+
+    holdout = np.asarray(holdout, dtype=float)
     forecast = np.asarray(forecast, dtype=float)
     benchmark = np.asarray(benchmark, dtype=float)
 
-    lengths = [len(actual), len(forecast), len(benchmark)]
+    lengths = [len(holdout), len(forecast), len(benchmark)]
     if len(set(lengths)) > 1:
-        raise ValueError("Lengths of actual, forecast, and benchmark must match")
+        raise ValueError("Lengths of holdout, forecast, and benchmark must match")
 
     if na_rm:
-        mask = ~(np.isnan(actual) | np.isnan(forecast) | np.isnan(benchmark))
-        actual = actual[mask]
+        mask = ~(np.isnan(holdout) | np.isnan(forecast) | np.isnan(benchmark))
+        holdout = holdout[mask]
         forecast = forecast[mask]
         benchmark = benchmark[mask]
 
     if np.all(forecast == benchmark):
         return 1.0
 
-    return mae(actual, forecast, na_rm=False) / mae(actual, benchmark, na_rm=False)
+    return mae(holdout, forecast, na_rm=False) / mae(holdout, benchmark, na_rm=False)
 
 
 def rrmse(
-    actual: np.ndarray,
-    forecast: np.ndarray,
-    benchmark: np.ndarray,
+    holdout: np.ndarray | None = None,
+    forecast: np.ndarray | None = None,
+    benchmark: np.ndarray | None = None,
     na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
 ) -> float:
     """Relative Root Mean Squared Error (rRMSE).
 
@@ -578,14 +706,16 @@ def rrmse(
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
     benchmark : np.ndarray
         Benchmark forecast values.
     na_rm : bool, default=True
         Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -594,43 +724,53 @@ def rrmse(
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    >>> holdout = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     >>> forecast = np.array([1.1, 2.2, 3.2, 3.9, 5.1,
     ...                      6.2, 7.1, 8.2, 9.2, 10.1])
     >>> benchmark = np.array([0.5, 1.5, 2.5, 3.5, 4.5,
     ...                      5.5, 6.5, 7.5, 8.5, 9.5])
-    >>> round(float(rrmse(actual, forecast, benchmark)), 4)
+    >>> round(float(rrmse(holdout, forecast, benchmark)), 4)
     0.3162
 
     References
     ----------
     Davydenko, A., Fildes, R. (2013). Measuring Forecasting Accuracy.
     """
-    actual = np.asarray(actual, dtype=float)
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
+
+    holdout = np.asarray(holdout, dtype=float)
     forecast = np.asarray(forecast, dtype=float)
     benchmark = np.asarray(benchmark, dtype=float)
 
-    lengths = [len(actual), len(forecast), len(benchmark)]
+    lengths = [len(holdout), len(forecast), len(benchmark)]
     if len(set(lengths)) > 1:
-        raise ValueError("Lengths of actual, forecast, and benchmark must match")
+        raise ValueError("Lengths of holdout, forecast, and benchmark must match")
 
     if na_rm:
-        mask = ~(np.isnan(actual) | np.isnan(forecast) | np.isnan(benchmark))
-        actual = actual[mask]
+        mask = ~(np.isnan(holdout) | np.isnan(forecast) | np.isnan(benchmark))
+        holdout = holdout[mask]
         forecast = forecast[mask]
         benchmark = benchmark[mask]
 
     if np.all(forecast == benchmark):
         return 1.0
 
-    return rmse(actual, forecast, na_rm=False) / rmse(actual, benchmark, na_rm=False)
+    return rmse(holdout, forecast, na_rm=False) / rmse(holdout, benchmark, na_rm=False)
 
 
 def rame(
-    actual: np.ndarray,
-    forecast: np.ndarray,
-    benchmark: np.ndarray,
+    holdout: np.ndarray | None = None,
+    forecast: np.ndarray | None = None,
+    benchmark: np.ndarray | None = None,
     na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
 ) -> float:
     """Relative Absolute Mean Error (rAME).
 
@@ -642,14 +782,16 @@ def rame(
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
     benchmark : np.ndarray
         Benchmark forecast values.
     na_rm : bool, default=True
         Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -658,47 +800,55 @@ def rame(
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    >>> holdout = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     >>> forecast = np.array([1.1, 2.2, 3.2, 3.9, 5.1,
     ...                      6.2, 7.1, 8.2, 9.2, 10.1])
     >>> benchmark = np.array([0.5, 1.5, 2.5, 3.5, 4.5,
     ...                      5.5, 6.5, 7.5, 8.5, 9.5])
-    >>> round(float(rame(actual, forecast, benchmark)), 2)
+    >>> round(float(rame(holdout, forecast, benchmark)), 2)
     0.26
 
     References
     ----------
     Davydenko, A., Fildes, R. (2013). Measuring Forecasting Accuracy.
     """
-    actual = np.asarray(actual, dtype=float)
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
+
+    holdout = np.asarray(holdout, dtype=float)
     forecast = np.asarray(forecast, dtype=float)
     benchmark = np.asarray(benchmark, dtype=float)
 
-    lengths = [len(actual), len(forecast), len(benchmark)]
+    lengths = [len(holdout), len(forecast), len(benchmark)]
     if len(set(lengths)) > 1:
-        raise ValueError("Lengths of actual, forecast, and benchmark must match")
+        raise ValueError("Lengths of holdout, forecast, and benchmark must match")
 
     if na_rm:
-        mask = ~(np.isnan(actual) | np.isnan(forecast) | np.isnan(benchmark))
-        actual = actual[mask]
+        mask = ~(np.isnan(holdout) | np.isnan(forecast) | np.isnan(benchmark))
+        holdout = holdout[mask]
         forecast = forecast[mask]
         benchmark = benchmark[mask]
 
     if np.all(forecast == benchmark):
         return 1.0
 
-    me_benchmark = me(actual, benchmark, na_rm=False)
-    if me_benchmark == 0:
-        return np.inf
-
-    return np.abs(me(actual, forecast, na_rm=False)) / np.abs(me_benchmark)
+    return np.abs(me(holdout, forecast, na_rm=False)) / np.abs(
+        me(holdout, benchmark, na_rm=False)
+    )
 
 
 def smse(
-    actual: np.ndarray,
-    forecast: np.ndarray,
-    scale: float | np.floating[Any],
+    holdout: np.ndarray | None = None,
+    forecast: np.ndarray | None = None,
+    scale: float | np.floating[Any] | None = None,
     na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
 ) -> float:
     """Scaled Mean Squared Error (sMSE).
 
@@ -710,15 +860,17 @@ def smse(
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
     scale : float
         Scale parameter. Should typically be a squared value
-        (e.g., mean(actual)^2 or mean(abs(actual[actual!=0]))^2).
+        (e.g., the squared mean absolute value of the in-sample actuals).
     na_rm : bool, default=True
         Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -727,11 +879,11 @@ def smse(
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    >>> holdout = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     >>> forecast = np.array([1.1, 2.2, 3.2, 3.9, 5.1,
     ...                      6.2, 7.1, 8.2, 9.2, 10.1])
-    >>> scale = np.mean(np.abs(actual)) ** 2
-    >>> round(float(smse(actual, forecast, scale)), 5)
+    >>> scale = np.mean(np.abs(holdout)) ** 2
+    >>> round(float(smse(holdout, forecast, scale)), 5)
     0.00083
 
     References
@@ -739,19 +891,26 @@ def smse(
     Petropoulos F., Kourentzes N. (2015). Forecast combinations for intermittent demand.
     Journal of the Operational Research Society, 66, pp.914-924.
     """
-    actual, forecast = _validate_inputs(actual, forecast, na_rm)
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
 
-    if scale == 0:
-        return np.nan
+    holdout, forecast = _validate_inputs(holdout, forecast, na_rm)
 
-    return np.mean((actual - forecast) ** 2) / scale
+    return np.mean((holdout - forecast) ** 2) / scale
 
 
 def spis(
-    actual: np.ndarray,
-    forecast: np.ndarray,
-    scale: float | np.floating[Any],
+    holdout: np.ndarray | None = None,
+    forecast: np.ndarray | None = None,
+    scale: float | np.floating[Any] | None = None,
     na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
 ) -> float:
     """Scaled Periods-In-Stock (sPIS).
 
@@ -759,18 +918,20 @@ def spis(
     It is useful for intermittent demand forecasting.
 
     Formula:
-        sPIS = sum(cumsum(forecast - actual)) / scale
+        sPIS = sum(cumsum(forecast - holdout)) / scale
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
     scale : float
         Scale parameter (typically mean of non-zero actuals).
     na_rm : bool, default=True
         Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -779,11 +940,11 @@ def spis(
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    >>> holdout = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     >>> forecast = np.array([1.1, 2.2, 3.2, 3.9, 5.1,
     ...                      6.2, 7.1, 8.2, 9.2, 10.1])
-    >>> scale = np.mean(np.abs(actual[actual != 0]))
-    >>> round(float(spis(actual, forecast, scale)), 4)
+    >>> scale = np.mean(np.abs(holdout[holdout != 0]))
+    >>> round(float(spis(holdout, forecast, scale)), 4)
     1.2364
 
     References
@@ -792,20 +953,28 @@ def spis(
     and techniques for intermittent demand. International Journal of Production
     Economics, 128, pp.625-636.
     """
-    actual, forecast = _validate_inputs(actual, forecast, na_rm)
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
 
-    if scale == 0:
-        return np.nan
+    holdout, forecast = _validate_inputs(holdout, forecast, na_rm=False)
+    cumsum_errors = np.cumsum(forecast - holdout)
+    total = np.nansum(cumsum_errors) if na_rm else np.sum(cumsum_errors)
 
-    cumsum_errors = np.cumsum(forecast - actual)
-    return float(np.sum(cumsum_errors, axis=0) / scale)
+    return float(total / scale)
 
 
 def sce(
-    actual: np.ndarray,
-    forecast: np.ndarray,
-    scale: float | np.floating[Any],
+    holdout: np.ndarray | None = None,
+    forecast: np.ndarray | None = None,
+    scale: float | np.floating[Any] | None = None,
     na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
 ) -> float:
     """Scaled Cumulative Error (sCE).
 
@@ -813,18 +982,20 @@ def sce(
     It can detect systematic bias over time.
 
     Formula:
-        sCE = sum(actual - forecast) / scale
+        sCE = sum(holdout - forecast) / scale
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
     scale : float
         Scale parameter.
     na_rm : bool, default=True
         Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -833,30 +1004,37 @@ def sce(
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    >>> holdout = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     >>> forecast = np.array([1.1, 2.2, 3.2, 3.9, 5.1,
     ...                      6.2, 7.1, 8.2, 9.2, 10.1])
-    >>> scale = np.mean(np.abs(actual[actual != 0]))
-    >>> round(float(sce(actual, forecast, scale)), 4)
+    >>> scale = np.mean(np.abs(holdout[holdout != 0]))
+    >>> round(float(sce(holdout, forecast, scale)), 4)
     -0.2364
 
     References
     ----------
     Petropoulos F., Kourentzes N. (2015). Forecast combinations for intermittent demand.
     """
-    actual, forecast = _validate_inputs(actual, forecast, na_rm)
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
 
-    if scale == 0:
-        return np.nan
+    holdout, forecast = _validate_inputs(holdout, forecast, na_rm)
 
-    return float(np.sum(actual - forecast, axis=0) / scale)
+    return float(np.sum(holdout - forecast, axis=0) / scale)
 
 
 def gmrae(
-    actual: np.ndarray,
-    forecast: np.ndarray,
-    benchmark: np.ndarray,
+    holdout: np.ndarray | None = None,
+    forecast: np.ndarray | None = None,
+    benchmark: np.ndarray | None = None,
     na_rm: bool = True,
+    *,
+    actual: np.ndarray | None = None,
 ) -> float:
     """Geometric Mean Relative Absolute Error (GMRAE).
 
@@ -868,14 +1046,16 @@ def gmrae(
 
     Parameters
     ----------
-    actual : np.ndarray
-        Actual (observed) values.
+    holdout : np.ndarray
+        Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
     benchmark : np.ndarray
         Benchmark forecast values.
     na_rm : bool, default=True
         Remove NA values.
+    actual : np.ndarray, optional
+        Deprecated alias of ``holdout``, kept for one release.
 
     Returns
     -------
@@ -884,43 +1064,40 @@ def gmrae(
 
     Examples
     --------
-    >>> actual = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    >>> holdout = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     >>> forecast = np.array([1.1, 2.2, 3.2, 3.9, 5.1,
     ...                      6.2, 7.1, 8.2, 9.2, 10.1])
     >>> benchmark = np.array([0.5, 1.5, 2.5, 3.5, 4.5,
     ...                      5.5, 6.5, 7.5, 8.5, 9.5])
-    >>> round(float(gmrae(actual, forecast, benchmark)), 4)
+    >>> round(float(gmrae(holdout, forecast, benchmark)), 4)
     0.2828
 
     References
     ----------
     See Davydenko & Fildes (2013).
     """
-    actual = np.asarray(actual, dtype=float)
+    if actual is not None:
+        warnings.warn(
+            "'actual' is deprecated, use 'holdout' instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        holdout = actual
+
+    holdout = np.asarray(holdout, dtype=float)
     forecast = np.asarray(forecast, dtype=float)
     benchmark = np.asarray(benchmark, dtype=float)
 
-    lengths = [len(actual), len(forecast), len(benchmark)]
+    lengths = [len(holdout), len(forecast), len(benchmark)]
     if len(set(lengths)) > 1:
-        raise ValueError("Lengths of actual, forecast, and benchmark must match")
+        raise ValueError("Lengths of holdout, forecast, and benchmark must match")
 
-    if na_rm:
-        mask = ~(np.isnan(actual) | np.isnan(forecast) | np.isnan(benchmark))
-        actual = actual[mask]
-        forecast = forecast[mask]
-        benchmark = benchmark[mask]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        log_ratios = np.log(np.abs((holdout - forecast) / (holdout - benchmark)))
+        if na_rm:
+            log_ratios = log_ratios[~np.isnan(log_ratios)]
 
-    errors = actual - forecast
-    benchmark_errors = actual - benchmark
-
-    ratios = np.abs(errors) / np.abs(benchmark_errors)
-    valid_mask = ~np.isnan(ratios) & (np.abs(benchmark_errors) > 0)
-    ratios = ratios[valid_mask]
-
-    if len(ratios) == 0:
-        return np.nan
-
-    return np.exp(np.mean(np.log(ratios)))
+        return np.exp(np.mean(log_ratios))
 
 
 def measures(
@@ -980,6 +1157,8 @@ def measures(
 
     h = len(holdout)
 
+    if benchmark not in ("naive", "mean"):
+        raise ValueError("benchmark must be 'naive' or 'mean'")
     if benchmark == "naive":
         benchmark_forecast = np.full(h, actual[-1])
     else:

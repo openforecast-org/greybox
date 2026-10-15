@@ -65,9 +65,13 @@ drectnorm <- function(q, mu=0, sigma=1, log=FALSE){
     rectnormReturn <- (q>0) * dnorm(q, mu, sigma) +
         (q<=0)*pnorm(0, mu, sigma);
 
-    # Return logs if needed
+    # Return logs if needed. They are taken analytically: the log of the density
+    # underflows in the tails
     if(log){
-        rectnormReturn[] <- log(rectnormReturn);
+        qPositive <- rep_len(q>0, length(rectnormReturn));
+        rectnormReturn[] <- ifelse(qPositive,
+                                   rep_len(dnorm(q, mu, sigma, log=TRUE), length(qPositive)),
+                                   rep_len(pnorm(0, mu, sigma, log.p=TRUE), length(qPositive)));
     }
 
     return(rectnormReturn);

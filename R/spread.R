@@ -125,13 +125,11 @@ spread <- function(data, histograms=FALSE, log=FALSE, lowess=FALSE, ...){
                         if(numericData[i]){
                             histPlotted <- hist(data[[i]], main="", axes=FALSE, col=paletteBasic[4]);
                             histPlottedX <- histPlotted$breaks;
-                            histPlottedYRange <- range(histPlotted$counts, na.rm=TRUE);
                         }
                         else{
                             dataTable <- table(data[[i]]);
                             histPlottedX <- barplot(dataTable, main="", axes=FALSE,
                                                     axisnames=FALSE, col=paletteBasic[4]);
-                            histPlottedYRange <- range(dataTable, na.rm=TRUE);
                         }
                     }
                     else{
@@ -216,22 +214,15 @@ spread <- function(data, histograms=FALSE, log=FALSE, lowess=FALSE, ...){
                 #                 }
 
                 # Add axis, if this is the last element in the matrix
+                # The last diagonal element is a histogram / barplot, its axis has frequencies
                 if(i==nVariables && histograms){
-                    if(numericData[j]){
+                    if(numericData[j] || j==nVariables){
                         axis(4);
                     }
                     else{
                         uniqueValues <- levels(data[[j]]);
-                        # The last element in the matrix is special in case of histogram
-                        if(j==nVariables){
-                            axis(4, at=seq(histPlottedYRange[1],histPlottedYRange[2]-0.5,
-                                           length.out=length(uniqueValues)),
-                                 labels=uniqueValues);
-                        }
-                        else{
-                            axis(4, at=seq(1,length(uniqueValues), length.out=length(uniqueValues)),
-                                 labels=uniqueValues);
-                        }
+                        axis(4, at=seq(1,length(uniqueValues), length.out=length(uniqueValues)),
+                             labels=uniqueValues);
                     }
                 }
 

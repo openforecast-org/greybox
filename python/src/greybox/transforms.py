@@ -43,4 +43,6 @@ def mean_fast(
             n_kept = int(np.floor(len(x) * (1 - trim)))
             return np.mean(x_sorted[:n_kept])
     else:
-        return np.sum(x) / df
+        # R's sum(): sequential, in a long double accumulator
+        x = np.ravel(x)
+        return float(np.cumsum(x, dtype=np.longdouble)[-1]) / df if x.size else 0.0

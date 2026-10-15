@@ -6,16 +6,18 @@ variables for use in regression models.
 
 import importlib
 import re
+import warnings
 from typing import Any, Literal
 
 import numpy as np
+import pandas as pd
 
 
 def xreg_transformer(
-    xreg: np.ndarray,
+    xreg: np.ndarray | pd.DataFrame | pd.Series,
     functions: list[str] | None = None,
     silent: bool = True,
-) -> np.ndarray:
+) -> np.ndarray | pd.DataFrame:
     """Transform exogenous variables.
 
     Function transforms each variable in the provided matrix or vector,
@@ -23,7 +25,7 @@ def xreg_transformer(
 
     Parameters
     ----------
-    xreg : np.ndarray
+    xreg : np.ndarray, pd.DataFrame or pd.Series
         Vector / matrix containing variables that need to be transformed.
     functions : list of str, optional
         Vector of names for functions used. Options: "log", "exp", "inv",
@@ -34,8 +36,10 @@ def xreg_transformer(
 
     Returns
     -------
-    np.ndarray
-        Matrix with the transformed and the original variables.
+    np.ndarray or pd.DataFrame
+        Matrix with the transformed and the original variables: a DataFrame with
+        R's column names (``x``, ``log_x``, ...) and the index of the input, if it
+        is a DataFrame or a Series (named ``x`` if it has no name).
 
     Examples
     --------
@@ -51,7 +55,12 @@ def xreg_transformer(
         functions = ["log", "exp", "inv", "sqrt", "square"]
 
     valid_funcs = ["log", "exp", "inv", "sqrt", "square"]
-    functions = [f for f in functions if f in valid_funcs]
+    if any(f not in valid_funcs for f in functions):
+        warnings.warn(
+            "An unknown function type specified. We will drop it from the list",
+            stacklevel=2,
+        )
+        functions = [f for f in functions if f in valid_funcs]
 
     if len(functions) == 0:
         raise ValueError(
@@ -66,6 +75,10 @@ def xreg_transformer(
     if not silent:
         print("Preparing matrices...    ")
 
+    if isinstance(xreg, pd.Series):
+        xreg = xreg.to_frame("x" if xreg.name is None else xreg.name)
+    index = xreg.index if isinstance(xreg, pd.DataFrame) else None
+    names = [str(name) for name in getattr(xreg, "columns", [])]
     xreg = np.asarray(xreg, dtype=float)
 
     if xreg.ndim == 1:
@@ -76,29 +89,36 @@ def xreg_transformer(
 
     xreg_new = np.zeros((obs, (n_functions + 1) * n_vars))
 
-    for j in range(n_vars):
-        xreg_new[:, j] = xreg[:, j]
-        col_start = n_vars + j * n_functions
+    # Each variable followed by its transformations, as R; -Inf, Inf and NaN as R,
+    # which warns only on the NaNs
+    with np.errstate(divide="ignore", over="ignore"):
+        for j in range(n_vars):
+            col_start = j * (n_functions + 1)
+            xreg_new[:, col_start] = xreg[:, j]
 
-        for func in functions:
-            func_idx = functions.index(func)
-            target_col = col_start + func_idx
+            for func_idx, func in enumerate(functions):
+                target_col = col_start + func_idx + 1
 
-            if func == "log":
-                xreg_new[:, target_col] = np.log(np.maximum(xreg[:, j], 1e-10))
-            elif func == "exp":
-                xreg_new[:, target_col] = np.exp(np.minimum(xreg[:, j], 700))
-            elif func == "inv":
-                xreg_new[:, target_col] = 1.0 / (xreg[:, j] + 1e-10)
-            elif func == "sqrt":
-                xreg_new[:, target_col] = np.sqrt(np.maximum(xreg[:, j], 0))
-            elif func == "square":
-                xreg_new[:, target_col] = xreg[:, j] ** 2
+                if func == "log":
+                    xreg_new[:, target_col] = np.log(xreg[:, j])
+                elif func == "exp":
+                    xreg_new[:, target_col] = np.exp(xreg[:, j])
+                elif func == "inv":
+                    xreg_new[:, target_col] = 1.0 / xreg[:, j]
+                elif func == "sqrt":
+                    xreg_new[:, target_col] = np.sqrt(xreg[:, j])
+                elif func == "square":
+                    xreg_new[:, target_col] = xreg[:, j] ** 2
 
-    return xreg_new
+    if index is None:
+        return xreg_new
+    columns = [n for name in names for n in [name] + [f"{f}_{name}" for f in functions]]
+    return pd.DataFrame(xreg_new, index=index, columns=columns)
 
 
-def xreg_multiplier(xreg: np.ndarray, silent: bool = True) -> np.ndarray:
+def xreg_multiplier(
+    xreg: np.ndarray | pd.DataFrame, silent: bool = True
+) -> np.ndarray | pd.DataFrame:
     """Generate cross-products of exogenous variables.
 
     Function generates the cross-products of the provided exogenous variables.
@@ -107,7 +127,7 @@ def xreg_multiplier(xreg: np.ndarray, silent: bool = True) -> np.ndarray:
 
     Parameters
     ----------
-    xreg : np.ndarray
+    xreg : np.ndarray or pd.DataFrame
         Matrix containing variables that need to be expanded. Must have
         at least two columns.
     silent : bool, default=True
@@ -116,8 +136,10 @@ def xreg_multiplier(xreg: np.ndarray, silent: bool = True) -> np.ndarray:
 
     Returns
     -------
-    np.ndarray
-        Matrix with the cross-products and the original variables.
+    np.ndarray or pd.DataFrame
+        Matrix with the cross-products and the original variables: a DataFrame
+        with R's column names (``a``, ``b``, ``a_b``, ...) and the index of the
+        input, if it is a DataFrame.
 
     Examples
     --------
@@ -127,6 +149,8 @@ def xreg_multiplier(xreg: np.ndarray, silent: bool = True) -> np.ndarray:
            [ 3.,  4., 12.],
            [ 5.,  6., 30.]])
     """
+    index = xreg.index if isinstance(xreg, pd.DataFrame) else None
+    names = [str(name) for name in getattr(xreg, "columns", [])]
     xreg = np.asarray(xreg, dtype=float)
 
     if xreg.ndim == 1:
@@ -158,15 +182,20 @@ def xreg_multiplier(xreg: np.ndarray, silent: bool = True) -> np.ndarray:
             xreg_new[:, n_vars + k] = xreg[:, i] * xreg[:, j]
             k += 1
 
-    return xreg_new
+    if index is None:
+        return xreg_new
+    columns = names + [
+        f"{names[i]}_{names[j]}" for i in range(n_vars) for j in range(i + 1, n_vars)
+    ]
+    return pd.DataFrame(xreg_new, index=index, columns=columns)
 
 
 def xreg_expander(
-    xreg: np.ndarray,
+    xreg: np.ndarray | pd.DataFrame | pd.Series,
     lags: list[int] | None = None,
     silent: bool = True,
     gaps: Literal["auto", "NAs", "zero", "naive", "extrapolate"] = "auto",
-) -> np.ndarray:
+) -> np.ndarray | pd.DataFrame:
     """Expand exogenous variables with lags and leads.
 
     Function expands the provided matrix or vector of variables, producing
@@ -174,11 +203,12 @@ def xreg_expander(
 
     Parameters
     ----------
-    xreg : np.ndarray
+    xreg : np.ndarray, pd.DataFrame or pd.Series
         Vector / matrix containing variables that need to be expanded.
     lags : list of int, optional
         Vector of lags / leads. Negative values mean lags, positive ones
-        mean leads. If None, uses -1, 0, 1 (seasonal lags if ts object).
+        mean leads. If None, uses -1, 0, 1, R's default for the data without
+        frequency.
     silent : bool, default=True
         If False, then progress is printed. Otherwise the function
         won't print anything.
@@ -194,8 +224,10 @@ def xreg_expander(
 
     Returns
     -------
-    np.ndarray
-        Matrix with the expanded variables.
+    np.ndarray or pd.DataFrame
+        Matrix with the expanded variables: a DataFrame with R's column names
+        (``x``, ``xLag1``, ``xLead1``, ...) and the index of the input, if it is a
+        DataFrame or a Series (named ``x`` if it has no name).
 
     Examples
     --------
@@ -207,20 +239,28 @@ def xreg_expander(
            [4., 3., 5.],
            [5., 4., 5.]])
     """
-    xreg = np.asarray(xreg, dtype=float)
-
-    if xreg.ndim == 1:
-        xreg = xreg.reshape(-1, 1)
-
-    n_obs, n_vars = xreg.shape
-
+    if isinstance(xreg, pd.Series):
+        xreg = xreg.to_frame("x" if xreg.name is None else xreg.name)
     if lags is None:
         lags = [-1, 0, 1]
 
     lags = [lag for lag in lags if lag != 0]
 
     if len(lags) == 0:
-        return xreg
+        warnings.warn("You have not specified any leads or lags.", stacklevel=2)
+        if isinstance(xreg, pd.DataFrame):
+            return xreg
+        xreg = np.asarray(xreg, dtype=float)
+        return xreg.reshape(-1, 1) if xreg.ndim == 1 else xreg
+
+    index = xreg.index if isinstance(xreg, pd.DataFrame) else None
+    names = [str(name) for name in getattr(xreg, "columns", [])]
+    xreg = np.asarray(xreg, dtype=float)
+
+    if xreg.ndim == 1:
+        xreg = xreg.reshape(-1, 1)
+
+    n_obs, n_vars = xreg.shape
 
     # The lags, then the leads, each in the given order, as R
     lags = [v for v in lags if v < 0] + [v for v in lags if v > 0]
@@ -229,7 +269,7 @@ def xreg_expander(
         print("Preparing matrices...    ")
 
     n_lags = len(lags)
-    lag_mat = np.full((n_obs, n_vars * n_lags), np.nan)
+    xreg_new = np.full((n_obs, n_vars * (n_lags + 1)), np.nan)
     max_lag = max([-lag for lag in lags if lag < 0], default=0)
     max_lead = max([lag for lag in lags if lag > 0], default=0)
 
@@ -284,87 +324,247 @@ def xreg_expander(
                 lag_model = model_class(**kwargs).fit(x[::-1])
                 head = np.asarray(lag_model.predict(h=max_lag).mean, dtype=float)[::-1]
         extended = np.concatenate([head, x, tail])
+        # Each variable followed by its lags and leads, as R
+        block = c_idx * (n_lags + 1)
+        xreg_new[:, block] = x
         for lag_idx, lag in enumerate(lags):
-            lag_mat[:, c_idx * n_lags + lag_idx] = extended[
+            xreg_new[:, block + 1 + lag_idx] = extended[
                 max_lag + lag : max_lag + lag + n_obs
             ]
 
-    # Prepend original columns (matches R's xregExpander output layout)
-    return np.hstack([xreg, lag_mat])
+    if index is None:
+        return xreg_new
+    columns = [
+        n
+        for name in names
+        for n in [name]
+        + [f"{name}Lag{-lag}" if lag < 0 else f"{name}Lead{lag}" for lag in lags]
+    ]
+    return pd.DataFrame(xreg_new, index=index, columns=columns)
 
 
 def temporal_dummy(
-    x,
-    freq: int | None = None,
+    x: Any,
+    type: str = "month",
+    of: str = "year",
+    factors: bool = False,
     h: int = 0,
-) -> np.ndarray:
-    """Generate dummy variables for temporal data.
+    freq: int | None = None,
+) -> np.ndarray | pd.DataFrame | pd.Series | pd.Categorical | None:
+    """Generate dummy variables for the provided seasonality type.
 
-    Function generates dummy variables for months, days, hours, etc.
-    based on the provided time index.
+    Function generates the matrix of dummy variables for the months / weeks / days /
+    hours / minutes / seconds of year / month / week / day / hour / minute, as R's
+    ``temporaldummy()``.
+
+    The dates are taken from a ``pd.DatetimeIndex``, a ``pd.Series`` of datetimes,
+    a ``np.datetime64`` array (R's ``Date`` for the units of days and longer,
+    ``POSIXct`` otherwise) or the ``DatetimeIndex`` of a ``pd.Series`` /
+    ``pd.DataFrame`` (R's ``zoo``). Any other input is treated as R's numeric
+    vector: the dummies follow the typical values (e.g. 30 days in a month), from
+    the first one onwards. The weeks are those of ISO 8601, the hours / minutes of
+    year, quarter, month and week count from 1, those of day / hour from 0, as R.
 
     Parameters
     ----------
-    x : array-like
-        Vector of dates or time indices.
-    freq : int, optional
-        Frequency of the data. If not provided, attempts to infer.
+    x : array-like, pd.DatetimeIndex, pd.Series or pd.DataFrame
+        Vector of dates, or the object to take the dates (or the length) from.
+    type : str, default="month"
+        What type of frequency to produce: "month", "quarter", "week", "day",
+        "hour", "halfhour", "minute" or "second".
+    of : str, default="year"
+        The frequency of what is needed: "year", "quarter", "month", "week",
+        "day", "hour" or "minute". E.g. ``type="day"`` and ``of="month"`` give
+        the days of month.
+    factors : bool, default=False
+        If True, return the categorical variable instead of the dummies.
     h : int, default=0
-        Number of future observations to generate dummies for.
+        Number of observations ahead to produce the dummies for as well.
+    freq : int, optional
+        Deprecated: the frequency of the data, mapped onto ``type`` and ``of`` as
+        R's ``temporaldummy()`` of a ts object does (12 months of year, 4
+        quarters of year, 52 weeks of year, 7 days of week, 24 hours of day, 48
+        half-hours of day, 60 minutes of hour). Other values produce the cyclic
+        dummies of that many periods as an np.ndarray.
 
     Returns
     -------
-    np.ndarray
-        Matrix with dummy variables.
+    np.ndarray, pd.DataFrame, pd.Categorical, pd.Series or None
+        The dummies, with the columns of the observed values for the dates and of
+        all the values otherwise: a DataFrame with R's column names (e.g.
+        ``month1ofyear``) and the (extended) index of a pandas input. With
+        ``factors=True``, the categorical variable: a ``pd.Categorical``, or a
+        categorical ``pd.Series`` for a pandas input. None, with a warning, for
+        the hours, minutes and seconds of days, as R's Date.
 
     Examples
     --------
-    >>> import pandas as pd
-    >>> dates = pd.date_range('2020-01-01', periods=12, freq='ME')
-    >>> dummies = temporal_dummy(dates, freq=12)
-    >>> dummies.shape
-    (12, 12)
-    >>> dummies[0]
-    array([1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.])
+    >>> temporal_dummy(np.arange(5), type="quarter")
+    array([[1., 0., 0., 0.],
+           [0., 1., 0., 0.],
+           [0., 0., 1., 0.],
+           [0., 0., 0., 1.],
+           [1., 0., 0., 0.]])
+    >>> dates = pd.date_range("2020-02-27", periods=4, freq="D")
+    >>> dummies = temporal_dummy(dates, type="day", of="week", h=1)
+    >>> list(dummies.columns)
+    ['dayFriofweek', 'dayMonofweek', 'daySatofweek', 'daySunofweek', 'dayThuofweek']
+    >>> dummies.index[-1]
+    Timestamp('2020-03-02 00:00:00')
     """
-    x = np.asarray(x)
-    n_obs = len(x)
+    if freq is not None:
+        warnings.warn(
+            "freq is deprecated, use type and of instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        type_of = {
+            12: ("month", "year"),
+            4: ("quarter", "year"),
+            52: ("week", "year"),
+            7: ("day", "week"),
+            24: ("hour", "day"),
+            48: ("halfhour", "day"),
+            60: ("minute", "hour"),
+        }.get(freq)
+        if type_of is None:
+            return np.eye(freq)[np.arange(len(x) + h) % freq]
+        type, of = type_of
 
-    if freq is None:
-        freq = 12
+    # The number of periods of the type in the of, for the data without dates
+    periods: dict[str, tuple[dict[str, int], int]] = {
+        "month": ({"year": 12}, 3),
+        "quarter": ({}, 4),
+        "week": ({"year": 52, "quarter": 13}, 4),
+        "day": ({"year": 365, "quarter": 90, "month": 30}, 7),
+        "hour": ({"year": 8760, "quarter": 2160, "month": 720, "week": 168}, 24),
+        "halfhour": (
+            {"year": 17520, "quarter": 4320, "month": 1440, "week": 336},
+            48,
+        ),
+        "minute": (
+            {
+                "year": 525600,
+                "quarter": 129600,
+                "month": 43200,
+                "week": 10080,
+                "day": 1440,
+            },
+            60,
+        ),
+        "second": (
+            {
+                "year": 31536000,
+                "quarter": 7776000,
+                "month": 2592000,
+                "week": 604800,
+                "day": 86400,
+                "hour": 3600,
+            },
+            60,
+        ),
+    }
+    if type not in periods:
+        raise ValueError(f"type must be one of: {', '.join(periods)}")
+    if of not in ("year", "quarter", "month", "week", "day", "hour", "minute"):
+        raise ValueError(
+            "of must be one of: year, quarter, month, week, day, hour, minute"
+        )
 
-    total_obs = n_obs + h
-
-    if freq == 12:
-        dummies = np.zeros((total_obs, 12))
-        for i in range(total_obs):
-            month = i % 12
-            dummies[i, month] = 1
-        return dummies
-    elif freq == 4:
-        dummies = np.zeros((total_obs, 4))
-        for i in range(total_obs):
-            quarter = i % 4
-            dummies[i, quarter] = 1
-        return dummies
-    elif freq == 7:
-        dummies = np.zeros((total_obs, 7))
-        for i in range(total_obs):
-            day = i % 7
-            dummies[i, day] = 1
-        return dummies
-    elif freq == 24:
-        dummies = np.zeros((total_obs, 24))
-        for i in range(total_obs):
-            hour = i % 24
-            dummies[i, hour] = 1
-        return dummies
+    # The dates of a datetime Series / array, else of the index, as R's zoo
+    index = x.index if isinstance(x, (pd.Series, pd.DataFrame)) else None
+    index = x if isinstance(x, pd.DatetimeIndex) else index
+    if isinstance(x, pd.Series) and pd.api.types.is_datetime64_any_dtype(x.dtype):
+        dates = pd.DatetimeIndex(x)
+    elif isinstance(index, pd.DatetimeIndex):
+        dates = index
+    elif np.issubdtype(np.asarray(x).dtype, np.datetime64):
+        dates = pd.DatetimeIndex(np.asarray(x))
+        if np.datetime_data(np.asarray(x).dtype)[0] in ("Y", "M", "W", "D") and (
+            type in ("hour", "halfhour", "minute", "second")
+        ):
+            warnings.warn(
+                "The Date class does not support hours, minutes and seconds. "
+                "Use POSIXt instead.",
+                stacklevel=2,
+            )
+            return None
     else:
-        dummies = np.zeros((total_obs, freq))
-        for i in range(total_obs):
-            idx = i % freq
-            dummies[i, idx] = 1
+        dates = None
+
+    # The h observations ahead continue with the last step, as R
+    steps = np.arange(1, h + 1)
+    if h > 0 and index is not None:
+        index = index.append(pd.Index(index[-1] + steps * (index[-1] - index[-2])))
+    if h > 0 and dates is not None:
+        dates = dates.append(
+            pd.DatetimeIndex(dates[-1] + steps * (dates[-1] - dates[-2]))
+        )
+
+    if dates is None:
+        n_periods = periods[type][0].get(of, periods[type][1])
+        values = np.arange(len(x) + h) % n_periods + 1
+        levels = np.arange(1, n_periods + 1)
+    else:
+        # The clock time, with the days since the start of the year / quarter /
+        # month / week
+        d = dates if dates.tz is None else dates.tz_localize(None)
+        days_of = {
+            "year": d.dayofyear - 1,
+            "quarter": (d.normalize() - d.to_period("Q").to_timestamp()).days,
+            "month": d.day - 1,
+            "week": d.dayofweek,
+        }.get(of, np.zeros(len(d), dtype=int))
+        abb = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"]
+        abb += ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        if type == "quarter":
+            values = np.array([f"Q{q}" for q in d.quarter])
+        elif type == "month" and of == "quarter":
+            values = np.asarray((d.month - 1) % 3 + 1)
+        elif type == "month":
+            values = np.array(abb)[d.month - 1]
+        elif type == "week":
+            values = np.asarray(d.isocalendar().week, dtype=int)
+            if of != "year":
+                warnings.warn(
+                    f"The option of={of} is not yet implemented. "
+                    "Returning weeks of year instead.",
+                    stacklevel=2,
+                )
+        elif type == "day" and of in ("year", "quarter", "month"):
+            values = np.asarray(days_of + 1)
+        elif type == "day" and of == "week":
+            values = np.array(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])[
+                d.dayofweek
+            ]
+        elif type == "hour" and of == "day":
+            values = np.asarray(d.hour)
+        elif type == "hour" and of in ("year", "quarter", "month", "week"):
+            values = np.asarray(days_of * 24 + d.hour + 1)
+        elif type == "halfhour":
+            raise ValueError("Sorry, but the halfhour option is not available yet")
+        elif type == "minute" and of == "hour":
+            values = np.asarray(d.minute)
+        elif type == "minute" and of != "minute":
+            values = np.asarray(days_of * 1440 + d.hour * 60 + d.minute + 1)
+        elif type == "second" and of == "minute":
+            values = np.asarray(d.second)
+        elif type == "second":
+            raise ValueError(
+                f"Sorry, but the seconds option is not available yet for the {of}"
+            )
+        else:
+            raise ValueError(f'type="{type}" is not supported with of="{of}"')
+        levels = np.unique(values)
+
+    if factors:
+        categorical = pd.Categorical(values, categories=levels)
+        return categorical if index is None else pd.Series(categorical, index=index)
+    dummies = (values[:, None] == levels).astype(float)
+    if index is None:
         return dummies
+    columns = [f"{type}{level}of{of}" for level in levels]
+    return pd.DataFrame(dummies, index=index, columns=columns)
 
 
 def B(

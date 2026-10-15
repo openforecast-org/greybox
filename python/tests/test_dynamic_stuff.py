@@ -91,11 +91,12 @@ class TestFormulaWithB:
     def test_dot_expansion_with_b(self):
         """formula with '.' and B() should not raise. Raw base var IS added by '.'."""
         import pandas as pd
+
         df = pd.DataFrame({"y": self.y, "x": self.x, "z": self.x * 0.1})
         y_out, X = formula("y ~ B(x,1)+.", df)
         assert "B(x,1)" in X.columns
-        assert "z" in X.columns        # from "."
-        assert "x" in X.columns        # raw x added by "." — matches R semantics
+        assert "z" in X.columns  # from "."
+        assert "x" in X.columns  # raw x added by "." — matches R semantics
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +149,8 @@ class TestGetBetas:
     def setup_method(self):
         np.random.seed(0)
         n = 30
-        x = np.arange(1.0, n + 1)
+        # Not a trend: its lag would be perfectly correlated with it, and dropped
+        x = np.random.randn(n).cumsum() + 10
         y = 0.5 * x + 0.3 * B(x, 1) + np.random.randn(n) * 0.5
         data = {"y": y, "x": x}
         y_out, X = formula("y ~ x + B(x,1)", data)

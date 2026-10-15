@@ -141,3 +141,24 @@ def test_plot_out_of_range_warns(deterministic_series):
     with pytest.warns(UserWarning, match="outside the range"):
         result.plot(which=[1, 2, 5])
     plt.close("all")
+
+
+def test_nested_lags_degrees_of_freedom():
+    # R's aov: seasonal4 is nested in seasonal12, which only adds 8 Df
+    rng = np.random.default_rng(3)
+    y = 100 + 0.3 * np.arange(50) + rng.normal(size=50)
+    result = stick(y, lags=[4, 12])
+    np.testing.assert_array_equal(result.anova["Df"].to_numpy(), [3, 8, 4, 34])
+    assert result.strength.sum() == pytest.approx(1.0)
+
+
+def test_missing_values_dropped():
+    # As R's aov, the observations with missing values are dropped
+    rng = np.random.default_rng(3)
+    y = 100 + 0.3 * np.arange(50) + rng.normal(size=50)
+    y[[6, 19]] = np.nan
+    result = stick(y, lags=12)
+    assert np.isfinite(result.strength.to_numpy()).all()
+    np.testing.assert_array_equal(result.anova["Df"].to_numpy(), [11, 4, 32])
+    complete = stick(np.delete(y, [6, 19]), lags=12)
+    assert result.anova["Sum Sq"].sum() == pytest.approx(complete.anova["Sum Sq"].sum())

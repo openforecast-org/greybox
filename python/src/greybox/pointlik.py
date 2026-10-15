@@ -35,15 +35,16 @@ def point_lik_cumulative(model: ALM) -> np.ndarray:
         raise TypeError("model must be a fitted ALM")
     distribution = model.distribution
     y = np.asarray(model.actuals, dtype=float)
-    mu = np.asarray(model.fitted, dtype=float)
+    # The location of the distribution, R's object$mu
+    mu = np.asarray(model.mu_, dtype=float)
 
     if distribution == "dgeom":
         return dist.pgeom(y, prob=1.0 / (mu + 1.0))
     if distribution == "dpois":
-        return dist.ppois(y, loc=mu)
+        return dist.ppois(y, lambda_=mu)
     if distribution == "dnbinom":
         size = model.other_ if model.other_ is not None else 1.0
-        return dist.pnbinom(y, loc=mu, size=size)
+        return dist.pnbinom(y, mu=mu, size=size)
     if distribution == "dbinom":
         return dist.pbinom(y, size=int(model.size_ or 1), prob=1.0 / (mu + 1.0))
     raise ValueError(
@@ -93,13 +94,14 @@ def point_lik(
     y_all = np.asarray(model.actuals, dtype=float)
     # With an occurrence model, the density is that of the non-zeroes, and the
     # occurrence model's point likelihoods are added to all the observations
-    occurrence = model.occurrence if isinstance(model.occurrence, ALM) else None
+    occurrence = model.occurrence_ if isinstance(model.occurrence_, ALM) else None
     otU = y_all != 0 if occurrence is not None else np.ones(len(y_all), dtype=bool)
     y = y_all[otU]
     # The location of the distribution, as R's pointLik.alm uses object$mu
     mu = np.asarray(model.mu_, dtype=float)[otU]
-    scale = scale_sd(distribution, model.scale)
-    if np.size(scale) > 1:
+    # A scale model gives the scales of the observations: those of the non-zeros
+    scale = scale_sd(distribution, model.extract_scale())
+    if np.size(scale) == len(otU):
         scale = np.asarray(scale)[otU]
     other = model.other_
     # The errors after the latent sizes of a dynamic occurrence model have the variances
@@ -115,37 +117,39 @@ def point_lik(
         return density(np.log(y)) - np.log(y)
 
     densities = {
-        "dnorm": lambda: dist.dnorm(y, loc=mu, scale=scale, log=True),
-        "dlnorm": lambda: dist.dlnorm(y, loc=mu, scale=scale, log=True),
-        "dgnorm": lambda: dist.dgnorm(y, loc=mu, scale=scale, shape=other, log=True),
+        "dnorm": lambda: dist.dnorm(y, mean=mu, sd=scale, log=True),
+        "dlnorm": lambda: dist.dlnorm(y, meanlog=mu, sdlog=scale, log=True),
+        "dgnorm": lambda: dist.dgnorm(y, mu=mu, scale=scale, shape=other, log=True),
         "dlgnorm": lambda: log_y_density(
-            lambda q: dist.dgnorm(q, loc=mu, scale=scale, shape=other, log=True)
+            lambda q: dist.dgnorm(q, mu=mu, scale=scale, shape=other, log=True)
         ),
-        "dfnorm": lambda: dist.dfnorm(y, loc=mu, scale=scale, log=True),
-        "drectnorm": lambda: dist.drectnorm(y, loc=mu, scale=scale, log=True),
+        "dfnorm": lambda: dist.dfnorm(y, mu=mu, sigma=scale, log=True),
+        "drectnorm": lambda: dist.drectnorm(y, mu=mu, sigma=scale, log=True),
         "dbcnorm": lambda: dist.dbcnorm(
-            y, loc=mu, scale=scale, lambda_bc=other, log=True
+            y, mu=mu, sigma=scale, lambda_bc=other, log=True
         ),
-        "dlogitnorm": lambda: dist.dlogitnorm(y, loc=mu, scale=scale, log=True),
-        "dexp": lambda: dist.dexp(y, scale=mu, log=True),
-        "dinvgauss": lambda: dist.dinvgauss(y, loc=mu, scale=scale / mu, log=True),
+        "dlogitnorm": lambda: dist.dlogitnorm(y, mu=mu, sigma=scale, log=True),
+        "dexp": lambda: dist.dexp(y, rate=1 / mu, log=True),
+        "dinvgauss": lambda: dist.dinvgauss(
+            y, mean=mu, dispersion=scale / mu, log=True
+        ),
         "dgamma": lambda: dist.dgamma(y, shape=1 / scale, scale=scale * mu, log=True),
-        "dlaplace": lambda: dist.dlaplace(y, loc=mu, scale=scale, log=True),
+        "dlaplace": lambda: dist.dlaplace(y, mu=mu, scale=scale, log=True),
         "dllaplace": lambda: log_y_density(
-            lambda q: dist.dlaplace(q, loc=mu, scale=scale, log=True)
+            lambda q: dist.dlaplace(q, mu=mu, scale=scale, log=True)
         ),
         "dalaplace": lambda: dist.dalaplace(
-            y, loc=mu, scale=scale, alpha=other, log=True
+            y, mu=mu, scale=scale, alpha=other, log=True
         ),
-        "dlogis": lambda: dist.dlogis(y, loc=mu, scale=scale, log=True),
+        "dlogis": lambda: dist.dlogis(y, location=mu, scale=scale, log=True),
         "dt": lambda: dist.dt(y - mu, df=scale, log=True),
-        "ds": lambda: dist.ds(y, loc=mu, scale=scale, log=True),
+        "ds": lambda: dist.ds(y, mu=mu, scale=scale, log=True),
         "dls": lambda: log_y_density(
-            lambda q: dist.ds(q, loc=mu, scale=scale, log=True)
+            lambda q: dist.ds(q, mu=mu, scale=scale, log=True)
         ),
         "dgeom": lambda: dist.dgeom(y, prob=1 / (mu + 1), log=True),
-        "dpois": lambda: dist.dpois(y, loc=mu, log=True),
-        "dnbinom": lambda: dist.dnbinom(y, loc=mu, size=other, log=True),
+        "dpois": lambda: dist.dpois(y, lambda_=mu, log=True),
+        "dnbinom": lambda: dist.dnbinom(y, mu=mu, size=other, log=True),
         "dbinom": lambda: dist.dbinom(
             y - int(occurrence is not None),
             size=model.size_,
@@ -153,7 +157,13 @@ def point_lik(
             log=True,
         ),
         "dchisq": lambda: stats.ncx2.logpdf(y, df=scale, nc=mu),
-        "dbeta": lambda: dist.dbeta(y, a=mu, b=scale, log=True),
+        # The shapes of dbeta, whose mu and scale are its mean and variance
+        "dbeta": lambda: dist.dbeta(
+            y,
+            shape1=model._beta_shapes[0][otU],
+            shape2=model._beta_shapes[1][otU],
+            log=True,
+        ),
         # The occurrence models: the probability of the observed outcome
         "plogis": lambda: np.where(
             y != 0, stats.logistic.logcdf(mu), stats.logistic.logsf(mu)

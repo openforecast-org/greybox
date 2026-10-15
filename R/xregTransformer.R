@@ -59,10 +59,8 @@ xregTransformer <- function(xreg, functions=c("log", "exp", "inv", "sqrt", "squa
     }
 
     if(!is.matrix(xreg) & (is.vector(xreg) | is.ts(xreg))){
-        xregNames <- names(xreg)
-        if(is.null(xregNames)){
-            xregNames <- "x";
-        }
+        # The names of a vector are those of its elements, not of the variable
+        xregNames <- "x";
         xreg <- ts(matrix(xreg),start=start(xreg),frequency=frequency(xreg));
         colnames(xreg) <- xregNames;
     }

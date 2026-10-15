@@ -123,6 +123,21 @@ pcor <- function(x, y=NULL, use=c("na.or.complete","complete.obs","everything","
                 call.=FALSE);
     }
 
+    # Remove the incomplete observations, as cor() does
+    obsNA <- apply(is.na(data),1,any);
+    if(any(obsNA)){
+        if(use=="all.obs"){
+            stop("Missing observations in pcor", call.=FALSE);
+        }
+        else if(use!="everything"){
+            data <- data[!obsNA,,drop=FALSE];
+            x <- x[!obsNA,,drop=FALSE];
+            if(!is.null(y)){
+                y <- y[!obsNA,,drop=FALSE];
+            }
+        }
+    }
+
     if(is.null(y)){
         matrixAssociation <- matrix(1,nVariables,nVariables, dimnames=list(namesData,namesData));
         matrixPValues <- matrix(0,nVariables,nVariables, dimnames=list(namesData,namesData));

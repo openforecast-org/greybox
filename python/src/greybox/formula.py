@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from .xreg import B  # noqa: F401  — re-exported for convenience
+from .xreg import B  # re-exported for convenience
 
 TRANSFORMATIONS = {
     "log": np.log,
@@ -47,89 +47,13 @@ def _get_caller_globals():
         del frame
 
 
-def _parse_transformation(term, caller_globals=None):
-    """Parse a term to check if it contains a transformation.
-
-    Parameters
-    ----------
-    term : str
-        Term to parse, e.g., "log(x)", "x^2", "I(x+y)"
-    caller_globals : dict, optional
-        Global namespace from user's code to resolve custom functions.
-
-    Returns
-    -------
-    tuple : (transformation, variable, is_protected)
-        - transformation: str or None (e.g., "log", "sqrt", "^2")
-        - variable: str (the base variable name)
-        - is_protected: bool (True if wrapped in I())
-
-    Raises
-    ------
-    ValueError
-        If the term looks like a function call but the function is not defined.
-    """
-    term = term.strip()
-
-    # B(varname, k) — backshift operator; treat base varname as the variable
-    _b_match = re.match(r"^B\((\w+),\s*-?\d+\)$", term)
-    if _b_match:
-        return (None, _b_match.group(1), False)
-
-    if term.startswith("I(") and term.endswith(")"):
-        inner = term[2:-1]
-        return ("I", inner, True)
-
-    for func_name in TRANSFORMATIONS:
-        pattern = f"{func_name}\\(([^)]+)\\)"
-        match = re.match(pattern, term)
-        if match:
-            return (func_name, match.group(1), False)
-
-    func_pattern = r"^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]+)\)$"
-    func_match = re.match(func_pattern, term)
-    if func_match:
-        func_name = func_match.group(1)
-        if func_name in TRANSFORMATIONS:
-            return (func_name, func_match.group(2), False)
-        if caller_globals and func_name in caller_globals:
-            if callable(caller_globals[func_name]):
-                return (func_name, func_match.group(2), False)
-            else:
-                raise ValueError(f"'{func_name}' is not a callable function")
-        raise ValueError(
-            f"Unknown function '{func_name}' in transformation '{term}'. "
-            f"Either use a built-in transformation (log, sqrt, exp, etc.) "
-            f"or make sure '{func_name}' is defined or imported in your global scope."
-        )
-
-    if caller_globals:
-        pattern = r"([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]+)\)"
-        match = re.match(pattern, term)
-        if match:
-            func_name = match.group(1)
-            if func_name in caller_globals and callable(caller_globals[func_name]):
-                return (func_name, match.group(2), False)
-
-    if "^" in term:
-        parts = term.split("^")
-        if len(parts) == 2:
-            try:
-                power = int(parts[1].strip())
-                return (f"^ {power}", parts[0].strip(), False)
-            except ValueError:
-                pass
-
-    return (None, term, False)
-
-
 def _apply_transformation(var_name, data_dict, n_obs, caller_globals=None):
-    """Apply transformation to a variable.
+    """Evaluate a variable of the formula, as R's model.frame() does.
 
     Parameters
     ----------
     var_name : str
-        Variable name, possibly with transformation (e.g., "log(x)", "x^2")
+        Variable in R syntax, e.g. "log(x)", "x^2", "I(x * z)" or "B(x,1)".
     data_dict : dict
         Data dictionary.
     n_obs : int
@@ -142,72 +66,28 @@ def _apply_transformation(var_name, data_dict, n_obs, caller_globals=None):
     np.ndarray
         Transformed variable values.
     """
-    if caller_globals is None:
-        caller_globals = {}
+    namespace = {**(caller_globals or {}), **TRANSFORMATIONS, "I": np.asarray, "B": B}
+    namespace["trend"] = np.arange(1, n_obs + 1, dtype=float)
 
-    # Handle B(varname, k) — backshift / distributed lag operator
-    _b_match = re.match(r"^B\((\w+),\s*(-?\d+)\)$", var_name)
-    if _b_match:
-        base_var = _b_match.group(1)
-        k = int(_b_match.group(2))
-        if base_var not in data_dict:
+    # The columns of the data, under names that Python can evaluate (e.g. "x.1")
+    expression = var_name
+    for i, name in enumerate(data_dict):
+        pattern = rf"(?<![\w.]){re.escape(name)}(?![\w.]|\s*\()"
+        if re.search(pattern, expression):
+            expression = re.sub(pattern, f"__data{i}__", expression)
+            namespace[f"__data{i}__"] = np.asarray(data_dict[name], dtype=float)
+
+    try:
+        return np.asarray(eval(expression.replace("^", "**"), namespace), dtype=float)
+    except NameError as error:
+        if re.search(rf"\b{error.name}\s*\(", var_name):
             raise ValueError(
-                f"Variable '{base_var}' not found in data for B({base_var}, {k})."
-            )
-        base_data = np.array(data_dict[base_var], dtype=float)
-        from .xreg import B as _B_op
-
-        return _B_op(base_data, k)
-
-    transform, base_var, _ = _parse_transformation(var_name, caller_globals)
-
-    if transform == "I":
-        inner_transform, inner_base, _ = _parse_transformation(base_var, caller_globals)
-        if inner_base in data_dict:
-            base_data = np.array(data_dict[inner_base], dtype=float)
-        else:
-            raise ValueError(f"Variable '{inner_base}' not found in data")
-
-        if inner_transform is None:
-            return base_data
-        if inner_transform.startswith("^"):
-            power = int(inner_transform.split()[1])
-            return base_data**power
-        if inner_transform in TRANSFORMATIONS:
-            return TRANSFORMATIONS[inner_transform](base_data)
-        if inner_transform in caller_globals:
-            return caller_globals[inner_transform](base_data)
-        return base_data
-
-    if base_var == "trend":
-        if "trend" in data_dict:
-            base_data = np.array(data_dict["trend"], dtype=float)
-        else:
-            base_data = np.arange(1, n_obs + 1, dtype=float)
-    elif base_var in data_dict:
-        base_data = np.array(data_dict[base_var], dtype=float)
-    else:
-        raise ValueError(f"Variable '{base_var}' not found in data")
-
-    if transform is None:
-        return base_data
-
-    if transform.startswith("^"):
-        power = int(transform.split()[1])
-        return base_data**power
-
-    if transform in TRANSFORMATIONS:
-        return TRANSFORMATIONS[transform](base_data)
-
-    if transform in caller_globals:
-        return caller_globals[transform](base_data)
-
-    raise ValueError(
-        f"Unknown transformation: '{transform}'. "
-        f"If '{transform}' is a function you defined or imported, "
-        f"make sure it is available in the global scope where formula() "
-        f"is called."
-    )
+                f"Unknown function '{error.name}' in transformation '{var_name}'. "
+                f"Either use a built-in transformation (log, sqrt, exp, etc.) or "
+                f"make sure '{error.name}' is defined or imported in your global "
+                f"scope."
+            ) from None
+        raise ValueError(f"Variable '{error.name}' not found in data") from None
 
 
 def formula(
@@ -218,16 +98,22 @@ def formula(
 ) -> Any:
     """Parse formula string and return design matrix and/or response.
 
+    The response and the design matrix are those of R's model.frame() and
+    model.matrix() with the treatment contrasts.
+
     Parameters
     ----------
     formula_str : str
         Formula string in R-style, e.g., "y ~ x1 + x2" or "~ x1 + x2" (no y).
-        Supports transformations: log(x), sqrt(x), x^2, etc.
-        Use I() to protect expressions: I(x^2)
+        Supports "." (all the other columns of data), "- 1" and "0 +" (no
+        intercept), interactions "x:z" and "x * z", transformations log(x),
+        sqrt(x), x^2, etc. Use I() to protect expressions: I(x^2), I(x * z).
+        Categorical, object and string columns are factors, coded with the
+        treatment contrasts, as R does (the ordered ones as the unordered).
     data : dict or DataFrame
         Data containing variables. Can be dict, DataFrame, or dict of arrays.
     return_type : str, optional
-        What to return: "both" (default), "X", "y", or "terms".
+        What to return: "both" (default), "X", "y", "variables" or "terms".
     as_dataframe : bool, optional
         If True, return pandas DataFrames instead of numpy arrays.
         This preserves variable names in column names. Default is True.
@@ -235,17 +121,18 @@ def formula(
     Returns
     -------
     Depends on return_type and as_dataframe:
-        - "both": tuple (y, X) where y is 1D array (or DataFrame)
-          and X is 2D array (or DataFrame) with intercept
+        - "both": tuple (y, X) where y is 1D array (or Series)
+          and X is 2D array (or DataFrame), with intercept unless removed
         - "X": design matrix only (or DataFrame if as_dataframe=True)
-        - "y": response only (or DataFrame if as_dataframe=True)
-        - "terms": list of term names
+        - "y": response only
+        - "variables": names of the columns of X, except the intercept
+        - "terms": the labels of the terms, as R's attr(terms, "term.labels")
 
     Examples
     --------
     >>> data = {'y': [1, 2, 3], 'x1': [4, 5, 6], 'x2': [7, 8, 9]}
     >>> y, X = formula("y ~ x1 + x2", data)
-    >>> X_no_intercept = formula("~ x1 + x2", data, return_type="X")
+    >>> X_only = formula("~ x1 + x2", data, return_type="X")
 
     >>> # With transformations: y is log-transformed, X has x and x^2
     >>> data_t = {'y': [1, 2, 3], 'x': [1, 2, 3]}
@@ -255,6 +142,15 @@ def formula(
     >>> y, X = formula("y ~ x1 + x2", data, as_dataframe=True)
     >>> list(X.columns)
     ['(Intercept)', 'x1', 'x2']
+
+    >>> # All the other variables, without the intercept
+    >>> list(formula("y ~ 0 + .", data)[1].columns)
+    ['x1', 'x2']
+
+    >>> # Factors and interactions
+    >>> data_f = {'y': [1, 2, 3, 4], 'x': [1, 2, 3, 5], 'g': ['a', 'b', 'c', 'a']}
+    >>> list(formula("y ~ x * g", data_f)[1].columns)
+    ['(Intercept)', 'x', 'gb', 'gc', 'x:gb', 'x:gc']
 
     >>> # With custom functions (defined or imported in your global scope)
     >>> def my_transform(x):
@@ -271,192 +167,145 @@ def formula(
     """
     formula_str = formula_str.strip()
 
-    has_response = True
-    lhs = None
-    if formula_str.startswith("~"):
-        has_response = False
-        formula_str = formula_str[1:].strip()
-    elif "~" in formula_str:
-        parts = formula_str.split("~", 1)
-        lhs = parts[0].strip()
-        formula_str = parts[1].strip() if len(parts) > 1 else ""
-        if lhs:
-            has_response = True
-        else:
-            has_response = False
-
+    lhs = ""
+    if "~" in formula_str:
+        lhs, formula_str = (part.strip() for part in formula_str.split("~", 1))
     if not formula_str:
         formula_str = "1"
 
     if isinstance(data, dict):
-        data_dict = data
+        data_dict = {str(name): values for name, values in data.items()}
     else:
         try:
-            data_dict = data.to_dict(orient="list")
+            data_dict = {str(name): data[name] for name in data.columns}
         except AttributeError:
-            raise ValueError("data must be dict or DataFrame")
+            raise ValueError("data must be dict or DataFrame") from None
 
     caller_globals = _get_caller_globals()
-
-    # Handle "." as "use all variables" with left-to-right R semantics:
-    # "+." adds ALL data vars at that point; "-var" removes only what is
-    # currently in the active set (evaluated left-to-right).
-    if "." in formula_str:
-        response_var = None
-        if lhs:
-            _, response_var, _ = _parse_transformation(lhs, caller_globals)
-        # Preserve data column order (matches R's left-to-right data frame order)
-        all_data_vars_ordered = [k for k in data_dict if k != response_var]
-
-        # Protect B(...) from +/- tokenizer
-        _dot_b_protected: dict = {}
-
-        def _dot_protect_b(m):
-            key = f"__DOTBPROT{len(_dot_b_protected)}__"
-            inner = re.sub(r"\s+", "", m.group(1))
-            _dot_b_protected[key] = f"B({inner})"
-            return key
-
-        formula_prot = re.sub(r"\bB\(([^)]*)\)", _dot_protect_b, formula_str)
-        formula_prot = formula_prot.replace("-", " - ").replace("+", " + ")
-        tokens = [_dot_b_protected.get(t, t) for t in formula_prot.split()]
-
-        # Left-to-right OrderedDict evaluation:
-        # "+term" → add term; "-term" → remove base_var; "+." → add all data vars
-        from collections import OrderedDict
-
-        active_terms: dict = OrderedDict()
-
-        i = 0
-        while i < len(tokens):
-            tok = tokens[i].strip()
-            if not tok or tok == "+":
-                i += 1
-                continue
-            if tok == ".":
-                for var in all_data_vars_ordered:
-                    if var not in active_terms:
-                        active_terms[var] = None
-                i += 1
-                continue
-            if tok == "-":
-                i += 1
-                if i < len(tokens):
-                    excl_tok = tokens[i].strip()
-                    if excl_tok:
-                        _, base_var, _ = _parse_transformation(excl_tok, caller_globals)
-                        active_terms.pop(base_var, None)
-                i += 1
-                continue
-            if tok not in active_terms:
-                active_terms[tok] = None
-            i += 1
-
-        formula_str = " + ".join(active_terms.keys()) if active_terms else "1"
-
-    terms = _parse_formula_terms(formula_str)
-    rhs_terms = terms.copy()
-
     n_obs = len(next(iter(data_dict.values())))
 
+    # The variables as R deparses them: spaces around +, -, * and comparisons
+    chunks = _parse_formula_terms(formula_str)
+    canonical: dict[str, str] = {}
+    for variable in [lhs] + [v for _, groups in chunks for g in groups for v in g]:
+        name = variable
+        for pattern, replacement in (
+            (r"\s+", ""),
+            (r"(?<=[\w.)])([+*-])", r" \1 "),
+            (r"(==|!=|>=|<=|<|>|&|\|)", r" \1 "),
+            (r",", ", "),
+            (r"\bB\(([\w.]+), ", r"B(\1,"),
+        ):
+            name = re.sub(pattern, replacement, name)
+        canonical[variable] = name
+    lhs = canonical[lhs]
+
+    # The terms, as R's terms(): left to right, then ordered by their degree
+    intercept = True
+    terms: list[frozenset[str]] = []
+    order = [lhs] if lhs else []
+    for negative, groups in chunks:
+        names = [[canonical[v] for v in group] for group in groups]
+        if names in ([["0"]], [["1"]]):
+            intercept = (names[0][0] == "1") != negative
+            continue
+        if names == [["."]]:
+            appearing = [
+                name
+                for name in data_dict
+                if not re.search(rf"(?<![\w.]){re.escape(name)}(?![\w.(])", lhs)
+            ]
+            new_terms = [frozenset([name]) for name in appearing]
+        else:
+            appearing = [v for group in names for v in group]
+            new_terms = [frozenset(names[0])]
+            for group in names[1:]:
+                new_terms += [frozenset(group)]
+                new_terms += [term | frozenset(group) for term in new_terms[:-1]]
+        order += [v for v in dict.fromkeys(appearing) if v not in order]
+        if negative:
+            terms = [term for term in terms if term not in new_terms]
+        else:
+            terms += [term for term in dict.fromkeys(new_terms) if term not in terms]
+    terms = sorted(terms, key=len)
+
     if return_type == "terms":
-        return terms
+        return [":".join(sorted(term, key=order.index)) for term in terms]
 
     y = None
-    if has_response and lhs:
-        transform, base_var, is_protected = _parse_transformation(lhs, caller_globals)
-
-        if is_protected:
-            inner_transform, inner_base, _ = _parse_transformation(
-                base_var, caller_globals
-            )
-            if inner_transform is not None:
-                # I(sqrt(y)) or I(y^2) - use the inner base variable
-                if inner_base not in data_dict:
-                    raise ValueError(
-                        f"Response variable '{inner_base}' not found in data"
-                    )
-                y_data = np.array(data_dict[inner_base], dtype=float)
-                if inner_transform.startswith("^"):
-                    power = int(inner_transform.split()[1])
-                    y = y_data**power
-                elif inner_transform in TRANSFORMATIONS:
-                    y = TRANSFORMATIONS[inner_transform](y_data)
-                elif inner_transform in caller_globals:
-                    y = caller_globals[inner_transform](y_data)
-            else:
-                # Just I(y) - use y directly
-                if base_var not in data_dict:
-                    raise ValueError(
-                        f"Response variable '{base_var}' not found in data"
-                    )
-                y_data = np.array(data_dict[base_var], dtype=float)
-                y = y_data
-        elif transform is not None:
-            if base_var not in data_dict:
-                raise ValueError(f"Response variable '{base_var}' not found in data")
-            y_data = np.array(data_dict[base_var], dtype=float)
-            if transform is None:
-                y = y_data
-            elif transform.startswith("^"):
-                power = int(transform.split()[1])
-                y = y_data**power
-            elif transform in TRANSFORMATIONS:
-                y = TRANSFORMATIONS[transform](y_data)
-            elif transform in caller_globals:
-                y = caller_globals[transform](y_data)
+    if lhs:
+        if lhs in data_dict:
+            y = np.asarray(data_dict[lhs], dtype=float)
         else:
-            if lhs not in data_dict:
-                raise ValueError(f"Response variable '{lhs}' not found in data")
-            y_data = np.array(data_dict[lhs], dtype=float)
-            y = y_data
-
-        terms = rhs_terms
+            y = _apply_transformation(lhs, data_dict, n_obs, caller_globals)
 
     if return_type == "y":
         return y
 
-    X_columns = []
-    var_names = []
-    intercept_added = False
+    # The columns of each variable: the dummies of all levels for the factors
+    blocks: dict[str, list[tuple[str, np.ndarray]]] = {}
+    factors: set[str] = set()
+    for name in [v for v in order if any(v in term for term in terms)]:
+        values = pd.Series(data_dict.get(name, []))
+        if name in data_dict and (
+            isinstance(values.dtype, pd.CategoricalDtype)
+            or pd.api.types.is_string_dtype(values)
+        ):
+            categories = values.astype("category").cat
+            codes = categories.codes.to_numpy()
+            dummies = (codes[:, None] == np.arange(len(categories.categories))) * 1.0
+            dummies[codes < 0] = np.nan
+            blocks[name] = [
+                (
+                    name
+                    + (
+                        str(int(level))
+                        if isinstance(level, float) and level.is_integer()
+                        else str(level)
+                    ),
+                    dummies[:, i],
+                )
+                for i, level in enumerate(categories.categories)
+            ]
+            factors.add(name)
+        elif name in data_dict:
+            blocks[name] = [(name, np.asarray(data_dict[name], dtype=float))]
+        else:
+            blocks[name] = [
+                (name, _apply_transformation(name, data_dict, n_obs, caller_globals))
+            ]
 
-    for term in terms:
-        term = term.strip()
-        if not term:
-            continue
+    # R's model.matrix(): a factor is coded by contrasts if the term without it
+    # is in a preceding term; without intercept, the first factor by dummies
+    first_factor: tuple[int, str] | None = None
+    if not intercept:
+        first_factor = next(
+            (
+                (j, v)
+                for j, term in enumerate(terms)
+                for v in sorted(term, key=order.index)
+                if v in factors
+            ),
+            None,
+        )
+    X_columns = [("(Intercept)", np.ones(n_obs))] if intercept else []
+    for j, term in enumerate(terms):
+        columns = [("", np.ones(n_obs))]
+        for name in sorted(term, key=order.index):
+            contrasts = (
+                name in factors
+                and (j, name) != first_factor
+                and (len(term) == 1 or any(term - {name} <= t for t in terms[:j]))
+            )
+            columns = [
+                (f"{prefix}:{column}" if prefix else column, values * block)
+                for column, block in blocks[name][int(contrasts) :]
+                for prefix, values in columns
+            ]
+        X_columns += columns
 
-        if term == "1" or term == "intercept":
-            if not intercept_added:
-                X_columns.append(np.ones(n_obs))
-                var_names.append("(Intercept)")
-                intercept_added = True
-            continue
-
-        if term == "trend":
-            if "trend" not in data_dict:
-                X_columns.append(np.arange(1, n_obs + 1, dtype=float))
-            else:
-                X_columns.append(np.array(data_dict["trend"], dtype=float))
-            var_names.append("trend")
-            continue
-
-        # Use the full term as the variable name (preserves transformations)
-        var_name = term.strip()
-        var_name = var_name.removeprefix("-")
-
-        col = _apply_transformation(term, data_dict, n_obs, caller_globals)
-        X_columns.append(col)
-        var_names.append(var_name)
-
-    if not intercept_added:
-        X_columns.insert(0, np.ones(n_obs))
-        var_names.insert(0, "(Intercept)")
-
-    if not X_columns:
-        X = np.ones((n_obs, 1))
-    else:
-        X = np.column_stack(X_columns)
-
+    var_names = [name for name, _ in X_columns]
+    X = np.column_stack([np.empty((n_obs, 0))] + [column for _, column in X_columns])
     coef_names = [n for n in var_names if n != "(Intercept)"]
 
     if as_dataframe:
@@ -467,16 +316,7 @@ def formula(
         elif return_type == "variables":
             return coef_names
 
-        y_name = None
-        if has_response and lhs:
-            y_name = lhs.strip() if lhs else None
-
-        if y_name is not None:
-            y_df = pd.Series(y, name=y_name)
-        elif y is not None:
-            y_df = pd.Series(y, name="y")
-        else:
-            y_df = None
+        y_df = pd.Series(y, name=lhs) if y is not None else None
 
         return y_df, X_df
 
@@ -488,66 +328,34 @@ def formula(
     return y, X
 
 
-def _parse_formula_terms(formula_str: str) -> list[str]:
-    """Parse formula string into list of terms."""
-    terms = []
+def _parse_formula_terms(formula_str: str) -> list[tuple[bool, list[list[str]]]]:
+    """Split the right-hand side of a formula into its summands.
 
-    # Protect B(...) calls from space-based tokenization by replacing them
-    # with unique placeholders before splitting.
-    b_terms: dict = {}
-
-    def _replace_b(m):
-        key = f"__BPLACEHOLDER{len(b_terms)}__"
-        # Normalize internal spaces so column names are canonical: B(x,1)
-        inner = re.sub(r"\s+", "", m.group(1))
-        b_terms[key] = f"B({inner})"
-        return key
-
-    formula_str = re.sub(r"\bB\(([^)]*)\)", _replace_b, formula_str)
-
-    formula_str = formula_str.replace("-", " - ")
-    formula_str = formula_str.replace("+", " + ")
-    formula_str = formula_str.replace("*", " * ")
-    formula_str = formula_str.replace(":", " : ")
-
-    tokens = formula_str.split()
-    # Restore B() placeholders
-    tokens = [b_terms.get(t, t) for t in tokens]
-
-    i = 0
-    while i < len(tokens):
-        token = tokens[i].strip()
-        if token == "":
-            i += 1
+    Returns, for each summand in its order, whether it is subtracted and its
+    variables, grouped by "*" and, inside the groups, by ":". The operators in
+    parentheses belong to the variables, e.g. log(x + 1), as does the minus of
+    a power, e.g. x^-1.
+    """
+    chunks: list[tuple[bool, list[list[str]]]] = []
+    negative = False
+    groups: list[list[str]] = [[]]
+    variable = ""
+    depth = 0
+    for char in formula_str + "+":
+        depth += (char == "(") - (char == ")")
+        if depth or char not in "+-*:" or variable.rstrip().endswith("^"):
+            variable += char
             continue
-        if token == "+":
-            i += 1
+        groups[-1].append(variable.strip())
+        variable = ""
+        if char in "*:":
+            groups += [[]] if char == "*" else []
             continue
-        if token == "-" and i + 1 < len(tokens):
-            next_token = tokens[i + 1].strip()
-            if next_token:
-                terms.append("-" + next_token)
-            i += 2
-            continue
-        if token == "*" and len(terms) > 0 and i + 1 < len(tokens):
-            prev_term = terms[-1]
-            next_token = tokens[i + 1].strip()
-            if next_token and next_token not in ("+", "-", "*", ":", ""):
-                terms[-1] = prev_term + " * " + next_token
-                i += 2
-                continue
-        if token == ":" and len(terms) > 0 and i + 1 < len(tokens):
-            prev_term = terms[-1]
-            next_token = tokens[i + 1].strip()
-            if next_token and next_token not in ("+", "-", "*", ":", ""):
-                terms[-1] = prev_term + " : " + next_token
-                i += 2
-                continue
-        if token:
-            terms.append(token)
-        i += 1
+        if groups != [[""]]:
+            chunks.append((negative, groups))
+        negative, groups = char == "-", [[]]
 
-    return terms
+    return chunks
 
 
 def expand_formula(formula_str):

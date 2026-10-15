@@ -64,6 +64,7 @@
 #' temporaldummy(x, type="month", of="year", h=10)
 #'
 #' @rdname temporaldummy
+#' @importFrom stats cycle
 #' @export
 temporaldummy <- function(object, ...) UseMethod("temporaldummy")
 
@@ -81,14 +82,14 @@ temporaldummy.default <- function(object, type=c("month","quarter","week","day",
     dataFrequency <- switch(type, "quarter"=4,
                             "month"=switch(of, "year"=12, 3),
                             "week"=switch(of, "year"=52, "quarter"=13, 4),
-                            "day"=switch(of, "year"=365, "quarter"=120, "month"=30, 7),
-                            "hour"=switch(of, "year"=8760, "quarter"=2880, "month"=720,
+                            "day"=switch(of, "year"=365, "quarter"=90, "month"=30, 7),
+                            "hour"=switch(of, "year"=8760, "quarter"=2160, "month"=720,
                                           "week"=168, 24),
-                            "halfhour"=switch(of, "year"=17520, "quarter"=5760, "month"=1440,
+                            "halfhour"=switch(of, "year"=17520, "quarter"=4320, "month"=1440,
                                               "week"=336, 48),
-                            "minute"=switch(of, "year"=525600, "quarter"=172800, "month"=43200,
+                            "minute"=switch(of, "year"=525600, "quarter"=129600, "month"=43200,
                                             "week"=10080, "day"=1440, 60),
-                            "second"=switch(of, "year"=31536000, "quarter"=10368000, "month"=2592000,
+                            "second"=switch(of, "year"=31536000, "quarter"=7776000, "month"=2592000,
                                             "week"=604800, "day"=86400, "hour"=3600, 60));
 
     # Create factors
@@ -120,8 +121,17 @@ temporaldummy.ts <- function(object, type=c("month","quarter","week","day","hour
     of <- switch(as.character(dataFrequency), "52"=, "12"=, "4"="year", "7"="week", "24"=,
                  "48"="day", "60"="hour", "minute");
 
-    return(ts(as.matrix(temporaldummy.default(object, type=type, of=of, factors=factors, h=h)),
-              start=start(object), frequency=dataFrequency));
+    # Start the dummies from the position of the first observation in the cycle
+    obsStart <- cycle(object)[1]-1;
+    temporaldummy <- temporaldummy.default(c(rep(NA,obsStart),object), type=type, of=of, factors=factors, h=h);
+    if(factors){
+        temporaldummy <- temporaldummy[obsStart+1:(length(object)+h)];
+    }
+    else{
+        temporaldummy <- temporaldummy[obsStart+1:(length(object)+h),,drop=FALSE];
+    }
+
+    return(ts(as.matrix(temporaldummy), start=start(object), frequency=dataFrequency));
 }
 
 #' @rdname temporaldummy
@@ -157,7 +167,7 @@ temporaldummy.Date <- function(object, type=c("month","quarter","week","day","ho
         dateFinal <- as.numeric(strftime(object, format="%V"));
 
         if(of!="year"){
-            warning(paste0("The option of=",of,"is not yet implemented. Returning weeks of year instead."),
+            warning(paste0("The option of=",of," is not yet implemented. Returning weeks of year instead."),
                     call.=FALSE);
         }
         # if(of=="quarter"){
@@ -197,12 +207,9 @@ temporaldummy.Date <- function(object, type=c("month","quarter","week","day","ho
                 ndaysInMonths[dateMonthsOfYear %in% c("Feb","May","Aug","Nov")] +
                 dateFinal[dateMonthsOfYear %in% c("Feb","May","Aug","Nov")];
 
-            # Amend the number of days, so that it counts both two months
-            monthsOfYearNumber[monthsOfYearNumber==12] <- 0;
-            monthsOfYearNumber[] <- monthsOfYearNumber + 1;
+            # Amend the number of days, so that it counts both previous months
             ndaysInMonths[] <- ndaysInMonths +
-                as.numeric(strftime(as.Date(paste(dateYears + monthsOfYearNumber %/% 12,
-                                                  monthsOfYearNumber %% 12 + 1, "01", sep="-"))-1,"%d"));
+                as.numeric(strftime(as.Date(paste(dateYears, monthsOfYearNumber, "01", sep="-"))-1,"%d"));
             # count number of days since the Jan / Apr / Jul / Oct
             dateFinal[dateMonthsOfYear %in% c("Mar","Jun","Sep","Dec")] <-
                 ndaysInMonths[dateMonthsOfYear %in% c("Mar","Jun","Sep","Dec")] +
@@ -224,9 +231,9 @@ temporaldummy.Date <- function(object, type=c("month","quarter","week","day","ho
     factorVariable <- factor(dateFinal[1:obsAll]);
 
     if(!factors){
-        # Do model matrix for sparse factors
-        temporaldummy <- model.matrix(~factorVariable-1);
-        colnames(temporaldummy) <- paste0(type,sort(unique(dateFinal)),"of",of);
+        # The dummies of all the observed values, even if there is only one
+        temporaldummy <- diag(nlevels(factorVariable))[as.integer(factorVariable),,drop=FALSE];
+        colnames(temporaldummy) <- paste0(type,levels(factorVariable),"of",of);
         return(temporaldummy);
     }
     else{
@@ -251,122 +258,46 @@ temporaldummy.POSIXt <- function(object, type=c("month","quarter","week","day","
 
     # Invoke the respective class for the Date
     if(any(type==c("month","quarter","week","day"))){
-        return(temporaldummy(as.Date(object), type=type, of=of, factors=factors, h=h));
+        # The dates of the clock time, which is already extended to the h observations
+        return(temporaldummy(as.Date(format(object, format="%Y-%m-%d")), type=type, of=of, factors=factors, h=0));
     }
     else{
+        dateHours <- as.numeric(format(object, format="%H"));
+        dateMinutes <- as.numeric(format(object, format="%M"));
+        # Days since the start of the year / quarter / month / week of each observation
+        if(any(of==c("year","quarter","month"))){
+            dateMonths <- as.numeric(format(object, format="%m"));
+            dateMonthsStart <- switch(of, "year"=1, "quarter"=(dateMonths-1)%/%3*3+1, "month"=dateMonths);
+            dateDaysOf <- as.numeric(as.Date(format(object, format="%Y-%m-%d")) -
+                                         as.Date(paste(format(object, format="%Y"), dateMonthsStart, "01", sep="-")));
+        }
+        else{
+            dateDaysOf <- switch(of, "week"=as.numeric(format(object, format="%u"))-1, 0);
+        }
+
         if(type=="hour"){
-            if(any(of==c("year","quarter","month"))){
-                if(of=="year"){
-                    dateOf <- as.numeric(strftime(object, format="%Y"));
-                }
-                else if(of=="quarter"){
-                    dateOf <- as.numeric(substr(quarters(object),2,2));
-                }
-                else if(of=="month"){
-                    dateOf <- as.numeric(strftime(object, format="%m"));
-                }
-
-                # Calculate the number of hours between the "ofs"
-                dateOfDiffs <- c(1,diff(dateOf));
-                dateOfDiffs[length(dateOf)] <- 1;
-                hoursInOf <- difftime(object[which(dateOfDiffs!=0)[-1]],
-                                      object[which(dateOfDiffs!=0)[-sum(dateOfDiffs!=0)]],
-                                      units="hours");
-
-                # Use those numbers in order to create the numeric vector
-                dateFinal <- vector("numeric",obsAll);
-                dateFinal[1:hoursInOf[1]] <- 1:hoursInOf[1];
-                for(i in 2:length(hoursInOf)){
-                    dateFinal[1:hoursInOf[i]+hoursInOf[i-1]] <- 1:hoursInOf[i];
-                }
+            if(any(of==c("year","quarter","month","week"))){
+                dateFinal <- dateDaysOf*24 + dateHours + 1;
             }
-            else{
-                if(of=="week"){
-                    #### This stuff assumes that the data is in hours!!! Fix this!!! ####
-                    warning("Please, note that the function currently only handles hour of week if the data is in hours.",
-                            call.=FALSE);
-                    # Days of week in years
-                    dateDaysOfWeekFirst <- as.numeric(strftime(object, format="%u"))[1];
-                    # Hours in a day
-                    dateHoursOfDayFirst <- as.numeric(strftime(object, format="%H"))[1]+1;
-                    # The starting index of the day of week / hour
-                    dateStart <- dateDaysOfWeekFirst*24 + dateHoursOfDayFirst;
-                    # There's 168 hours in a week, so repeat that stuff
-                    # +1 is needed just in case, not to create a smaller object than needed
-                    dateFinal <- rep(c(1:(7*24)),ceiling(obsAll/(7*24))+1)[dateStart+1:obsAll];
-                }
-                else if(of=="day"){
-                    dateFinal <- as.numeric(strftime(object, format="%H"));
-                }
+            else if(of=="day"){
+                dateFinal <- dateHours;
             }
         }
         else if(type=="halfhour"){
             stop("Sorry, but the halfhour option is not available yet", call.=FALSE);
         }
         else if(type=="minute"){
-            if(any(of==c("year","quarter","month"))){
-                if(of=="year"){
-                    dateOf <- as.numeric(strftime(object, format="%Y"));
-                }
-                else if(of=="quarter"){
-                    dateOf <- as.numeric(substr(quarters(object),2,2));
-                }
-                else if(of=="month"){
-                    dateOf <- as.numeric(strftime(object, format="%m"));
-                }
-
-                # Calculate the number of minutes between the "ofs"
-                dateOfDiffs <- c(1,diff(dateOf));
-                dateOfDiffs[length(dateOf)] <- 1;
-                hoursInOf <- difftime(object[which(dateOfDiffs!=0)[-1]],
-                                      object[which(dateOfDiffs!=0)[-sum(dateOfDiffs!=0)]],
-                                      units="mins");
-
-                # Use those numbers in order to create the numeric vector
-                dateFinal <- vector("numeric",obsAll);
-                dateFinal[1:hoursInOf[1]] <- 1:hoursInOf[1];
-                for(i in 2:length(hoursInOf)){
-                    dateFinal[1:hoursInOf[i]+hoursInOf[i-1]] <- 1:hoursInOf[i];
-                }
+            if(any(of==c("year","quarter","month","week","day"))){
+                dateFinal <- dateDaysOf*1440 + dateHours*60 + dateMinutes + 1;
             }
-            else{
-                if(of=="week"){
-                    #### This stuff assumes that the data is in hours!!! Fix this!!! ####
-                    warning("Please, note that the function currently only handles minutes of week if the data is in minutes.",
-                            call.=FALSE);
-                    # Days of week in years
-                    dateDaysOfWeekFirst <- as.numeric(strftime(object, format="%u"))[1];
-                    # Hours in a day
-                    dateHoursOfDayFirst <- as.numeric(strftime(object, format="%H"))[1];
-                    # The starting index of the day of week / hour
-                    dateStart <- dateDaysOfWeekFirst*24 + dateHoursOfDayFirst*60 + dateMinutesOfHourFirst-1;
-                    # There's 168 hours in a week, so repeat that stuff
-                    # +1 is needed just in case, not to create a smaller object than needed
-                    dateFinal <- rep(c(1:(7*24*60)),ceiling(obsAll/(7*24*60))+1)[dateStart+1:obsAll];
-                }
-                else if(of=="day"){
-                    #### This stuff assumes that the data is in hours!!! Fix this!!! ####
-                    warning("Please, note that the function currently only handles minutes of day if the data is in minutes.",
-                            call.=FALSE);
-                    # Hours in a day
-                    dateHoursOfDayFirst <- as.numeric(strftime(object, format="%H"))[1];
-                    # The starting index of the day of week / hour
-                    dateMinutesOfHourFirst <- as.numeric(strftime(object, format="%M"))[1];
-                    # The starting minute of hour
-                    dateStart <- dateHoursOfDayFirst*60+dateMinutesOfHourFirst-1;
-                    # There's 168 hours in a week, so repeat that stuff
-                    # +1 is needed just in case, not to create a smaller object than needed
-                    dateFinal <- rep(c(1:(24*60)),ceiling(obsAll/(24*60))+1)[dateStart+1:obsAll];
-                }
-                else if(of=="hour"){
-                    dateFinal <- as.numeric(strftime(object, format="%M"));
-                }
+            else if(of=="hour"){
+                dateFinal <- dateMinutes;
             }
         }
         # Else... this is seconds
         else{
             if(of=="minute"){
-                    dateFinal <- as.numeric(strftime(object, format="%S"));
+                    dateFinal <- as.numeric(format(object, format="%S"));
             }
             else{
                 stop(paste0("Sorry, but the seconds option is not available yet for the ",of),
@@ -379,9 +310,9 @@ temporaldummy.POSIXt <- function(object, type=c("month","quarter","week","day","
     factorVariable <- factor(dateFinal[1:obsAll]);
 
     if(!factors){
-        # Do model matrix for sparse factors
-        temporaldummy <- model.matrix(~factorVariable-1);
-        colnames(temporaldummy) <- paste0(type,sort(unique(dateFinal)),"of",of);
+        # The dummies of all the observed values, even if there is only one
+        temporaldummy <- diag(nlevels(factorVariable))[as.integer(factorVariable),,drop=FALSE];
+        colnames(temporaldummy) <- paste0(type,levels(factorVariable),"of",of);
         return(temporaldummy);
     }
     else{
@@ -404,5 +335,5 @@ temporaldummy.zoo <- function(object, type=c("month","quarter","week","day","hou
     }
 
     # Invoke the respective class for the date / time
-    return(temporaldummy(dates, type=type, of=of, factors=factors, h=h));
+    return(temporaldummy(dates, type=type, of=of, factors=factors, h=0));
 }

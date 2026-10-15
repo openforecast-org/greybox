@@ -59,15 +59,19 @@
 #' @seealso \code{\link[greybox]{Distributions}}
 #'
 #' @rdname FNormal
-#' @importFrom stats optim pnorm qnorm rnorm
+#' @importFrom stats optim pnorm qnorm rnorm uniroot
 #' @aliases FNormal dfnorm
 #' @export dfnorm
 dfnorm <- function(q, mu=0, sigma=1, log=FALSE){
+    # The log is taken analytically, the log of the density underflows in the tails:
+    # f(q) = dnorm(q, |mu|, sigma) * (1 + exp(-2 q |mu| / sigma^2))
+    if(log){
+        fnormReturn <- dnorm(q, abs(mu), sigma, log=TRUE) + log1p(exp(-2*q*abs(mu)/sigma^2));
+        fnormReturn[q<0] <- -Inf;
+        return(fnormReturn);
+    }
     fnormReturn <- 1/(sqrt(2 * pi)*sigma) * (exp(-(q-mu)^2 / (2 * sigma^2)) +
                                                  exp(-(q+mu)^2 / (2 * sigma^2)));
-    if(log){
-        fnormReturn[] <- log(fnormReturn);
-    }
     fnormReturn[q<0] <- 0;
 
     return(fnormReturn);
@@ -89,9 +93,9 @@ qfnorm <- function(p, mu=0, sigma=1){
     # p <- unique(p);
     # mu <- unique(mu);
     # sigma <- unique(sigma);
+    # The quantile is the root of CF on [0, |mu|+10*sigma], NaN if there is none
     CF <- function(A, P, mu, sigma){
-        probability <- pfnorm(A, mu, sigma);
-        return((P-probability)^2);
+        return(pfnorm(A, mu, sigma)-P);
     }
 
     lengthMax <- max(length(p),length(mu),length(sigma));
@@ -107,8 +111,10 @@ qfnorm <- function(p, mu=0, sigma=1){
         for(j in probsToEstimate){
             for(k in 1:length(sigma)){
                 for(i in 1:length(mu)){
-                    fnormReturn[j,i,k] <- optim(abs(qnorm(p[j],mu[i],sigma[k])), CF, method="L-BFGS-B", lower=0,
-                                                P=p[j], mu=mu[i], sigma=sigma[k])$par;
+                    fnormReturn[j,i,k] <- tryCatch(uniroot(CF, c(0, abs(mu[i])+10*sigma[k]),
+                                                           P=p[j], mu=mu[i], sigma=sigma[k],
+                                                           tol=1e-300, maxiter=1000)$root,
+                                                   error=function(e){return(NaN)});
                 }
             }
         }
@@ -123,15 +129,17 @@ qfnorm <- function(p, mu=0, sigma=1){
         sigma <- rep(sigma,lengthMax)[1:lengthMax];
 
         for(i in 1:lengthMax){
-            if(p[i]==0){
+            if(isTRUE(p[i]==0)){
                 fnormReturn[i] <- 0;
             }
-            else if(p[i]==1){
+            else if(isTRUE(p[i]==1)){
                 fnormReturn[i] <- Inf;
             }
             else{
-                fnormReturn[i] <- optim(abs(qnorm(p[i],mu[i],sigma[i])), CF, method="L-BFGS-B", lower=0,
-                                        P=p[i], mu=mu[i], sigma=sigma[i])$par;
+                fnormReturn[i] <- tryCatch(uniroot(CF, c(0, abs(mu[i])+10*sigma[i]),
+                                                   P=p[i], mu=mu[i], sigma=sigma[i],
+                                                   tol=1e-300, maxiter=1000)$root,
+                                           error=function(e){return(NaN)});
             }
         }
     }
