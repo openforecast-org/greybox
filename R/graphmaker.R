@@ -158,8 +158,8 @@ graphmaker <- function(actuals, forecast, fitted=NULL, lower=NULL, upper=NULL,
         timeStep <- mean(diff(time(actuals)));
     }
 
-    # If the start time of forecast is the same as the start time of the actuals, change ts of forecast
-    if(time(forecast)[1]==time(actuals)[1]){
+    # If the forecast has no time of its own (a vector) or starts with the actuals, it follows them
+    if(!is.ts(forecast) && !inherits(forecast, "zoo") || time(forecast)[1]==time(actuals)[1]){
         if(is.ts(actuals)){
             forecast <- ts(forecast, start=time(actuals)[length(actuals)]+timeStep, frequency=frequency(actuals));
         }

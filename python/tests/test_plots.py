@@ -684,6 +684,20 @@ class TestGraphmakerCompare:
                 ),
             ),
             (
+                (
+                    "ts(sin(1:20), start=c(2000,1), frequency=4), rep(0.5,6),"
+                    " lower=rep(-1,6), upper=rep(2,6), level=0.95"
+                ),
+                lambda: (
+                    pd.Series(np.sin(np.arange(1, 21)), index=2000 + np.arange(20) / 4),
+                    np.full(6, 0.5),
+                    None,
+                    np.full(6, -1.0),
+                    np.full(6, 2.0),
+                    0.95,
+                ),
+            ),
+            (
                 "c(1:10), c(11:15), legend=FALSE, vline=FALSE",
                 lambda: (
                     np.arange(1.0, 11),
