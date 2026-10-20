@@ -15,3 +15,4 @@ CLAUDE.md
 AGENTS.md
 LICENSE
 ^\.claude$
+^\.(ruff|mypy|pytest)_cache$

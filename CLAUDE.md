@@ -10,7 +10,11 @@ Example: cd python && .venv/bin/python -m pytest tests/
 IMPORTANT: Never create cache files, virtual environments, or other generated
 artifacts in the project's root folder. All Python work — including the
 virtual environment (`python/.venv`), caches, and build outputs — belongs in
-the `python/` subfolder.
+the `python/` subfolder. Run ruff, mypy and pytest from `python/`
+(`cd python && .venv/bin/ruff check src/greybox/`), never from the root:
+ruff and mypy write `.ruff_cache`/`.mypy_cache` in the current directory
+whatever their config says. `.claude/settings.local.json` points
+`RUFF_CACHE_DIR` and `MYPY_CACHE_DIR` into `python/` as a safety net.
 
 Python port of the R `greybox` package — a toolbox for regression model building and forecasting. The R package (root directory) is the mature original; the Python port (`python/`) is the active development target. Both are developed on `master`; the `Python` branch is historical.
 
