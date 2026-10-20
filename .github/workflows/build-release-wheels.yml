@@ -125,7 +125,7 @@ jobs:
       # so there should be nothing to bundle -- if a Windows wheel ever
       # grows unexpected DLLs, set the repair command to "" to opt out.
       - name: Build & test wheels
-        uses: pypa/cibuildwheel@v4.2.0
+        uses: pypa/cibuildwheel@v4.3.1
         with:
           package-dir: python
           output-dir: wheelhouse
