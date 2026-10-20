@@ -1,13 +1,13 @@
 ---
 title: "Cran Comments"
 author: "Ivan Svetunkov"
-date: "2 October 2026"
+date: "20 October 2026"
 output: html_document
 ---
 
 
 ## Version
-This is the release of the package `greybox`, v2.0.9.
+This is the release of the package `greybox`, v2.0.11.
 
 
 ## Test environments
