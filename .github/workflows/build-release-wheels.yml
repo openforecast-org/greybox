@@ -43,7 +43,7 @@ jobs:
   # R-vs-Python comparison tests importorskip rpy2 and skip cleanly here.
   test:
     name: Test suite (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -77,10 +77,10 @@ jobs:
         # names, so the build glob can't be reused there directly.
         include:
           # Linux: cp311–cp314 manylinux (manylinux_2_28 from pyproject)
-          - { os: ubuntu-latest,  cibw-build: 'cp311-manylinux*', tag: 'cp311-linux' }
-          - { os: ubuntu-latest,  cibw-build: 'cp312-manylinux*', tag: 'cp312-linux' }
-          - { os: ubuntu-latest,  cibw-build: 'cp313-manylinux*', tag: 'cp313-linux' }
-          - { os: ubuntu-latest,  cibw-build: 'cp314-manylinux*', tag: 'cp314-linux' }
+          - { os: ubuntu-26.04,  cibw-build: 'cp311-manylinux*', tag: 'cp311-linux' }
+          - { os: ubuntu-26.04,  cibw-build: 'cp312-manylinux*', tag: 'cp312-linux' }
+          - { os: ubuntu-26.04,  cibw-build: 'cp313-manylinux*', tag: 'cp313-linux' }
+          - { os: ubuntu-26.04,  cibw-build: 'cp314-manylinux*', tag: 'cp314-linux' }
           # macOS: cp311–cp314. The glob matches both x86_64 and arm64,
           # so each row produces both wheels (archs come from pyproject).
           - { os: macos-latest,   cibw-build: 'cp311-macosx*',    tag: 'cp311-macos' }
@@ -144,7 +144,7 @@ jobs:
   build_sdist:
     name: Build sdist
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
         with:
@@ -173,7 +173,7 @@ jobs:
   prepare_draft_release:
     name: Stage wheels on draft GitHub release
     needs: [build_wheels, build_sdist]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: write   # creating / updating the draft release
     steps:
