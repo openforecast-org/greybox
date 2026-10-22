@@ -456,9 +456,10 @@ class CALMResult:
 
         # The design matrix of all the variables of the new data, with the levels of
         # the factors of the training data, and its columns of the parameters, as
-        # R's predict.greybox() of y ~ .
+        # R's predict.greybox() of y ~ . A column of the intercept, as in a design
+        # matrix from formula(), is not a variable, and R's model.frame() drops it
         if isinstance(X, (dict, DataFrame)):
-            frame = DataFrame(X)
+            frame = DataFrame(X).drop(columns="(Intercept)", errors="ignore")
             frame.attrs["_xlevels"] = self._xlevels
             X = formula_func(f"`{self.y_variable}` ~ .", frame, return_type="X")
             X = np.asarray(X[self.coefficient_names], dtype=float)
@@ -764,11 +765,16 @@ def _calculate_associations(
             else:
                 design = np.column_stack([np.ones(len(residuals)), values])
                 fit_residuals = _lm_fit(design, residuals)[1]
+                # Constant residuals give 0/0, NaN in R
                 corr = np.sqrt(
                     np.abs(
                         1
-                        - mean_fast(fit_residuals**2, 1)
-                        / mean_fast((residuals - np.mean(residuals)) ** 2, 1)
+                        - np.divide(
+                            mean_fast(fit_residuals**2, 1),
+                            np.float64(
+                                mean_fast((residuals - np.mean(residuals)) ** 2, 1)
+                            ),
+                        )
                     )
                 )
             associations[var] = float(corr)

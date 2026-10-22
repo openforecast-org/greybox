@@ -429,7 +429,6 @@ def mase(
 
     Formula:
         MASE = MAE / scale
-        where ``scale = mean(|holdout[t] - holdout[t-1]|)`` by default
 
     Parameters
     ----------
@@ -437,9 +436,8 @@ def mase(
         Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
-    scale : float, optional
-        Scale parameter. If None, uses mean absolute difference of consecutive
-        holdout values (naive forecast error). Typical values include:
+    scale : float
+        Scale parameter, required as in R. Typical values include:
 
         - mean absolute deviation of in-sample one step ahead naive error
         - mean absolute value of the in-sample actuals
@@ -458,9 +456,6 @@ def mase(
     >>> holdout = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     >>> forecast = np.array([1.1, 2.2, 3.2, 3.9, 5.1,
     ...                      6.2, 7.1, 8.2, 9.2, 10.1])
-    >>> round(float(mase(holdout, forecast)), 2)
-    0.15
-    >>> # With custom scale
     >>> round(float(mase(holdout, forecast, scale=1.0)), 2)
     0.15
 
@@ -480,7 +475,7 @@ def mase(
     holdout, forecast = _validate_inputs(holdout, forecast, na_rm)
 
     if scale is None:
-        scale = np.mean(np.abs(np.diff(holdout)))
+        raise TypeError("mase() missing required argument: 'scale'")
 
     return np.mean(np.abs(holdout - forecast)) / scale
 
@@ -507,9 +502,9 @@ def rmsse(
         Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
-    scale : float, optional
-        Scale parameter. If None, uses mean squared difference of consecutive
-        holdout values. Typical value: mean(diff(holdout)^2).
+    scale : float
+        Scale parameter, required as in R. Typical value: the mean squared
+        difference of the in-sample actuals, mean(diff(actual)^2).
     na_rm : bool, default=True
         Remove NA values.
     actual : np.ndarray, optional
@@ -525,7 +520,7 @@ def rmsse(
     >>> holdout = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     >>> forecast = np.array([1.1, 2.2, 3.2, 3.9, 5.1,
     ...                      6.2, 7.1, 8.2, 9.2, 10.1])
-    >>> round(float(rmsse(holdout, forecast)), 4)
+    >>> round(float(rmsse(holdout, forecast, scale=1.0)), 4)
     0.1581
 
     References
@@ -543,7 +538,7 @@ def rmsse(
     holdout, forecast = _validate_inputs(holdout, forecast, na_rm)
 
     if scale is None:
-        scale = np.mean(np.diff(holdout) ** 2)
+        raise TypeError("rmsse() missing required argument: 'scale'")
 
     return np.sqrt(np.mean((holdout - forecast) ** 2) / scale)
 
@@ -570,9 +565,9 @@ def same(
         Holdout (observed) values.
     forecast : np.ndarray
         Forecasted values.
-    scale : float, optional
-        Scale parameter. If None, uses mean absolute difference of consecutive
-        holdout values.
+    scale : float
+        Scale parameter, required as in R. Typical value: the mean absolute
+        difference of the in-sample actuals.
     na_rm : bool, default=True
         Remove NA values.
     actual : np.ndarray, optional
@@ -588,7 +583,7 @@ def same(
     >>> holdout = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     >>> forecast = np.array([1.1, 2.2, 3.2, 3.9, 5.1,
     ...                      6.2, 7.1, 8.2, 9.2, 10.1])
-    >>> round(float(same(holdout, forecast)), 2)
+    >>> round(float(same(holdout, forecast, scale=1.0)), 2)
     0.13
 
     References
@@ -606,7 +601,7 @@ def same(
     holdout, forecast = _validate_inputs(holdout, forecast, na_rm)
 
     if scale is None:
-        scale = np.mean(np.abs(np.diff(holdout)))
+        raise TypeError("same() missing required argument: 'scale'")
 
     return np.abs(np.mean(holdout - forecast)) / scale
 

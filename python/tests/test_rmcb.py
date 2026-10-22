@@ -131,6 +131,8 @@ def test_general_distribution(positive_data):
     assert result.distribution == "dlaplace"
     assert np.all(np.isfinite(result.mean.to_numpy()))
     assert 0.0 <= result.p_value <= 1.0
+    # A plain float, as R's p.value since 2.0.12
+    assert type(result.p_value) is float
 
 
 def test_numpy_array_input_default_names():

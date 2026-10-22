@@ -60,17 +60,22 @@ inline double dlogis_one(double q, double location, double scale) {
     return e / (scale * f * f);
 }
 
-// R's nmath dbinom_raw(log=TRUE) and dbeta(), of R 4.3.3; bd0() and lbeta() are in
+// R's nmath dbinom_raw(log=TRUE) and dbeta(), of R 4.6.1; bd0() and lbeta() are in
 // nmath.h
 inline double dbinom_raw_log(double x, double n, double p, double q) {
     if (p == 0) return x == 0 ? 0.0 : -INFINITY;
     if (q == 0) return x == n ? 0.0 : -INFINITY;
+    // The smaller of p and q is the most accurate
     if (x == 0) {
         if (n == 0) return 0.0;
-        return p < 0.1 ? -greybox_nmath::bd0(n, n * q) - n * p : n * std::log(q);
+        return p > q ? n * std::log(q) : n * std::log1p(-p);
     }
-    if (x == n) return q < 0.1 ? -greybox_nmath::bd0(n, n * p) - n * q : n * std::log(p);
+    if (x == n) return p > q ? n * std::log1p(-q) : n * std::log(p);
     if (x < 0 || x > n) return -INFINITY;
+    if (!std::isfinite(n)) {
+        if (std::isfinite(x)) return -INFINITY;
+        n = DBL_MAX;
+    }
     double lc = greybox_nmath::stirlerr(n) - greybox_nmath::stirlerr(x) -
                 greybox_nmath::stirlerr(n - x) - greybox_nmath::bd0(x, n * p) -
                 greybox_nmath::bd0(n - x, n * q);

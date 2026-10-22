@@ -369,7 +369,7 @@ class ALM:
         - "algorithm": str, default="NLOPT_LN_NELDERMEAD"
         - "maxeval": int, default=40 per parameter (200 for LASSO / RIDGE and the
           ARI models)
-        - "maxtime": float, default=600 seconds
+        - "maxtime": float, default=-1 (no limit), in seconds
         - "xtol_rel": float, default=1e-6
         - "xtol_abs": float, default=1e-8
         - "ftol_rel": float, default=1e-4 (1e-8 for LASSO / RIDGE and the ARI

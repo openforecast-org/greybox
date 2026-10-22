@@ -164,7 +164,8 @@ def supsmu(x, y, wt=None, span="cv", periodic=False, bass=0.0):
     dict
         Dictionary with two keys:
 
-        - ``"x"`` : :class:`numpy.ndarray` of sorted abscissa values.
+        - ``"x"`` : :class:`numpy.ndarray` of the sorted distinct abscissa
+          values (tied ``x`` values appear once, as in R).
         - ``"y"`` : :class:`numpy.ndarray` of smoothed ordinate values,
           aligned with ``"x"``.
 
@@ -223,7 +224,8 @@ def supsmu(x, y, wt=None, span="cv", periodic=False, bass=0.0):
     else:
         span_val = float(span)
 
-    order = np.argsort(x, kind="stable")
+    # R: order(x, y), ties in x broken by y
+    order = np.lexsort((y, x))
     x_sorted = np.ascontiguousarray(x[order])
     y_sorted = np.ascontiguousarray(y[order])
     if wt is None:
@@ -242,4 +244,6 @@ def supsmu(x, y, wt=None, span="cv", periodic=False, bass=0.0):
         bass=bass,
         periodic=bool(periodic),
     )
-    return {"x": x_sorted, "y": np.asarray(smoothed)}
+    # R returns one point per distinct x (the smoother averages over ties)
+    unique = np.r_[True, np.diff(x_sorted) != 0]
+    return {"x": x_sorted[unique], "y": np.asarray(smoothed)[unique]}

@@ -4309,17 +4309,14 @@ forecast.alm <- function(object, newdata=NULL, h=NULL, ...){
     }
     else if(is.null(newdata) & !is.null(h)){
         warning("No newdata provided, the values will be forecasted", call.=FALSE, immediate.=TRUE);
-        if(ncol(object$data)>1){
+        # The ARI lags of the response are not explanatory variables to forecast
+        ariLength <- length(object$other$polynomial);
+        nVariables <- ncol(object$data)-ariLength-1;
+        if(nVariables>0){
             # If smooth is installed, use ADAM
             if(requireNamespace("smooth", quietly=TRUE) && (packageVersion("smooth")>="3.0.0")){
-                if(!is.null(object$other$polynomial)){
-                    ariLength <- length(object$other$polynomial);
-                    newdata <- matrix(NA, h, ncol(object$data)-ariLength-1,
-                                      dimnames=list(NULL, colnames(object$data)[-c(1, (ncol(object$data)-ariLength+1):ncol(object$data))]));
-                }
-                else{
-                    newdata <- matrix(NA, h, ncol(object$data)-1, dimnames=list(NULL, colnames(object$data)[-1]));
-                }
+                newdata <- matrix(NA, h, nVariables,
+                                  dimnames=list(NULL, colnames(object$data)[1+c(1:nVariables)]));
 
                 # If the user asked for trend, but it's not in the data, add it
                 if(any(all.vars(formula(object))=="trend")){

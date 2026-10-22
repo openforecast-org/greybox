@@ -1,3 +1,43 @@
+greybox for Python v1.0.11 (Release date: 2026-10-??)
+==============
+
+Changes:
+* `rmcb()` with a distribution other than `"dnorm"` and `"tukey"` doubles the
+  likelihood ratio statistic, as R's `rmcb()` now does: the test took the
+  difference of the log-likelihoods instead of twice it, and was too conservative.
+* `mase()`, `rmsse()` and `same()` require `scale`, as R's `MASE()`, `RMSSE()`
+  and `SAME()`: without it they raise TypeError. Before, they took the mean
+  (absolute or squared) differences of the holdout, a scale R does not offer
+  and that the in-sample measures do not use. Pass the in-sample scale, e.g.
+  `mase(holdout, forecast, np.mean(np.abs(np.diff(actual))))`.
+
+Bugfixes:
+* The distribution functions ported from R's nmath (the normal, gamma, Beta, t
+  and the noncentral t and chi-squared) follow R 4.6.1 instead of R 4.3.3, so
+  they agree with the current R to the bit again: `pnorm` (and so `pt` and
+  `qt` with a large noncentrality) returns R's subnormal values down to
+  |x| = 38.4674 instead of zero from 37.5193, `stirlerr()` takes R's more
+  accurate series (it moves the last bits of `gamma()`, `dgamma`, `dgnorm` and
+  `dbeta`), and `bd0()`, `dbinom_raw()` and the continued fraction of
+  `pbeta` take R's rescaled forms.
+* `supsmu()` with tied `x` values follows R's `stats::supsmu`: the points are
+  ordered by `x` and then `y`, and the result has one point per distinct `x`,
+  so it matches R to the machine precision on tied data (before, it returned
+  every point and differed from R by up to 0.17 with `bass=5`).
+* `CALMResult.predict()` accepts the design matrix of `formula()`, as
+  `ALM.predict()` and R's `predict()` of `calm()`: its `(Intercept)` column was
+  taken as a variable and failed with "X has 5 features, but model expects 4".
+* `stepwise()` with `distribution="plogis"` or `"pnorm"` on a response with no
+  zeros and a binary or categorical regressor returns the intercept-only model,
+  as R: the constant residuals gave 0/0 in the association of the categorical
+  regressors and failed with ZeroDivisionError instead of NaN.
+* `lowess()` with tied `x` values matches R's `stats::lowess` bit for bit: the
+  native code re-sorted the points with an unstable sort, which permuted the
+  ties and so the order of the weighted sums (differences up to 2e-15).
+* The docstring of `ALM` said that `maxtime` defaults to 600 seconds: there is
+  no time limit by default, as in R.
+
+
 greybox for Python v1.0.10 (2026-10-21)
 ==============
 
