@@ -21,6 +21,9 @@ Bugfixes:
   zeros and a binary or categorical regressor returns the intercept-only model,
   as R: the constant residuals gave 0/0 in the association of the categorical
   regressors and failed with ZeroDivisionError instead of NaN.
+* `lowess()` with tied `x` values matches R's `stats::lowess` bit for bit: the
+  native code re-sorted the points with an unstable sort, which permuted the
+  ties and so the order of the weighted sums (differences up to 2e-15).
 
 
 greybox for Python v1.0.10 (2026-10-21)

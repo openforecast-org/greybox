@@ -148,6 +148,16 @@ class TestSupsmuLowessVsR:
         assert_allclose(py["x"], np.array(ro.r("rOut$x")), rtol=0, atol=0)
         assert_allclose(py["y"], np.array(ro.r("rOut$y")), rtol=1e-13, atol=1e-13)
 
+    @pytest.mark.parametrize("seed", [41, 42, 43])
+    def test_lowess_ties_match_r(self, seed):
+        """With tied x, the ties keep their order, as R's order(x): bit for bit."""
+        ro.r(
+            f"set.seed({seed}); x <- round(runif(80, 0, 10)); "
+            "y <- sin(x) + rnorm(80, 0, 0.5)"
+        )
+        py = lowess(np.array(ro.r("x")), np.array(ro.r("y")))
+        assert_allclose(py["y"], np.array(ro.r("lowess(x, y)$y")), rtol=0, atol=0)
+
 
 class TestPointLikCumulativeVsR:
     """pointLikCumulative parity for the discrete distributions used by aid().

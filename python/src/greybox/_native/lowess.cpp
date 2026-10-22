@@ -126,8 +126,10 @@ std::vector<double> lowess_impl(const std::vector<double>& x,
 
     std::vector<std::size_t> order(n);
     std::iota(order.begin(), order.end(), 0);
-    std::sort(order.begin(), order.end(),
-              [&](std::size_t a, std::size_t b) { return x[a] < x[b]; });
+    // Stable, as R's order(x): the tied points keep their order, which sets the
+    // order of the sums of lowest()
+    std::stable_sort(order.begin(), order.end(),
+                     [&](std::size_t a, std::size_t b) { return x[a] < x[b]; });
 
     std::vector<double> x_sorted(n), y_sorted(n);
     for (std::size_t i = 0; i < n; ++i) {
