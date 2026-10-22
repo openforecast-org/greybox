@@ -43,7 +43,13 @@ full pytest suite on ubuntu, windows and macos. `make lint` only covers the
 first, so run `ruff check src/greybox/` and `ruff format --check src/greybox/`
 as well before calling a change done.
 
-R-vs-Python comparison tests require `rpy2` and R `greybox` installed:
+R-vs-Python comparison tests require `rpy2` and R `greybox` installed from this
+source (`R CMD INSTALL --preclean .`): they call `library(greybox)`, so an older
+installed version fails them. The ARI comparisons (e.g. `B()` and `alm(orders=)`)
+also need Python `smooth` in `python/.venv`
+(`python -m pip install --no-deps ../../smooth/python`): without it,
+`xreg_expander` fills the pre-sample lags with the first value, while R backcasts
+them with smooth's ADAM, so the coefficients differ.
 ```bash
 pytest tests/test_r_python_compare.py
 pytest tests/test_alm_distributions_compare.py
