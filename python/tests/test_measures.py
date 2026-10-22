@@ -122,17 +122,17 @@ class TestMASE:
         expected = mae(actual, predicted)
         np.testing.assert_almost_equal(result, expected)
 
-    def test_auto_scale(self):
-        # scale = mean(|diff(actual)|) = mean([1,1,1,1]) = 1.0
-        result = mase(actual, predicted)
-        expected = mae(actual, predicted) / 1.0
-        np.testing.assert_almost_equal(result, expected)
+    @pytest.mark.parametrize("measure", [mase, rmsse, same])
+    def test_scale_required(self, measure):
+        """scale has no default, as in R."""
+        with pytest.raises(TypeError, match="scale"):
+            measure(actual, predicted)
 
     def test_zero_scale(self):
         a = np.array([3.0, 3.0, 3.0])
         f = np.array([3.1, 2.9, 3.0])
         with np.errstate(divide="ignore"):
-            result = mase(a, f)
+            result = mase(a, f, np.mean(np.abs(np.diff(a))))
         assert result == np.inf
 
 

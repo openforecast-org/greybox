@@ -1,6 +1,13 @@
 greybox for Python v1.0.11 (Release date: 2026-10-??)
 ==============
 
+Changes:
+* `mase()`, `rmsse()` and `same()` require `scale`, as R's `MASE()`, `RMSSE()`
+  and `SAME()`: without it they raise TypeError. Before, they took the mean
+  (absolute or squared) differences of the holdout, a scale R does not offer
+  and that the in-sample measures do not use. Pass the in-sample scale, e.g.
+  `mase(holdout, forecast, np.mean(np.abs(np.diff(actual))))`.
+
 Bugfixes:
 * The distribution functions ported from R's nmath (the normal, gamma, Beta, t
   and the noncentral t and chi-squared) follow R 4.6.1 instead of R 4.3.3, so
