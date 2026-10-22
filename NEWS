@@ -3,6 +3,7 @@ greybox v2.0.12 (Release data: 2026-10-??)
 
 Bugfixes:
 * alm() with a fitted occurrence model whose response is named differently from the response of the sizes (e.g. the occurrence model of smooth on y, and stepwise() on the errors of adam()) failed with "subscript out of bounds": the provided model is used via its fitted values and logLik only, and the data of the occurrence is now built only when alm() estimates it.
+* rmcb() with a distribution other than "dnorm" and "tukey" (e.g. "dlnorm" or "dlaplace") returned p.value as an object of class logLik; it now returns a plain number, as in the other cases.
 * forecast() of alm() with orders and no explanatory variables (e.g. alm(y~1, orders=c(1,0,0))) and newdata=NULL failed with "argument is of length zero": the lags of the response are no longer counted as variables to forecast.
 
 
