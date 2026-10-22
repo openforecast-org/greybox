@@ -2228,12 +2228,12 @@ alm <- function(formula, data, subset, na.action,
             mf$subset <- rep(TRUE,obsInsample);
         }
 
-        # New data and new response variable
-        dataNew <- dataWork
-        # dataNew <- mf$data[mf$subset,,drop=FALSE];
-        dataNew[,all.vars(occurrenceFormula)[1]] <- (ot)*1;
-
+        # A provided occurrence model is used via its fitted values and logLik only:
+        # its response may be named differently from the one of the sizes
         if(!occurrenceProvided){
+            # New data with the occurrence variable as the response
+            dataNew <- dataWork;
+            dataNew[,all.vars(occurrenceFormula)[1]] <- (ot)*1;
             occurrence <- do.call("alm", list(formula=occurrenceFormula, data=dataNew,
                                               distribution=occurrence, ar=arOrder, i=iOrder));
             if(exists("dataSubstitute",inherits=FALSE)){

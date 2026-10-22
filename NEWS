@@ -1,3 +1,10 @@
+greybox v2.0.12 (Release data: 2026-10-??)
+==============
+
+Bugfixes:
+* alm() with a fitted occurrence model whose response is named differently from the response of the sizes (e.g. the occurrence model of smooth on y, and stepwise() on the errors of adam()) failed with "subscript out of bounds": the provided model is used via its fitted values and logLik only, and the data of the occurrence is now built only when alm() estimates it.
+
+
 greybox v2.0.11 (Release data: 2026-10-20)
 ==============
 
