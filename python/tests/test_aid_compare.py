@@ -118,6 +118,36 @@ class TestSupsmuLowessVsR:
         py = supsmu(x_r, y_r, span=0.3)
         assert_allclose(py["y"], r_smoothed, rtol=1e-8, atol=1e-8)
 
+    @pytest.mark.parametrize(
+        "span, bass, weighted",
+        [
+            ("cv", 0, False),
+            ("cv", 2, False),
+            ("cv", 5, False),
+            ("cv", 8, False),
+            (0.1, 0, False),
+            (0.3, 0, False),
+            ("cv", 5, True),
+            (0.3, 0, True),
+        ],
+    )
+    def test_supsmu_ties_match_r(self, span, bass, weighted):
+        """With tied x, R returns one point per distinct x, ordered by (x, y)."""
+        ro.r(
+            "set.seed(41); x <- round(runif(80, 0, 4), 1); "
+            "y <- sin(x) + rnorm(80, 0, 0.3); wt <- runif(80, 0.5, 2)"
+        )
+        x_r = np.array(ro.r("x"))
+        y_r = np.array(ro.r("y"))
+        wt = np.array(ro.r("wt")) if weighted else None
+        r_span = '"cv"' if span == "cv" else span
+        r_wt = "wt" if weighted else "rep(1, length(y))"
+        ro.r(f"rOut <- supsmu(x, y, wt={r_wt}, span={r_span}, bass={bass})")
+        py = supsmu(x_r, y_r, wt=wt, span=span, bass=bass)
+        assert len(py["x"]) == len(np.unique(x_r))
+        assert_allclose(py["x"], np.array(ro.r("rOut$x")), rtol=0, atol=0)
+        assert_allclose(py["y"], np.array(ro.r("rOut$y")), rtol=1e-13, atol=1e-13)
+
 
 class TestPointLikCumulativeVsR:
     """pointLikCumulative parity for the discrete distributions used by aid().

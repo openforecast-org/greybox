@@ -10,6 +10,10 @@ Bugfixes:
   accurate series (it moves the last bits of `gamma()`, `dgamma`, `dgnorm` and
   `dbeta`), and `bd0()`, `dbinom_raw()` and the continued fraction of
   `pbeta` take R's rescaled forms.
+* `supsmu()` with tied `x` values follows R's `stats::supsmu`: the points are
+  ordered by `x` and then `y`, and the result has one point per distinct `x`,
+  so it matches R to the machine precision on tied data (before, it returned
+  every point and differed from R by up to 0.17 with `bass=5`).
 
 
 greybox for Python v1.0.10 (2026-10-21)
