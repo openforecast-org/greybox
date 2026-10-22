@@ -709,6 +709,16 @@ class TestCALMALMCompat:
         assert pred.lower is None
         assert pred.upper is None
 
+    def test_predict_formula_design(self):
+        """predict() of a design matrix from formula(), as ALM.predict()."""
+        from greybox import formula, mtcars
+
+        result = CALM(mtcars[["mpg", "wt", "hp", "qsec", "drat"]])
+        _, X = formula("mpg ~ wt + hp + qsec + drat", mtcars)
+        pred = result.predict(X)
+        np.testing.assert_allclose(pred.mean, result.predict(mtcars).mean)
+        np.testing.assert_allclose(pred.mean, result.fitted)
+
     def test_predict_with_prediction_intervals(self, setup):
         """Prediction intervals work."""
         result, X, y, x1, x2 = setup

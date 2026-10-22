@@ -14,6 +14,9 @@ Bugfixes:
   ordered by `x` and then `y`, and the result has one point per distinct `x`,
   so it matches R to the machine precision on tied data (before, it returned
   every point and differed from R by up to 0.17 with `bass=5`).
+* `CALMResult.predict()` accepts the design matrix of `formula()`, as
+  `ALM.predict()` and R's `predict()` of `calm()`: its `(Intercept)` column was
+  taken as a variable and failed with "X has 5 features, but model expects 4".
 
 
 greybox for Python v1.0.10 (2026-10-21)

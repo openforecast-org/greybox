@@ -456,9 +456,10 @@ class CALMResult:
 
         # The design matrix of all the variables of the new data, with the levels of
         # the factors of the training data, and its columns of the parameters, as
-        # R's predict.greybox() of y ~ .
+        # R's predict.greybox() of y ~ . A column of the intercept, as in a design
+        # matrix from formula(), is not a variable, and R's model.frame() drops it
         if isinstance(X, (dict, DataFrame)):
-            frame = DataFrame(X)
+            frame = DataFrame(X).drop(columns="(Intercept)", errors="ignore")
             frame.attrs["_xlevels"] = self._xlevels
             X = formula_func(f"`{self.y_variable}` ~ .", frame, return_type="X")
             X = np.asarray(X[self.coefficient_names], dtype=float)
