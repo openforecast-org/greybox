@@ -765,11 +765,16 @@ def _calculate_associations(
             else:
                 design = np.column_stack([np.ones(len(residuals)), values])
                 fit_residuals = _lm_fit(design, residuals)[1]
+                # Constant residuals give 0/0, NaN in R
                 corr = np.sqrt(
                     np.abs(
                         1
-                        - mean_fast(fit_residuals**2, 1)
-                        / mean_fast((residuals - np.mean(residuals)) ** 2, 1)
+                        - np.divide(
+                            mean_fast(fit_residuals**2, 1),
+                            np.float64(
+                                mean_fast((residuals - np.mean(residuals)) ** 2, 1)
+                            ),
+                        )
                     )
                 )
             associations[var] = float(corr)

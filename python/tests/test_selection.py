@@ -1233,6 +1233,15 @@ class TestSelectionRBehaviour:
         np.testing.assert_allclose(result.bicc, expected)
         np.testing.assert_allclose(result.summary().bicc, expected)
 
+    def test_plogis_without_zeros(self):
+        """A binary regressor and a response with no zeros: R's intercept only."""
+        from greybox import mtcars
+
+        data = mtcars[["mpg", "wt", "hp", "qsec", "cyl", "am"]]
+        model = stepwise(data, distribution="plogis")
+        assert len(model.coef) == 0
+        np.testing.assert_allclose(model.intercept_, 751.0)
+
     def test_intercept_only_returns_alm(self):
         from greybox.alm import ALM
 

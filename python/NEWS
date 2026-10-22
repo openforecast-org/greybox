@@ -17,6 +17,10 @@ Bugfixes:
 * `CALMResult.predict()` accepts the design matrix of `formula()`, as
   `ALM.predict()` and R's `predict()` of `calm()`: its `(Intercept)` column was
   taken as a variable and failed with "X has 5 features, but model expects 4".
+* `stepwise()` with `distribution="plogis"` or `"pnorm"` on a response with no
+  zeros and a binary or categorical regressor returns the intercept-only model,
+  as R: the constant residuals gave 0/0 in the association of the categorical
+  regressors and failed with ZeroDivisionError instead of NaN.
 
 
 greybox for Python v1.0.10 (2026-10-21)
