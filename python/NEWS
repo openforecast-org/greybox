@@ -31,6 +31,8 @@ Bugfixes:
 * `lowess()` with tied `x` values matches R's `stats::lowess` bit for bit: the
   native code re-sorted the points with an unstable sort, which permuted the
   ties and so the order of the weighted sums (differences up to 2e-15).
+* The docstring of `ALM` said that `maxtime` defaults to 600 seconds: there is
+  no time limit by default, as in R.
 
 
 greybox for Python v1.0.10 (2026-10-21)

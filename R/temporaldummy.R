@@ -40,10 +40,9 @@
 #'
 #' @return One of the two is returned, depending on the value of \code{factors} variable:
 #' \itemize{
-#' \item \code{factors=FALSE}: Class "dgCMatrix" with all the dummy variables is returned
-#' in case of numeric variable. Feel free to drop one (making it a reference variable) or
-#' convert the object into matrix (this will consume more memory than the returned class).
-#' In other cases the object of the same class as the provided is returned.
+#' \item \code{factors=FALSE}: A matrix with all the dummy variables, a time series
+#' matrix (class "ts") in case of a "ts" object. Feel free to drop one of them, making it
+#' the reference variable.
 #' \item \code{factors=TRUE}: The categorical variable (factor) containing specific values
 #' for each observation.
 #' }
