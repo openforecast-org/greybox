@@ -1,3 +1,17 @@
+greybox for Python v1.0.11 (Release date: 2026-10-??)
+==============
+
+Bugfixes:
+* The distribution functions ported from R's nmath (the normal, gamma, Beta, t
+  and the noncentral t and chi-squared) follow R 4.6.1 instead of R 4.3.3, so
+  they agree with the current R to the bit again: `pnorm` (and so `pt` and
+  `qt` with a large noncentrality) returns R's subnormal values down to
+  |x| = 38.4674 instead of zero from 37.5193, `stirlerr()` takes R's more
+  accurate series (it moves the last bits of `gamma()`, `dgamma`, `dgnorm` and
+  `dbeta`), and `bd0()`, `dbinom_raw()` and the continued fraction of
+  `pbeta` take R's rescaled forms.
+
+
 greybox for Python v1.0.10 (2026-10-21)
 ==============
 
