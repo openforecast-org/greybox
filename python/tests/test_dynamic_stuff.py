@@ -40,10 +40,13 @@ class TestBackshiftOperator:
             assert B(x, k).shape == (10,)
 
     def test_list_input(self):
-        x = [10.0, 20.0, 30.0]
+        # Long enough for smooth's ADAM to backcast the lag, as R's B() (both fail
+        # on three observations)
+        x = [10.0, 12.0, 15.0, 13.0, 17.0, 16.0, 19.0, 21.0, 20.0, 24.0]
         result = B(x, 1)
         assert isinstance(result, np.ndarray)
-        assert result.shape == (3,)
+        assert result.shape == (10,)
+        np.testing.assert_array_equal(result[1:], x[:-1])
 
 
 # ---------------------------------------------------------------------------
