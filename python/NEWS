@@ -2,6 +2,9 @@ greybox for Python v1.0.11 (Release date: 2026-10-??)
 ==============
 
 Changes:
+* `rmcb()` with a distribution other than `"dnorm"` and `"tukey"` doubles the
+  likelihood ratio statistic, as R's `rmcb()` now does: the test took the
+  difference of the log-likelihoods instead of twice it, and was too conservative.
 * `mase()`, `rmsse()` and `same()` require `scale`, as R's `MASE()`, `RMSSE()`
   and `SAME()`: without it they raise TypeError. Before, they took the mean
   (absolute or squared) differences of the holdout, a scale R does not offer

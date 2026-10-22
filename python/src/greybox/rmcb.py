@@ -670,9 +670,9 @@ def rmcb(
         assert friedman_p is not None
         p_value = friedman_p
     else:
-        # Replicates R's exact (non-doubled) likelihood-ratio statistic.
+        # Likelihood ratio test, as R
         assert log_lik_full is not None and log_lik_null is not None
-        stat = log_lik_full - log_lik_null
+        stat = 2 * (log_lik_full - log_lik_null)
         p_value = float(stats.chi2.sf(stat, n_methods - 1))
 
     # Resolve the highlighted method on the *unsorted* coefficients.

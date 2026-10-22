@@ -267,8 +267,8 @@ rmcb <- function(data, level=0.95, outplot=c("mcb","lines","none"), select=NULL,
         # delta <- AICs - min(AICs);
         # importance <- (exp(-0.5*delta) / sum(exp(-0.5*c(delta))))[2];
 
-        # Chi-squared test. +logLikExp is because the logLik is negative
-        p.value <- pchisq(-(as.numeric(logLik(lmModel2))-as.numeric(logLik(lmModel))),
+        # Likelihood ratio test
+        p.value <- pchisq(-2*(as.numeric(logLik(lmModel2))-as.numeric(logLik(lmModel))),
                           lmModel2$df.residual-lmModel$df.residual, lower.tail=FALSE);
     }
 
