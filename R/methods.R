@@ -4315,7 +4315,8 @@ forecast.alm <- function(object, newdata=NULL, h=NULL, ...){
         if(nVariables>0){
             # The dummies of the factors are not forecast: the factors take their last values
             factorDummies <- unlist(Map(paste0, names(object$xlevels), object$xlevels));
-            variables <- setdiff(colnames(object$data)[1+c(1:nVariables)], factorDummies);
+            variables <- setdiff(colnames(object$data)[1+c(1:nVariables)],
+                                 c(factorDummies, names(object$xlevels)));
             # If smooth is installed, use ADAM
             if(requireNamespace("smooth", quietly=TRUE) && (packageVersion("smooth")>="3.0.0")){
                 newdata <- matrix(NA, h, length(variables), dimnames=list(NULL, variables));
@@ -4337,14 +4338,20 @@ forecast.alm <- function(object, newdata=NULL, h=NULL, ...){
                     newdata[,"trend"] <- nobs(object)+c(1:h);
                 }
             }
-            # The last level of each factor: the one of the dummy equal to one in the last
-            # observation, the first level when none is
+            # The last level of each factor: its last value when the data has the factor, else
+            # the level of the dummy equal to one in the last observation (the first level when
+            # none is)
             newdata <- as.data.frame(newdata);
-            lastObservation <- object$data[nrow(object$data),];
+            lastObservation <- object$data[nrow(object$data),,drop=FALSE];
             for(variable in names(object$xlevels)){
                 levelsAll <- object$xlevels[[variable]];
-                levelLast <- levelsAll[paste0(variable, levelsAll) %in%
-                                           names(lastObservation)[lastObservation==1]];
+                if(variable %in% colnames(lastObservation)){
+                    levelLast <- as.character(lastObservation[1,variable]);
+                }
+                else{
+                    levelLast <- levelsAll[paste0(variable, levelsAll) %in%
+                                               colnames(lastObservation)[lastObservation[1,]==1]];
+                }
                 newdata[[variable]] <- factor(rep(c(levelLast, levelsAll)[1], h), levels=levelsAll);
             }
         }
