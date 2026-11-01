@@ -14,6 +14,15 @@ test_that("alm() and stepwise() with an occurrence model on a differently named 
                              occurrence=occurrenceModel), "alm");
 })
 
+# The provided parameters, with the shape first when it is not provided, give the model of the estimates
+test_that("alm() with provided parameters", {
+    testModel <- alm(mpg~wt+hp, mtcars, distribution="dgnorm");
+    testProvided <- alm(mpg~wt+hp, mtcars, distribution="dgnorm", parameters=testModel$B, fast=TRUE);
+    expect_equal(coef(testProvided), coef(testModel));
+    expect_equal(nparam(testProvided), nparam(testModel));
+    expect_equal(logLik(testProvided), logLik(testModel));
+})
+
 # Without newdata, a factor takes its last level, and the numeric variables are forecast
 test_that("forecast() of alm() with a factor and no newdata", {
     set.seed(41);

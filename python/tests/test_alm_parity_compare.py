@@ -339,3 +339,30 @@ def test_data(mtcars):
     assert fitted.df_ == int(r.rx2("df")[0]) == fitted.rank_
     assert_allclose(fitted.B_, np.array(r.rx2("B")), rtol=1e-6)
     assert_allclose(fitted.predict().mean, np.array(r.rx2("fitted")), rtol=1e-6)
+
+
+@pytest.mark.parametrize(
+    "distribution, parameters, extra",
+    [
+        ("dnorm", [37.0, -3.9, -0.03], ""),
+        ("dlaplace", [37.0, -3.9, -0.03], ""),
+        ("dlnorm", [3.8, -0.2, -0.0015], ""),
+        ("dgamma", [3.8, -0.2, -0.0015], ""),
+        ("dgnorm", [1.5, 37.0, -3.9, -0.03], ""),
+        ("dgnorm", [37.0, -3.9, -0.03], ", shape=1.5"),
+    ],
+)
+def test_parameters(mtcars, distribution, parameters, extra):
+    """The model evaluated at the provided parameters, as R's alm(parameters=,
+    fast=TRUE): the extra parameter of the distribution first, unless provided."""
+    kwargs = {"distribution": distribution, "parameters": parameters}
+    if extra:
+        kwargs["shape"] = 1.5
+    r_parameters = ", ".join(str(value) for value in parameters)
+    _compare(
+        mtcars,
+        FORMULA,
+        f', distribution="{distribution}", parameters=c({r_parameters}), fast=TRUE'
+        + extra,
+        kwargs,
+    )
