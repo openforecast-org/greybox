@@ -4,7 +4,13 @@ The covariance matrices of the parameters estimated by the Hessian (those of the
 scale model, and of the location model for most distributions) come from finite
 differences with the step eps^(1/4), whose rounding errors (about 1e-6 of the
 Fisher information at the same parameters in both languages) are amplified by its
-inversion: they are compared with rtol=1e-3, the rest with rtol=1e-6.
+inversion: they are compared with rtol=1e-3, the rest with rtol=1e-6. The last bits
+of the likelihood differ between the languages (the products of the regressors and the
+parameters of R's BLAS and NumPy's, and NumPy's exp and log), which the inversion of an
+ill-conditioned information multiplies (7.6e7 for dlogis here, Noise being nearly
+collinear with the intercept): the information of the location model is compared at
+1e-8 of its largest element instead of its inverse, and the bounds of the intervals,
+which take x'Vx, to RTOL_HESSIAN of their widths.
 """
 
 from pathlib import Path
@@ -160,7 +166,16 @@ class TestScaleModelVsR:
             if distribution in ("dnorm", "dlnorm", "dbcnorm") and occurrence == "none"
             else RTOL_HESSIAN
         )
-        _close(model.vcov(), _r("vcov(m)"), rtol)
+        if rtol == RTOL:
+            _close(model.vcov(), _r("vcov(m)"), rtol)
+        else:
+            information = np.linalg.inv(_r("vcov(m)").reshape(model.vcov().shape))
+            assert_allclose(
+                np.linalg.inv(model.vcov()),
+                information,
+                rtol=0,
+                atol=1e-8 * np.max(np.abs(information)),
+            )
         _close(model.scale_model.vcov(), _r("vcov(m$scale)"), RTOL_HESSIAN)
         # The Fisher information of the scale model at the same parameters
         ro.r("B <- coef(m$scale)")
@@ -193,12 +208,25 @@ class TestScaleModelVsR:
             or (distribution in ("dnorm", "dlnorm", "dbcnorm") and occurrence == "none")
             else RTOL_HESSIAN
         )
-        _close(prediction.lower, _r("p$lower"), rtol)
-        _close(prediction.upper, _r("p$upper"), rtol)
-        _close(
-            np.broadcast_to(prediction.scale, prediction.mean.shape),
-            np.broadcast_to(_r("p$scale"), prediction.mean.shape),
-            rtol,
+        # The bounds and the scale take x'Vx, with the covariances of the Hessian for
+        # most distributions: to RTOL_HESSIAN of the widths and of the scale
+        hessian = not (
+            distribution in ("dnorm", "dlnorm", "dbcnorm") and occurrence == "none"
+        )
+        width = np.max(np.asarray(prediction.upper - prediction.lower))
+        for bound in ("lower", "upper"):
+            assert_allclose(
+                np.ravel(getattr(prediction, bound)),
+                _r(f"p${bound}"),
+                rtol=rtol,
+                atol=RTOL_HESSIAN * width if hessian else 1e-12,
+            )
+        scale = np.broadcast_to(prediction.scale, prediction.mean.shape)
+        assert_allclose(
+            np.ravel(scale),
+            np.ravel(np.broadcast_to(_r("p$scale"), prediction.mean.shape)),
+            rtol=rtol,
+            atol=RTOL_HESSIAN * np.max(scale) if hessian else 1e-12,
         )
 
 

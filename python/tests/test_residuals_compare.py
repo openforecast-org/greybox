@@ -211,4 +211,8 @@ def test_hatvalues_match_r(
 ):
     model = _fit(y, distribution, r_args, py_kwargs, occurrence, orders, intercept)
     expected = np.array(ro.r("suppressWarnings(as.numeric(hatvalues(m)))"))
-    assert_allclose(model.hatvalues(), expected, rtol=1e-6)
+    # These hat values are x'Vx / sigma^2 with the covariances of the Hessian, whose
+    # inversion multiplies the differences of the last bits of the likelihood between
+    # the languages (the products of R's BLAS and NumPy's, NumPy's exp and log): they
+    # are compared with rtol=1e-3, as the covariances of the Hessian in the other tests
+    assert_allclose(model.hatvalues(), expected, rtol=1e-3)

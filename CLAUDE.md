@@ -55,6 +55,17 @@ pytest tests/test_r_python_compare.py
 pytest tests/test_alm_distributions_compare.py
 ```
 
+The quantities that come from inverting a finite-difference Hessian (`vcov()` of most
+distributions, the intervals and hat values that take x'Vx, `CALM`'s covariances) are
+compared with `rtol=1e-3`, on the scale of their uncertainty (the widths of the
+intervals, the correlations of the covariances), and a single model's covariances
+through the Fisher information at `1e-8` of its largest element. The likelihoods of the
+two languages differ in the last bits (R's reference BLAS sums `X %*% B` column by
+column where NumPy's OpenBLAS does not, and NumPy's vectorised `exp` and `log` differ
+from glibc's by an ulp at some points), and the inversion multiplies that by the
+condition number of the information, which reaches 7e7 in these tests. Do not tighten
+those tolerances: the Fisher information is the quantity to compare tightly.
+
 ## Architecture
 
 ### Python package (`python/src/greybox/`)
