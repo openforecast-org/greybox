@@ -14,6 +14,25 @@ test_that("alm() and stepwise() with an occurrence model on a differently named 
                              occurrence=occurrenceModel), "alm");
 })
 
+# The provided parameters, with the shape first when it is not provided, give the model of the estimates
+test_that("alm() with provided parameters", {
+    testModel <- alm(mpg~wt+hp, mtcars, distribution="dgnorm");
+    testProvided <- alm(mpg~wt+hp, mtcars, distribution="dgnorm", parameters=testModel$B, fast=TRUE);
+    expect_equal(coef(testProvided), coef(testModel));
+    expect_equal(nparam(testProvided), nparam(testModel));
+    expect_equal(logLik(testProvided), logLik(testModel));
+})
+
+# Without newdata, a factor takes its last level, and the numeric variables are forecast
+test_that("forecast() of alm() with a factor and no newdata", {
+    set.seed(41);
+    colour <- factor(sample(c("red","green","blue"), 60, TRUE));
+    testData <- data.frame(y=rnorm(60, 50) + 5*(colour=="red"), colour=colour);
+    testModel <- alm(y~colour, testData);
+    testPredict <- predict(testModel, data.frame(colour=factor(rep(tail(colour,1), 3), levels=levels(colour))));
+    expect_equal(suppressWarnings(forecast(testModel, h=3))$mean, testPredict$mean);
+})
+
 test_that("forecast() of an ARIMA alm() without explanatory variables", {
     y <- c(2.1, 3.4, 3.0, 4.2, 5.1, 4.8, 5.5, 6.0, 5.8, 6.5, 7.1, 6.8, 7.5, 8.0, 7.8);
     testModel <- alm(y ~ 1, data.frame(y=y), distribution="dnorm", orders=c(1,0,0));

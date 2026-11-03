@@ -2,6 +2,9 @@ greybox for Python v1.0.11 (Release date: 2026-10-??)
 ==============
 
 Changes:
+* `ALM(parameters=)` evaluates the model at the provided parameters without
+  estimating them, as R's `alm(parameters=, fast=TRUE)`: in the order of `B_`,
+  with all the regressors kept. They do not work with LASSO / RIDGE.
 * `rmcb()` with a distribution other than `"dnorm"` and `"tukey"` doubles the
   likelihood ratio statistic, as R's `rmcb()` now does: the test took the
   difference of the log-likelihoods instead of twice it, and was too conservative.

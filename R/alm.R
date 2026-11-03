@@ -1398,6 +1398,7 @@ alm <- function(formula, data, subset, na.action,
     }
 
     #### Estimate parameters of the model ####
+    extraIncluded <- FALSE;
     if(is.null(parameters)){
         #### Add AR and I elements in the regression ####
         # This is only done, if the regression is estimated. In the other cases it will already have the expanded values
@@ -1965,15 +1966,20 @@ alm <- function(formula, data, subset, na.action,
         #     nVariablesExo <- nVariablesExo - ariOrder;
         # }
         B <- parameters;
-        nVariables <- length(B);
+        # The extra parameter of the distribution, when it is not provided, comes first, as
+        # in the estimation
+        extraIncluded[] <- !aParameterProvided &&
+            any(distribution==c("dnbinom","dchisq","dt","dfnorm","drectnorm",
+                                "dgnorm","dlgnorm","dalaplace","dbcnorm"));
+        nVariables <- length(B) - extraIncluded;
         if(!is.null(names(B))){
-            variablesNames <- names(B);
+            variablesNames <- tail(names(B), nVariables);
             # The transformed lags of the data (e.g. "yLag1Log") are the AR parameters ("yLag1")
             if(ariModel && ncol(matrixXreg)==nVariables){
                 colnames(matrixXreg) <- variablesNames;
             }
         }
-        else{
+        else if(!extraIncluded){
             names(B) <- variablesNames;
             names(parameters) <- variablesNames;
         }
@@ -2034,7 +2040,7 @@ alm <- function(formula, data, subset, na.action,
     }
 
     # Give names to additional parameters
-    if(is.null(parameters)){
+    if(is.null(parameters) || extraIncluded){
         parameters <- B;
         if(distribution=="dnbinom"){
             if(!aParameterProvided){

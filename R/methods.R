@@ -4313,19 +4313,20 @@ forecast.alm <- function(object, newdata=NULL, h=NULL, ...){
         ariLength <- length(object$other$polynomial);
         nVariables <- ncol(object$data)-ariLength-1;
         if(nVariables>0){
+            # The dummies of the factors are not forecast: the factors take their last values
+            factorDummies <- unlist(Map(paste0, names(object$xlevels), object$xlevels));
+            variables <- setdiff(colnames(object$data)[1+c(1:nVariables)],
+                                 c(factorDummies, names(object$xlevels)));
             # If smooth is installed, use ADAM
             if(requireNamespace("smooth", quietly=TRUE) && (packageVersion("smooth")>="3.0.0")){
-                newdata <- matrix(NA, h, nVariables,
-                                  dimnames=list(NULL, colnames(object$data)[1+c(1:nVariables)]));
+                newdata <- matrix(NA, h, length(variables), dimnames=list(NULL, variables));
 
                 # If the user asked for trend, but it's not in the data, add it
                 if(any(all.vars(formula(object))=="trend")){
                     newdata[,"trend"] <- nobs(object)+c(1:h);
                 }
-                for(i in 1:ncol(newdata)){
-                    if(colnames(newdata)[i]!="trend"){
-                        newdata[,i] <- smooth::adam(object$data[,i+1], occurrence="i", h=h)$forecast;
-                    }
+                for(variable in setdiff(variables, "trend")){
+                    newdata[,variable] <- smooth::adam(object$data[,variable], occurrence="i", h=h)$forecast;
                 }
             }
             # Otherwise use Naive
@@ -4336,6 +4337,22 @@ forecast.alm <- function(object, newdata=NULL, h=NULL, ...){
                 if(any(all.vars(formula(object))=="trend")){
                     newdata[,"trend"] <- nobs(object)+c(1:h);
                 }
+            }
+            # The last level of each factor: its last value when the data has the factor, else
+            # the level of the dummy equal to one in the last observation (the first level when
+            # none is)
+            newdata <- as.data.frame(newdata);
+            lastObservation <- object$data[nrow(object$data),,drop=FALSE];
+            for(variable in names(object$xlevels)){
+                levelsAll <- object$xlevels[[variable]];
+                if(variable %in% colnames(lastObservation)){
+                    levelLast <- as.character(lastObservation[1,variable]);
+                }
+                else{
+                    levelLast <- levelsAll[paste0(variable, levelsAll) %in%
+                                               colnames(lastObservation)[lastObservation[1,]==1]];
+                }
+                newdata[[variable]] <- factor(rep(c(levelLast, levelsAll)[1], h), levels=levelsAll);
             }
         }
         else{

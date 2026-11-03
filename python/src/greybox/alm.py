@@ -378,6 +378,12 @@ class ALM:
         - "print_level": int, default=0 (0=none, 3=full)
     verbose : int, default=0
         Verbosity level.
+    parameters : array-like, optional
+        The parameters of the model, not estimated: the model is evaluated at them,
+        as R's ``alm(parameters=, fast=TRUE)``. They are in the order of ``B_`` of a
+        fitted model (the extra parameter of the distribution first, unless it is
+        provided, then the intercept, the regressors and the AR terms), and all the
+        regressors are kept. They do not work with LASSO / RIDGE.
 
     Attributes
     ----------
@@ -485,6 +491,7 @@ class ALM:
         lambda_l2=None,
         nlopt_kargs=None,
         verbose=0,
+        parameters=None,
     ):
         self.distribution = distribution
         self.loss = loss
@@ -502,6 +509,7 @@ class ALM:
         self.lambda_l2 = lambda_l2
         self.nlopt_kargs = nlopt_kargs if nlopt_kargs is not None else {}
         self.verbose = verbose
+        self.parameters = parameters
 
         self._coef = None
         self._scale = None
@@ -659,61 +667,74 @@ class ALM:
         occurrence_requested = self.occurrence_ is not None or occurrence_type
         quiet = occurrence_requested or self.distribution in ("plogis", "pnorm")
         intercept_needed = bool(np.all(X[:, 0] == 1))
-        X_observed = X[y != 0] if occurrence_requested else X
-        columns = np.arange(int(intercept_needed), X.shape[1])
-        no_variability = np.all(
-            X_observed[:, columns] == X_observed[0, columns], axis=0
-        )
-        if np.all(no_variability) and len(columns) > 0:
-            warnings.warn(
-                "None of exogenous variables has variability. Fitting the straight "
-                "line.",
-                stacklevel=2,
+        # The provided parameters take all the regressors, as R's fast=TRUE
+        if self.parameters is not None:
+            columns = np.arange(X.shape[1])
+        else:
+            X_observed = X[y != 0] if occurrence_requested else X
+            columns = np.arange(int(intercept_needed), X.shape[1])
+            no_variability = np.all(
+                X_observed[:, columns] == X_observed[0, columns], axis=0
             )
-        elif np.any(no_variability) and not quiet:
-            warnings.warn(
-                "Some exogenous variables did not have any variability. We dropped "
-                "them out.",
-                stacklevel=2,
-            )
-        columns = columns[~no_variability]
-        if self.loss not in ("LASSO", "RIDGE"):
-            if len(columns) > 1:
-                correlated = np.triu(
-                    np.abs(np.corrcoef(X_observed[:, columns], rowvar=False)) >= 0.999,
-                    k=1,
+            if np.all(no_variability) and len(columns) > 0:
+                warnings.warn(
+                    "None of exogenous variables has variability. Fitting the straight "
+                    "line.",
+                    stacklevel=2,
                 )
-                if np.any(correlated):
-                    columns = np.delete(columns, np.unique(np.nonzero(correlated)[0]))
-                    if not quiet:
-                        warnings.warn(
-                            "Some exogenous variables were perfectly correlated. "
-                            "We've dropped them out.",
-                            stacklevel=2,
+            elif np.any(no_variability) and not quiet:
+                warnings.warn(
+                    "Some exogenous variables did not have any variability. We dropped "
+                    "them out.",
+                    stacklevel=2,
+                )
+            columns = columns[~no_variability]
+            if self.loss not in ("LASSO", "RIDGE"):
+                if len(columns) > 1:
+                    correlated = np.triu(
+                        np.abs(np.corrcoef(X_observed[:, columns], rowvar=False))
+                        >= 0.999,
+                        k=1,
+                    )
+                    if np.any(correlated):
+                        columns = np.delete(
+                            columns, np.unique(np.nonzero(correlated)[0])
                         )
-            if len(columns) > 1 and intercept_needed:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    combined = determination(X_observed[:, columns]) >= 0.999
-                    if np.any(combined):
-                        while np.any(combined):
-                            columns = np.delete(columns, np.flatnonzero(combined)[0])
-                            combined = determination(X[:, columns]) >= 0.999
-                        if not occurrence_requested:
+                        if not quiet:
                             warnings.warn(
-                                "Some combinations of exogenous variables were "
-                                "perfectly correlated. We've dropped them out.",
+                                "Some exogenous variables were perfectly correlated. "
+                                "We've dropped them out.",
                                 stacklevel=2,
                             )
-        columns = columns[np.var(X_observed[:, columns], axis=0) != 0]
-        if intercept_needed and self.loss not in ("LASSO", "RIDGE") and len(columns):
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                combined = np.nan_to_num(determination(X_observed[:, columns]))
-            if np.any(combined == 1):
-                columns = np.delete(columns, np.flatnonzero(combined == 1)[0])
-        if intercept_needed:
-            columns = np.concatenate([[0], columns])
+                if len(columns) > 1 and intercept_needed:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        combined = determination(X_observed[:, columns]) >= 0.999
+                        if np.any(combined):
+                            while np.any(combined):
+                                columns = np.delete(
+                                    columns, np.flatnonzero(combined)[0]
+                                )
+                                combined = determination(X[:, columns]) >= 0.999
+                            if not occurrence_requested:
+                                warnings.warn(
+                                    "Some combinations of exogenous variables were "
+                                    "perfectly correlated. We've dropped them out.",
+                                    stacklevel=2,
+                                )
+            columns = columns[np.var(X_observed[:, columns], axis=0) != 0]
+            if (
+                intercept_needed
+                and self.loss not in ("LASSO", "RIDGE")
+                and len(columns)
+            ):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    combined = np.nan_to_num(determination(X_observed[:, columns]))
+                if np.any(combined == 1):
+                    columns = np.delete(columns, np.flatnonzero(combined == 1)[0])
+            if intercept_needed:
+                columns = np.concatenate([[0], columns])
         self._columns_kept = columns
         self._intercept_needed = intercept_needed
         X = X[:, columns]
@@ -1263,27 +1284,44 @@ class ALM:
         opt.set_maxeval(maxeval)
         opt.set_maxtime(self.nlopt_kargs.get("maxtime", -1))
 
-        try:
-            B_opt = opt.optimize(B_init)
-            self.n_iter_ = opt.get_numevals()
-            self._result = opt.last_optimum_value()
-            self.nlopt_result_ = opt.last_optimize_result()
-            # The recursive models restart from the solution, keeping the better one (R)
-            if latent is not None:
-                result_first = self._result
-                B_second = opt.optimize(B_opt)
-                if opt.last_optimum_value() < result_first:
-                    B_opt = B_second
-                    self._result = opt.last_optimum_value()
-                    self.nlopt_result_ = opt.last_optimize_result()
-                self.n_iter_ += opt.get_numevals()
-        except Exception as e:  # noqa: BLE001 - report any optimiser failure, keep init
-            if self.verbose > 0:
-                print(f"Optimization failed: {e}")
-            B_opt = B_init
+        # The provided parameters are not estimated: the model is evaluated at them (R)
+        if self.parameters is not None:
+            B_opt = np.asarray(self.parameters, dtype=float).ravel()
+            if penalised:
+                raise ValueError(
+                    "The provided parameters do not work with LASSO / RIDGE."
+                )
+            if len(B_opt) != n_params:
+                raise ValueError(
+                    f"The model has {n_params} parameters, while {len(B_opt)} are "
+                    "provided."
+                )
             self.n_iter_ = 0
-            self._result = None
+            self._result = objective_func(B_opt, np.zeros(n_params))
             self.nlopt_result_ = None
+        else:
+            try:
+                B_opt = opt.optimize(B_init)
+                self.n_iter_ = opt.get_numevals()
+                self._result = opt.last_optimum_value()
+                self.nlopt_result_ = opt.last_optimize_result()
+                # The recursive models restart from the solution, keeping the better
+                # one (R)
+                if latent is not None:
+                    result_first = self._result
+                    B_second = opt.optimize(B_opt)
+                    if opt.last_optimum_value() < result_first:
+                        B_opt = B_second
+                        self._result = opt.last_optimum_value()
+                        self.nlopt_result_ = opt.last_optimize_result()
+                    self.n_iter_ += opt.get_numevals()
+            except Exception as e:  # noqa: BLE001 - report any optimiser failure
+                if self.verbose > 0:
+                    print(f"Optimization failed: {e}")
+                B_opt = B_init
+                self.n_iter_ = 0
+                self._result = None
+                self.nlopt_result_ = None
 
         # LASSO goes back to the original regressors, as R
         if penalised:
@@ -3467,6 +3505,7 @@ class ALM:
             "lambda_l2": self.lambda_l2,
             "nlopt_kargs": self.nlopt_kargs,
             "verbose": self.verbose,
+            "parameters": self.parameters,
         }
 
     def set_params(self, **params):

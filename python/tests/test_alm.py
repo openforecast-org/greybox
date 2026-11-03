@@ -2036,3 +2036,22 @@ class TestScaleModel:
         np.testing.assert_allclose(
             named.scale_model.coefficients, model.scale_model.coefficients
         )
+
+
+def test_provided_parameters():
+    """The model evaluated at the provided parameters, as R's alm(parameters=): the
+    estimates of a fitted model give back its fit, the shape first when not given."""
+    rng = np.random.default_rng(41)
+    X = np.column_stack([np.ones(50), rng.normal(size=(50, 2))])
+    y = X @ np.array([5.0, 2.0, -1.0]) + rng.normal(size=50)
+    for kwargs in ({"distribution": "dnorm"}, {"distribution": "dgnorm"}):
+        fitted = ALM(**kwargs).fit(X, y)
+        provided = ALM(**kwargs, parameters=fitted.B_).fit(X, y)
+        assert np.allclose(provided.coef, fitted.coef)
+        assert np.isclose(provided.loglik, fitted.loglik)
+        assert provided.nparam == fitted.nparam
+        assert np.allclose(provided.fitted, fitted.fitted)
+    with pytest.raises(ValueError, match="parameters"):
+        ALM(parameters=[1.0, 2.0]).fit(X, y)
+    with pytest.raises(ValueError, match="LASSO"):
+        ALM(loss="LASSO", lambda_l1=0.1, parameters=[5.0, 2.0, -1.0]).fit(X, y)
