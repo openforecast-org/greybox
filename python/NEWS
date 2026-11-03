@@ -1,13 +1,10 @@
-greybox for Python v1.0.11 (Release date: 2026-10-??)
+greybox for Python v1.0.11 (Release date: 2026-11-??)
 ==============
 
 Changes:
 * `ALM(parameters=)` evaluates the model at the provided parameters without
   estimating them, as R's `alm(parameters=, fast=TRUE)`: in the order of `B_`,
   with all the regressors kept. They do not work with LASSO / RIDGE.
-* `rmcb()` with a distribution other than `"dnorm"` and `"tukey"` doubles the
-  likelihood ratio statistic, as R's `rmcb()` now does: the test took the
-  difference of the log-likelihoods instead of twice it, and was too conservative.
 * `mase()`, `rmsse()` and `same()` require `scale`, as R's `MASE()`, `RMSSE()`
   and `SAME()`: without it they raise TypeError. Before, they took the mean
   (absolute or squared) differences of the holdout, a scale R does not offer
@@ -15,6 +12,9 @@ Changes:
   `mase(holdout, forecast, np.mean(np.abs(np.diff(actual))))`.
 
 Bugfixes:
+* `rmcb()` with a distribution other than `"dnorm"` and `"tukey"` took the
+  difference of the log-likelihoods instead of twice it, so the likelihood ratio
+  test was too conservative: the statistic is now doubled, as in R's `rmcb()`.
 * The distribution functions ported from R's nmath (the normal, gamma, Beta, t
   and the noncentral t and chi-squared) follow R 4.6.1 instead of R 4.3.3, so
   they agree with the current R to the bit again: `pnorm` (and so `pt` and
