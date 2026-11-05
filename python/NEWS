@@ -1,3 +1,13 @@
+greybox for Python v1.0.12 (Release date: 2026-11-??)
+==============
+
+Bugfixes:
+* `rmcb()` put methods that differ into one group: a group took all the methods
+  overlapping one of them, and overlapping is not transitive. The groups in
+  `vlines` and `groups` and in the `"lines"` plot now hold only the methods that
+  overlap each other, as in R. The intervals, `methods` and the test do not change.
+
+
 greybox for Python v1.0.11 (Release date: 2026-11-??)
 ==============
 
@@ -12,10 +22,6 @@ Changes:
   `mase(holdout, forecast, np.mean(np.abs(np.diff(actual))))`.
 
 Bugfixes:
-* `rmcb()` put methods that differ into one group: a group took all the methods
-  overlapping one of them, and overlapping is not transitive. The groups in
-  `vlines` and `groups` and in the `"lines"` plot now hold only the methods that
-  overlap each other, as in R. The intervals, `methods` and the test do not change.
 * `rmcb()` with a distribution other than `"dnorm"` and `"tukey"` took the
   difference of the log-likelihoods instead of twice it, so the likelihood ratio
   test was too conservative: the statistic is now doubled, as in R's `rmcb()`.
