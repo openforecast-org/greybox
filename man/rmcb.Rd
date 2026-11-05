@@ -53,7 +53,8 @@ variables:
 \item interval Confidence intervals for each method.
 \item vlines Coordinates used for outplot="l", marking the groups of methods.
 \item groups The table containing the groups. \code{TRUE} - methods are in the
-same group, \code{FALSE} - they are not.
+same group, \code{FALSE} - they are not. The intervals of all the methods in a
+group overlap each other, and a method can be in several groups.
 \item methods Similar to \code{group} parameter, but with a slightly different
 presentation.
 \item p.value p-value for the test of the significance of the model. This is the

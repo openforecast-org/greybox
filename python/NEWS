@@ -1,4 +1,14 @@
-greybox for Python v1.0.11 (Release date: 2026-11-??)
+greybox for Python v1.0.12 (Release date: 2026-11-??)
+==============
+
+Bugfixes:
+* `rmcb()` put methods that differ into one group: a group took all the methods
+  overlapping one of them, and overlapping is not transitive. The groups in
+  `vlines` and `groups` and in the `"lines"` plot now hold only the methods that
+  overlap each other, as in R. The intervals, `methods` and the test do not change.
+
+
+greybox for Python v1.0.11 (2026-11-03)
 ==============
 
 Changes:
@@ -257,6 +267,11 @@ greybox for Python v1.0.9 (2026-10-14)
 ==============
 
 Changes:
+* `rmcb()` has a new parameter `correction=("none", "hac")`, as in R's
+  greybox v2.0.10. With "hac", the critical distances account for the
+  autocorrelation between the rows of the data through the effective sample
+  size T/f, where f is the Newey-West long-run variance factor (Bartlett
+  kernel). The default "none" gives the same results as before.
 * `dlaplace()`, `ds()` and `dgnorm()` with `log=True` return R's values to
   the last bit (R's greybox v2.0.10): the analytical logs are computed in a
   native extension (`_native_densities`) in R's order of operations and

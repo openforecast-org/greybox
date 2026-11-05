@@ -62,7 +62,8 @@
 #' \item interval Confidence intervals for each method.
 #' \item vlines Coordinates used for outplot="l", marking the groups of methods.
 #' \item groups The table containing the groups. \code{TRUE} - methods are in the
-#' same group, \code{FALSE} - they are not.
+#' same group, \code{FALSE} - they are not. The intervals of all the methods in a
+#' group overlap each other, and a method can be in several groups.
 #' \item methods Similar to \code{group} parameter, but with a slightly different
 #' presentation.
 #' \item p.value p-value for the test of the significance of the model. This is the
@@ -292,18 +293,16 @@ rmcb <- function(data, level=0.95, outplot=c("mcb","lines","none"), select=NULL,
 
     #### Prepare things for the groups for "lines" plot ####
     # Find groups
+    # A group starts at a method and ends at the last one overlapping it. The intervals are
+    # sorted, so all the methods in it overlap each other. Overlapping is not transitive,
+    # so a group cannot take all the methods overlapping one from its middle.
     vlines <- matrix(NA, nrow=nMethods, ncol=2);
     for(i in 1:nMethods){
-        intersections <- which(!(lmIntervals[,2]<lmIntervals[i,1] | lmIntervals[,1]>lmIntervals[i,2]));
-        vlines[i,] <- c(min(intersections),max(intersections));
+        vlines[i,] <- c(i,max(which(lmIntervals[,1]<=lmIntervals[i,2])));
     }
 
-    # Get rid of duplicates and single member groups
-    vlines <- unique(vlines);
-    # Re-convert to matrix if necessary and find number of remaining groups
-    if(length(vlines)==2){
-        vlines <- matrix(vlines,1,2);
-    }
+    # Get rid of the groups that are parts of the previous ones
+    vlines <- vlines[!duplicated(vlines[,2]),,drop=FALSE];
 
     nGroups <- nrow(vlines);
     colnames(vlines) <- c("Group starts","Group ends");
