@@ -71,7 +71,9 @@ class RMCBResult:
         positions into the sorted methods); rows are ``Group1 .. GroupK``.
     groups : pandas.DataFrame
         Boolean table of group membership: ``True`` if a method belongs to a
-        group, ``False`` otherwise. Rows are methods, columns are groups.
+        group, ``False`` otherwise. Rows are methods, columns are groups. The
+        intervals of all the methods in a group overlap each other, and a method
+        can be in several groups.
     methods : pandas.DataFrame
         Boolean pairwise table: ``True`` if the intervals of two methods
         overlap. Rows and columns are methods.
@@ -703,22 +705,18 @@ def rmcb(
         intervals, index=sorted_names, columns=[low_label, up_label]
     )
 
-    # Groups for the "lines" plot: contiguous runs of overlapping intervals.
-    vlines_list = []
-    for i in range(n_methods):
-        intersecting = ~(
-            (intervals[:, 1] < intervals[i, 0]) | (intervals[:, 0] > intervals[i, 1])
-        )
-        idx = np.where(intersecting)[0]
-        vlines_list.append((int(idx.min()) + 1, int(idx.max()) + 1))
-
-    # Deduplicate while preserving order.
-    seen: set = set()
+    # Groups for the "lines" plot. A group starts at a method and ends at the last
+    # one overlapping it. The intervals are sorted, so all the methods in it overlap
+    # each other. Overlapping is not transitive, so a group cannot take all the
+    # methods overlapping one from its middle.
+    # The groups that are parts of the previous ones are dropped.
+    ends_seen: set = set()
     vlines_unique = []
-    for row in vlines_list:
-        if row not in seen:
-            seen.add(row)
-            vlines_unique.append(row)
+    for i in range(n_methods):
+        last = int(np.where(intervals[:, 0] <= intervals[i, 1])[0].max())
+        if last not in ends_seen:
+            ends_seen.add(last)
+            vlines_unique.append((i + 1, last + 1))
     vlines_arr = np.array(vlines_unique, dtype=int)
     n_groups = vlines_arr.shape[0]
     group_names = [f"Group{i + 1}" for i in range(n_groups)]

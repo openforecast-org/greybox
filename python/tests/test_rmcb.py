@@ -239,3 +239,26 @@ def test_general_distribution_df_residual(positive_data):
         half_width,
         rtol=1e-10,
     )
+
+
+def test_groups_contain_only_overlapping_methods():
+    # The mean ranks are 1.8, 2 and 2.2 with the critical distance of 0.33:
+    # the middle method overlaps both, but the other two differ.
+    data = pd.DataFrame(
+        [[1, 2, 3]] * 60 + [[3, 2, 1]] * 40, columns=["A", "B", "C"], dtype=float
+    )
+    result = rmcb(data, outplot="none")
+    assert not result.methods.loc["A", "C"]
+    assert result.vlines.to_numpy().tolist() == [[1, 2], [2, 3]]
+
+
+@pytest.mark.parametrize("distribution", ["tukey", "dnorm", "dlnorm"])
+def test_groups_match_the_pairwise_overlaps(distribution):
+    # Every pair within a group overlaps, and every overlapping pair shares a group.
+    rng = np.random.default_rng(41)
+    data = rng.normal(size=(100, 12)) + np.linspace(0, 0.6, 12)
+    data = np.exp(data) if distribution == "dlnorm" else data
+    result = rmcb(data, distribution=distribution, outplot="none")
+    groups = result.groups.to_numpy().astype(int)
+    shared = groups @ groups.T > 0
+    assert np.array_equal(shared, result.methods.to_numpy())
